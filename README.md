@@ -32,7 +32,7 @@ pip install -r requirements.txt
 **2. Get your Steam credentials**
 
 - **API key:** create one at <https://steamcommunity.com/dev/apikey> (any domain name works, e.g. `localhost`). Keep it private.
-- **SteamID:** your 17-digit ID starting with `7656119`. Paste your profile URL into <https://steamid.io> to find it.
+- **SteamID:** your SteamID64, a 17-digit number (`XXXXXXXXXXXXXXXXX`). If your profile address has a number after `/profiles/`, that's it; otherwise paste your profile address into <https://steamid.io>.
 - **Privacy:** in your Steam profile's *Privacy Settings*, set **Game details** to **Public**.
 
 **3. Configure**
