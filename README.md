@@ -14,6 +14,26 @@ Steam knows what you own and how long you've played, but not what you *thought* 
 - **Recommendations:** three lists (backlog, family, games you don't own), each with a reason.
 - **Web app:** recommendations, a library you can rate and edit in place, an Explore page, game pages, and your taste profile.
 
+## Screenshots
+
+Taken on demo data: popular Steam games with made-up playtime, ratings and reviews for an imaginary player.
+
+**Recommendations**, in three lists, each pick with the games and tags behind it:
+
+![Recommendations](docs/screenshots/recommendations.jpg)
+
+**Library**, with ratings and hours editable in the row, and **Explore** for games you don't own:
+
+![Library](docs/screenshots/library.jpg)
+
+![Explore](docs/screenshots/explore.jpg)
+
+**Game page**, showing why a game fits you and how you played it, and **My ratings**:
+
+![Game page](docs/screenshots/game-page.jpg)
+
+![My ratings](docs/screenshots/my-ratings.jpg)
+
 ## Setup
 
 You need Python 3.11 or newer, a Steam account, and a free Steam Web API key. (Developed on Python 3.15; the test workflow runs 3.11–3.13.)
@@ -136,6 +156,8 @@ python -m pytest
 ```
 
 The tests use a temporary database and folder (never your own data) and make no network calls. Stack: Python, FastAPI with Jinja templates, SQLite through SQLAlchemy, pytest, GitHub Actions. The data model is in `shelflife/models.py`.
+
+To regenerate the screenshots, `python tools/make_demo_db.py demo.db` builds the demo database (real games fetched from Steam, made-up play history), and `DATABASE_URL=sqlite:///demo.db python -m scripts.web --port 8001` runs the app on it.
 
 ## License
 
