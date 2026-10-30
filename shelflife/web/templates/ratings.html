@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}My ratings · ShelfLife{% endblock %}
+{% block content %}
+{% macro thumb(g) %}
+<a class="thumb" href="/game/{{ g.steam_app_id }}">
+  {% if g.cover_url %}<img src="{{ g.cover_url }}" loading="lazy" alt="">{% else %}<span class="nocover">{{ g.name[:1] }}</span>{% endif %}
+</a>
+{% endmacro %}
+
+<h2>My ratings <small>{{ rated|length }} games</small></h2>
+{% if rated %}
+<div class="rows">
+  {% for e, g in rated %}
+  {% set msg = "Delete your rating and review for " ~ g.name ~ "?" %}
+  <article class="row" id="g{{ g.steam_app_id }}">
+    {{ thumb(g) }}
+    <div class="row-body">
+      <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a> <small>updated {{ e.updated_at.strftime("%Y-%m-%d") }}</small></h3>
+      <form method="post" action="/game/{{ g.steam_app_id }}/rate" class="edit">
+        <input type="hidden" name="next" value="/ratings#g{{ g.steam_app_id }}">
+        <select name="rating" aria-label="Rating for {{ g.name }}">
+          <option value="">Not rated</option>
+          {% for o in RATING_OPTIONS %}<option value="{{ o }}" {{ "selected" if e.rating == o }}>{{ o }}</option>{% endfor %}
+        </select>
+        <textarea name="review" rows="2" placeholder="Add a review" aria-label="Review of {{ g.name }}">{{ e.review or "" }}</textarea>
+        <button type="submit">Save</button>
+      </form>
+      <form method="post" action="/game/{{ g.steam_app_id }}/rate" class="inline" onsubmit='return confirm({{ msg|tojson }})'>
+        <input type="hidden" name="rating" value="">
+        <input type="hidden" name="review" value="">
+        <input type="hidden" name="next" value="/ratings">
+        <button class="ghost danger" type="submit">Delete rating and review</button>
+      </form>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+  <p class="empty">Nothing rated yet. Rate games from the recommendations or a game's page.</p>
+{% endif %}
+
+<h2>Not interested <small>{{ marked|length }} games</small></h2>
+{% if marked %}
+<div class="rows">
+  {% for e, g in marked %}
+  <article class="row compact">
+    {{ thumb(g) }}
+    <div class="row-body">
+      <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a></h3>
+      <form method="post" action="/game/{{ g.steam_app_id }}/not-interested" class="inline">
+        <input type="hidden" name="value" value="0">
+        <input type="hidden" name="next" value="/ratings">
+        <button class="ghost" type="submit">Undo</button>
+      </form>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+  <p class="empty">Nothing marked. Games you mark are hidden from recommendations and nudge your taste away from their tags.</p>
+{% endif %}
+{% endblock %}

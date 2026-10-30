@@ -1,0 +1,34 @@
+{# One recommendation. `next_url` is where to return after rating or dismissing;
+   `rating` is your current rating of the game, if any. #}
+{% macro card(r, next_url, rating=none) %}
+{% set g = r.game %}
+<article class="card">
+  <a class="cover" href="/game/{{ g.steam_app_id }}">
+    {% if g.cover_url %}<img src="{{ g.cover_url }}" loading="lazy" alt="">{% else %}<span class="nocover">{{ g.name[:1] }}</span>{% endif %}
+  </a>
+  <div class="card-body">
+    <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a></h3>
+    <p class="meta">
+      <strong>{{ "%.0f"|format(r.similarity * 100) }}% match</strong>
+      · quality ×{{ "%.2f"|format(r.quality) }}
+      · {{ reviews_text(g) }}
+    </p>
+    {% if r.because %}<p class="why">Because you played {{ r.because|join(", ") }}</p>{% endif %}
+    {% if r.tags %}<p class="tags">{% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}</p>{% endif %}
+    {% if r.watch %}<p class="watch">Heads-up: {{ r.watch|join(", ") }} tends to score lower for you.</p>{% endif %}
+    <div class="actions">
+      <form method="post" action="/game/{{ g.steam_app_id }}/rate">
+        <input type="hidden" name="next" value="{{ next_url }}">
+        <select name="rating" onchange="this.form.submit()" aria-label="Rate {{ g.name }}">
+          <option value="">{{ "Rate…" if rating is none else "Not rated" }}</option>
+          {% for o in RATING_OPTIONS %}<option value="{{ o }}" {{ "selected" if rating == o }}>{{ o }}</option>{% endfor %}
+        </select>
+      </form>
+      <form method="post" action="/game/{{ g.steam_app_id }}/not-interested">
+        <input type="hidden" name="next" value="{{ next_url }}">
+        <button class="ghost" type="submit">Not interested</button>
+      </form>
+    </div>
+  </div>
+</article>
+{% endmacro %}

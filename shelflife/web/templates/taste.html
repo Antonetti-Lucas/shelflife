@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}My taste · ShelfLife{% endblock %}
+{% block content %}
+<h2>My taste</h2>
+<p class="lede">
+  The profile behind your recommendations, from {{ taste.explicit_count }} rated games
+  and {{ taste.implicit_count }} judged by how you played them. Tags are weighted by how
+  much you liked the games they came from.
+</p>
+
+<div class="two">
+  <section>
+    <h3>Leans toward</h3>
+    <ul class="bars good">
+      {% for tag, value in toward %}
+        <li><span>{{ tag }}</span><i style="width: {{ (value / biggest * 100)|round|int }}%"></i></li>
+      {% endfor %}
+    </ul>
+  </section>
+  <section>
+    <h3>Leans away from</h3>
+    {% if away %}
+    <ul class="bars bad">
+      {% for tag, value in away %}
+        <li><span>{{ tag }}</span><i style="width: {{ (-value / biggest * 100)|round|int }}%"></i></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+      <p class="empty">Nothing yet. Low ratings and "not interested" marks push tags here.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,11 @@
+{# Previous/next links for one recommendation list. Import with context. #}
+{% macro pager(key) %}
+{% set s = sections[key] %}
+{% if s.pages > 1 %}
+<p class="pager">
+  {% if s.page > 1 %}<a href="{{ page_url(key, s.page - 1) }}">← Previous</a>{% else %}<span class="off">← Previous</span>{% endif %}
+  <span>Page {{ s.page }} of {{ s.pages }}</span>
+  {% if s.page < s.pages %}<a href="{{ page_url(key, s.page + 1) }}">Next →</a>{% else %}<span class="off">Next →</span>{% endif %}
+</p>
+{% endif %}
+{% endmacro %}

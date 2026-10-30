@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}{{ game.name }} · ShelfLife{% endblock %}
+{% block content %}
+<div class="game-head">
+  {% if game.cover_url %}<img class="hero" src="{{ game.cover_url }}" alt="">{% endif %}
+  <div>
+    <h2>{{ game.name }}</h2>
+    <p class="meta">
+      {{ source_label(game) }}
+      {% if game.release_date %} · {{ game.release_date }}{% endif %}
+      {% if game.genres %} · {{ game.genres|join(", ") }}{% endif %}
+    </p>
+    {% if game.short_description %}<p>{{ game.short_description }}</p>{% endif %}
+    <p class="meta">
+      {{ reviews_text(game) }}
+      {% if game.reviews_fetched_at %}· quality ×{{ "%.2f"|format(quality) }}{% endif %}
+    </p>
+    <p class="meta"><a href="https://store.steampowered.com/app/{{ game.steam_app_id }}/">Steam store page ↗</a></p>
+  </div>
+</div>
+
+<div class="two">
+  <section>
+    <h3>Your verdict</h3>
+    <form method="post" action="/game/{{ game.steam_app_id }}/rate" class="stack">
+      <label>Rating
+        <select name="rating">
+          <option value="">Not rated</option>
+          {% for o in RATING_OPTIONS %}
+            <option value="{{ o }}" {{ "selected" if diary and diary.rating == o }}>{{ o }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Review
+        <textarea name="review" rows="4" placeholder="Optional notes">{{ diary.review if diary and diary.review else "" }}</textarea>
+      </label>
+      <button type="submit">Save</button>
+    </form>
+
+    <form method="post" action="/game/{{ game.steam_app_id }}/not-interested" class="inline">
+      {% if diary and diary.not_interested %}
+        <input type="hidden" name="value" value="0">
+        <p>Marked <strong>not interested</strong>. <button class="ghost" type="submit">Undo</button></p>
+      {% else %}
+        <input type="hidden" name="value" value="1">
+        <button class="ghost" type="submit">Not interested</button>
+      {% endif %}
+    </form>
+  </section>
+
+  <section>
+    <h3>How it fits your taste</h3>
+    {% if match %}
+      <p><strong>{{ "%.0f"|format(match.similarity * 100) }}% match</strong>, quality ×{{ "%.2f"|format(match.quality) }}
+         → score {{ "%.2f"|format(match.score) }}</p>
+      {% if match.because %}<p class="why">Closest games you played: {{ match.because|join(", ") }}</p>{% endif %}
+      {% if match.tags %}<p class="tags">Matching tags: {% for t in match.tags %}<span class="tag">{{ t }}</span>{% endfor %}</p>{% endif %}
+      {% if match.watch %}<p class="watch">Heads-up: {{ match.watch|join(", ") }} tends to score lower for you.</p>{% endif %}
+    {% else %}
+      <p class="empty">No tags for this game yet, so there is nothing to compare.</p>
+    {% endif %}
+
+    {% if entry %}
+      <h3>How you played it</h3>
+      <p class="meta">
+        {% if entry.playtime_total_min %}{{ "%.1f"|format(entry.playtime_total_hours) }} hours{% else %}No hours recorded{% endif %}
+        {% if entry.achievements_total %} · {{ entry.achievements_unlocked }}/{{ entry.achievements_total }} achievements{% endif %}
+        {% if entry.last_played %} · last played {{ entry.last_played.strftime("%Y-%m-%d") }}{% endif %}
+      </p>
+      {% if game.family_shared %}
+      <form method="post" action="/game/{{ game.steam_app_id }}/hours" class="hours">
+        <label>Hours played
+          <input type="number" name="hours" min="0" max="100000" step="0.1"
+                 value="{{ '%g'|format(entry.playtime_total_hours) if entry.playtime_total_min else '' }}"
+                 placeholder="e.g. 24.5">
+        </label>
+        <button type="submit">Save hours</button>
+      </form>
+      <p class="meta">Steam doesn't report hours for family games. Enter what your Steam client shows; clear the box to remove them.</p>
+      {% endif %}
+      {% if breakdown %}
+      <p class="meta">Engagement score <strong>{{ "%.2f"|format(breakdown.total) }}</strong>:
+        playtime {{ "%.1f"|format(breakdown.playtime) }},
+        achievements {{ "%.1f"|format(breakdown.achievements) }},
+        rare {{ "%.1f"|format(breakdown.rare) }},
+        still playing {{ "%.1f"|format(breakdown.still_playing) }},
+        recency {{ "%+.1f"|format(breakdown.recency) }}</p>
+      {% endif %}
+      {% if recency %}
+      <p class="meta">
+        When you played: {{ recency.detail }}.
+        {% if diary and diary.rating is not none %}
+          Your rating decides how much this game shapes your taste; the engagement score is not used.
+        {% elif recency.points < -0.3 %}
+          Rate it to override the score.
+        {% endif %}
+      </p>
+      {% endif %}
+    {% endif %}
+  </section>
+</div>
+
+{% if tags %}
+<section>
+  <h3>Community tags</h3>
+  <ul class="bars">
+    {% for name, share in tags %}
+      <li><span>{{ name }}</span><i style="width: {{ (share * 100)|round|int }}%"></i></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Library · ShelfLife{% endblock %}
+{% block content %}
+<h2>Library <small>{{ total }} games you own or can play through your family</small></h2>
+<p class="lede">
+  Rate games and enter family-game hours right here. Games you don't own are on
+  <a href="/explore">Explore</a>.
+</p>
+
+<form class="filters" method="get" action="/library">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
+  <select name="source" aria-label="Source">
+    {% for value, label in [("all", "Owned and family"), ("owned", "Owned"), ("family", "Family")] %}
+      <option value="{{ value }}" {{ "selected" if source == value }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select name="rec" aria-label="Recommended">
+    {% for value, label in [("all", "All games"), ("50", "Recommended: top 50%"), ("25", "Recommended: top 25%"), ("10", "Recommended: top 10%")] %}
+      <option value="{{ value }}" {{ "selected" if rec == value }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select name="sort" aria-label="Sort by">
+    {% for value, label in [("hours", "Most played"), ("fit", "Best recommendation"), ("score", "Engagement score"), ("rating", "Your rating"), ("name", "Name")] %}
+      <option value="{{ value }}" {{ "selected" if sort == value }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Apply</button>
+</form>
+<p class="meta">"Recommended" keeps the games you haven't played yet that fit your taste best, ranked together by fit.</p>
+
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr>
+      <th>Game</th><th>Source</th><th class="num">Hours</th><th class="num">Engagement</th>
+      <th class="num" title="Taste match × review quality, for games you haven't played yet">Fit</th>
+      <th class="num">Your rating</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    {% set g = r.game %}
+    <tr id="g{{ g.steam_app_id }}">
+      <td>
+        <div class="gamecell">
+          <a class="mini" href="/game/{{ g.steam_app_id }}" tabindex="-1" aria-hidden="true">
+            {% if g.cover_url %}<img src="{{ g.cover_url }}" loading="lazy" alt="">{% endif %}
+          </a>
+          <a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a>
+        </div>
+      </td>
+      <td>{{ source_label(g) }}</td>
+      <td class="num">
+        {% if g.family_shared %}
+          <form method="post" action="/game/{{ g.steam_app_id }}/hours" class="cell">
+            <input type="hidden" name="next" value="{{ here }}#g{{ g.steam_app_id }}">
+            <input type="number" name="hours" min="0" max="100000" step="0.1" placeholder="hours"
+                   value="{{ '%g'|format(r.hours) if r.hours else '' }}"
+                   onchange="this.form.submit()" aria-label="Hours played in {{ g.name }}">
+          </form>
+        {% else %}
+          {{ "%.1f"|format(r.hours) if r.hours else "—" }}
+        {% endif %}
+      </td>
+      <td class="num">{{ "%.1f"|format(r.score) }}</td>
+      <td class="num">{{ "%.0f"|format(r.fit) if r.fit is not none else "—" }}</td>
+      <td class="num">
+        <form method="post" action="/game/{{ g.steam_app_id }}/rate" class="cell">
+          <input type="hidden" name="next" value="{{ here }}#g{{ g.steam_app_id }}">
+          <select name="rating" onchange="this.form.submit()" aria-label="Your rating of {{ g.name }}">
+            <option value="">—</option>
+            {% for o in RATING_OPTIONS %}<option value="{{ o }}" {{ "selected" if r.rating == o }}>{{ o }}</option>{% endfor %}
+          </select>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="empty">No games match.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if pages > 1 %}
+{% set base = "/library?q=" ~ (q|urlencode) ~ "&source=" ~ source ~ "&rec=" ~ rec ~ "&sort=" ~ sort %}
+<p class="pager">
+  {% if page > 1 %}<a href="{{ base }}&page={{ page - 1 }}">← Previous</a>{% endif %}
+  Page {{ page }} of {{ pages }}
+  {% if page < pages %}<a href="{{ base }}&page={{ page + 1 }}">Next →</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

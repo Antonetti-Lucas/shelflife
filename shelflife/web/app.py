@@ -1,0 +1,416 @@
+"""Local web app: recommendations, your library, exploring Steam, game pages and your diary.
+
+Runs on your own machine only (see scripts/web.py). There is no login: anyone who
+can reach the port can change your diary, so it binds to 127.0.0.1.
+"""
+
+from contextlib import asynccontextmanager
+from pathlib import Path
+from urllib.parse import urlencode, urlparse
+
+from fastapi import Depends, FastAPI, Form, HTTPException, Request
+from fastapi.responses import PlainTextResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from sqlalchemy import or_, select
+from sqlalchemy.orm import Session
+
+from shelflife import diary
+from shelflife.db import SessionLocal, init_db
+from shelflife.hours import set_hours
+from shelflife.models import Game, LibraryEntry
+from shelflife.quality import quality_factor
+from shelflife.recency import recency
+from shelflife.recommend import explain, recommend, score_all, taste_profile
+from shelflife.score import engagement_score
+
+BASE = Path(__file__).parent
+PAGE_SIZE = 40
+RATING_OPTIONS = [r / 2 for r in range(1, 11)]  # 0.5 ... 5.0
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="ShelfLife", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
+templates = Jinja2Templates(directory=BASE / "templates")
+
+
+def get_session():
+    with SessionLocal() as session:
+        yield session
+
+
+@app.middleware("http")
+async def block_cross_site_posts(request: Request, call_next):
+    """Stop other websites from submitting forms to this local app."""
+    if request.method == "POST":
+        origin = request.headers.get("origin")
+        if origin and urlparse(origin).netloc != request.headers.get("host"):
+            return PlainTextResponse("Cross-site request blocked.", status_code=403)
+    return await call_next(request)
+
+
+# ---- helpers used by the templates ----------------------------------------
+
+
+def reviews_text(game: Game) -> str:
+    pos, neg = game.reviews_positive, game.reviews_negative
+    if pos is None or neg is None or pos + neg == 0:
+        return "no review data"
+    return f"{pos / (pos + neg):.0%} positive · {pos + neg:,} reviews"
+
+
+def rating_text(rating: float | None) -> str:
+    return "—" if rating is None else f"{rating:g}"
+
+
+def source_label(game: Game) -> str:
+    if game.library_entry is None:
+        return "Not owned"
+    return "Family" if game.family_shared else "Owned"
+
+
+templates.env.globals.update(
+    RATING_OPTIONS=RATING_OPTIONS,
+    reviews_text=reviews_text,
+    rating_text=rating_text,
+    source_label=source_label,
+)
+
+
+def safe_next(url: str | None, default: str) -> str:
+    """Only redirect to paths on this site."""
+    if url and url.startswith("/") and not url.startswith("//"):
+        return url
+    return default
+
+
+# ---- pages ------------------------------------------------------------------
+
+
+REC_PAGE_SIZES = (6, 12, 24, 48)
+REC_PAGE_PARAMS = {"backlog": "bp", "family": "fp", "discover": "dp"}
+
+
+@app.get("/")
+def home(
+    request: Request,
+    size: int = 12,
+    bp: int = 1,
+    fp: int = 1,
+    dp: int = 1,
+    session: Session = Depends(get_session),
+):
+    size = size if size in REC_PAGE_SIZES else 12
+    ratings = diary.load_ratings(session)
+    result = recommend(
+        session,
+        ratings,
+        diary.load_not_interested(session),
+        limit=100_000,  # everything; the page shows `size` at a time
+    )
+
+    wanted = {"backlog": bp, "family": fp, "discover": dp}
+    sections = {}
+    for key, recs in (
+        ("backlog", result.backlog),
+        ("family", result.family),
+        ("discover", result.discover),
+    ):
+        pages = max(1, -(-len(recs) // size))
+        page = max(1, min(wanted[key], pages))
+        sections[key] = {
+            "recs": recs[(page - 1) * size : page * size],  # not "items": clashes with dict.items in Jinja
+            "total": len(recs),
+            "page": page,
+            "pages": pages,
+        }
+
+    def page_url(key: str, page: int | None = None) -> str:
+        """Link to this page with one list moved to `page`, keeping the others."""
+        params = {"size": size}
+        for k, param in REC_PAGE_PARAMS.items():
+            params[param] = sections[k]["page"]
+        if page is not None:
+            params[REC_PAGE_PARAMS[key]] = page
+        return f"/?{urlencode(params)}#{key}"
+
+    return templates.TemplateResponse(
+        request,
+        "recommendations.html",
+        {
+            "taste": result.taste,
+            "sections": sections,
+            "page_url": page_url,
+            "size": size,
+            "sizes": REC_PAGE_SIZES,
+            "ratings": ratings,
+        },
+    )
+
+
+REC_FILTERS = {"all": None, "50": 50, "25": 25, "10": 10}  # "recommended": top N% by fit
+EXPLORE_PAGE_SIZE = 24
+
+
+def top_share(scores: dict[int, float], percent: int | None) -> set[int] | None:
+    """Ids in the top `percent`% by score; None means no filter."""
+    if percent is None:
+        return None
+    ranked = sorted(scores, key=scores.get, reverse=True)
+    keep = max(1, -(-len(ranked) * percent // 100)) if ranked else 0
+    return set(ranked[:keep])
+
+
+def current_url(request: Request) -> str:
+    """This page's path and query, to come back to after an action."""
+    query = request.url.query
+    return request.url.path + (f"?{query}" if query else "")
+
+
+@app.get("/library")
+def library(
+    request: Request,
+    q: str = "",
+    source: str = "all",
+    sort: str = "",
+    rec: str = "all",
+    page: int = 1,
+    session: Session = Depends(get_session),
+):
+    ratings = diary.load_ratings(session)
+    scores = score_all(session, ratings, diary.load_not_interested(session))
+    scope = scores.backlog | scores.family  # what "recommended" means in the library
+    keep = top_share({i: scores.by_id[i].score for i in scope}, REC_FILTERS.get(rec))
+    sort = sort or ("fit" if keep is not None else "hours")
+
+    query = (
+        select(Game)
+        .join(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
+        .where(or_(Game.type == "game", Game.type.is_(None)))
+    )
+    if source == "owned":
+        query = query.where(Game.family_shared.is_not(True))
+    elif source == "family":
+        query = query.where(Game.family_shared.is_(True))
+    if q.strip():
+        query = query.where(Game.name.ilike(f"%{q.strip()}%"))
+
+    rows = []
+    for game in session.scalars(query):
+        if keep is not None and game.steam_app_id not in keep:
+            continue
+        entry = game.library_entry
+        fit = scores.by_id[game.steam_app_id].score if game.steam_app_id in scope else None
+        rows.append(
+            {
+                "game": game,
+                "hours": entry.playtime_total_hours,
+                "score": engagement_score(entry).total,
+                "fit": None if fit is None else fit * 100,
+                "rating": ratings.get(game.steam_app_id),
+            }
+        )
+
+    keys = {
+        "name": lambda r: r["game"].name.lower(),
+        "hours": lambda r: -(r["hours"] or 0),
+        "score": lambda r: -(r["score"] or 0),
+        "fit": lambda r: -(r["fit"] if r["fit"] is not None else -1e9),
+        "rating": lambda r: -(r["rating"] or 0),
+    }
+    rows.sort(key=keys.get(sort, keys["hours"]))
+
+    pages = max(1, -(-len(rows) // PAGE_SIZE))
+    page = max(1, min(page, pages))
+    return templates.TemplateResponse(
+        request,
+        "library.html",
+        {
+            "rows": rows[(page - 1) * PAGE_SIZE : page * PAGE_SIZE],
+            "total": len(rows),
+            "q": q,
+            "source": source,
+            "sort": sort,
+            "rec": rec if rec in REC_FILTERS else "all",
+            "page": page,
+            "pages": pages,
+            "here": current_url(request),
+        },
+    )
+
+
+@app.get("/explore")
+def explore(
+    request: Request,
+    q: str = "",
+    sort: str = "fit",
+    rec: str = "all",
+    page: int = 1,
+    session: Session = Depends(get_session),
+):
+    """Games you don't own: the discovery pool, ranked by how well they fit you."""
+    ratings = diary.load_ratings(session)
+    not_interested = diary.load_not_interested(session)
+    scores = score_all(session, ratings, not_interested)
+    keep = top_share({i: scores.by_id[i].score for i in scores.discover}, REC_FILTERS.get(rec))
+
+    query = (
+        select(Game)
+        .outerjoin(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
+        .where(LibraryEntry.steam_app_id.is_(None), Game.type == "game")
+    )
+    needle = q.strip().lower()
+    recs = []
+    for game in session.scalars(query):
+        rec_item = scores.by_id.get(game.steam_app_id)  # None: no tags yet
+        if (
+            rec_item is None
+            or game.steam_app_id in not_interested
+            or (needle and needle not in game.name.lower())
+            or (keep is not None and game.steam_app_id not in keep)
+        ):
+            continue
+        recs.append(rec_item)
+
+    keys = {
+        "fit": lambda r: -r.score,
+        "reviews": lambda r: -((r.game.reviews_positive or 0) + (r.game.reviews_negative or 0)),
+        "name": lambda r: r.game.name.lower(),
+    }
+    recs.sort(key=keys.get(sort, keys["fit"]))
+
+    pages = max(1, -(-len(recs) // EXPLORE_PAGE_SIZE))
+    page = max(1, min(page, pages))
+    return templates.TemplateResponse(
+        request,
+        "explore.html",
+        {
+            "recs": recs[(page - 1) * EXPLORE_PAGE_SIZE : page * EXPLORE_PAGE_SIZE],
+            "total": len(recs),
+            "q": q,
+            "sort": sort if sort in keys else "fit",
+            "rec": rec if rec in REC_FILTERS else "all",
+            "page": page,
+            "pages": pages,
+            "here": current_url(request),
+            "ratings": ratings,
+        },
+    )
+
+
+@app.get("/game/{app_id}")
+def game_page(request: Request, app_id: int, session: Session = Depends(get_session)):
+    game = session.get(Game, app_id)
+    if game is None:
+        raise HTTPException(404, "Game not found")
+    entry = game.library_entry
+    tags = sorted(game.tags.items(), key=lambda kv: kv[1], reverse=True)[:15] if game.tags else []
+    top_votes = tags[0][1] if tags else 1
+    ratings = diary.load_ratings(session)
+    not_interested = diary.load_not_interested(session)
+    return templates.TemplateResponse(
+        request,
+        "game.html",
+        {
+            "game": game,
+            "entry": entry,
+            "tags": [(name, votes / top_votes) for name, votes in tags],
+            "breakdown": engagement_score(entry) if entry else None,
+            "recency": recency(entry) if entry else None,
+            "quality": quality_factor(game.reviews_positive, game.reviews_negative),
+            "diary": diary.get_entry(session, app_id),
+            "match": explain(session, ratings, not_interested, app_id),
+        },
+    )
+
+
+@app.get("/ratings")
+def ratings_page(request: Request, session: Session = Depends(get_session)):
+    from shelflife.models import DiaryEntry
+
+    entries = session.execute(
+        select(DiaryEntry, Game)
+        .join(Game, Game.steam_app_id == DiaryEntry.steam_app_id)
+        .order_by(DiaryEntry.rating.desc().nulls_last(), Game.name)
+    ).all()
+    return templates.TemplateResponse(
+        request,
+        "ratings.html",
+        {
+            # A game can have just a review and no rating, so list those too.
+            "rated": [(e, g) for e, g in entries if e.rating is not None or e.review],
+            "marked": [(e, g) for e, g in entries if e.not_interested],
+        },
+    )
+
+
+@app.get("/taste")
+def taste_page(request: Request, session: Session = Depends(get_session)):
+    taste = taste_profile(session, diary.load_ratings(session), diary.load_not_interested(session))
+    ranked = sorted(taste.profile.items(), key=lambda kv: kv[1], reverse=True)
+    toward = [(t, v) for t, v in ranked[:20] if v > 0]
+    away = [(t, v) for t, v in ranked[::-1][:12] if v < 0]
+    biggest = max([v for _, v in toward] + [-v for _, v in away] + [1e-9])
+    return templates.TemplateResponse(
+        request,
+        "taste.html",
+        {"taste": taste, "toward": toward, "away": away, "biggest": biggest},
+    )
+
+
+# ---- actions ----------------------------------------------------------------
+
+
+@app.post("/game/{app_id}/rate")
+async def rate(
+    request: Request,
+    app_id: int,
+    session: Session = Depends(get_session),
+):
+    # Read the raw form: FastAPI turns an empty field into "missing", but here
+    # "" means "clear the review" and a missing field means "leave it alone".
+    form = await request.form()
+    rating = str(form.get("rating") or "").strip()
+    review = str(form["review"]) if "review" in form else None
+    try:
+        diary.save_rating(session, app_id, float(rating) if rating else None, review)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return RedirectResponse(
+        safe_next(str(form.get("next") or ""), f"/game/{app_id}"), status_code=303
+    )
+
+
+@app.post("/game/{app_id}/hours")
+def save_hours(
+    app_id: int,
+    hours: str = Form(""),
+    next: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    try:
+        raw = hours.strip().replace(",", ".")
+        set_hours(session, app_id, float(raw) if raw else None)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return RedirectResponse(safe_next(next, f"/game/{app_id}"), status_code=303)
+
+
+@app.post("/game/{app_id}/not-interested")
+def not_interested(
+    app_id: int,
+    value: str = Form("1"),
+    next: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    try:
+        diary.set_not_interested(session, app_id, value == "1")
+    except ValueError as exc:
+        raise HTTPException(404, str(exc))
+    return RedirectResponse(safe_next(next, f"/game/{app_id}"), status_code=303)

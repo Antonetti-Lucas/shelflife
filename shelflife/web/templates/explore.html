@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "_card.html" import card %}
+{% block title %}Explore · ShelfLife{% endblock %}
+{% block content %}
+<h2>Explore Steam <small>{{ total }} games you don't own</small></h2>
+<p class="lede">
+  Well-reviewed games from the tags you like, ranked by how well they fit your taste.
+  Rate a game you've played elsewhere, or dismiss what doesn't interest you. To grow this
+  list, run <code>python -m scripts.discover</code>.
+</p>
+
+<form class="filters" method="get" action="/explore">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
+  <select name="rec" aria-label="Recommended">
+    {% for value, label in [("all", "All games"), ("50", "Recommended: top 50%"), ("25", "Recommended: top 25%"), ("10", "Recommended: top 10%")] %}
+      <option value="{{ value }}" {{ "selected" if rec == value }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select name="sort" aria-label="Sort by">
+    {% for value, label in [("fit", "Best fit"), ("reviews", "Most reviews"), ("name", "Name")] %}
+      <option value="{{ value }}" {{ "selected" if sort == value }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Apply</button>
+</form>
+
+{% if recs %}
+  <div class="grid">
+    {% for r in recs %}{{ card(r, here, ratings.get(r.game.steam_app_id)) }}{% endfor %}
+  </div>
+{% else %}
+  <p class="empty">No games match. Try a different search or filter.</p>
+{% endif %}
+
+{% if pages > 1 %}
+{% set base = "/explore?q=" ~ (q|urlencode) ~ "&rec=" ~ rec ~ "&sort=" ~ sort %}
+<p class="pager">
+  {% if page > 1 %}<a href="{{ base }}&page={{ page - 1 }}">← Previous</a>{% endif %}
+  Page {{ page }} of {{ pages }}
+  {% if page < pages %}<a href="{{ base }}&page={{ page + 1 }}">Next →</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

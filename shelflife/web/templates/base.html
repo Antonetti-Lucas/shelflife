@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}ShelfLife{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">ShelfLife</a>
+    <nav>
+      {% set path = request.url.path %}
+      <a href="/" class="{{ 'on' if path == '/' }}">Recommendations</a>
+      <a href="/library" class="{{ 'on' if path == '/library' }}">Library</a>
+      <a href="/explore" class="{{ 'on' if path == '/explore' }}">Explore</a>
+      <a href="/ratings" class="{{ 'on' if path == '/ratings' }}">My ratings</a>
+      <a href="/taste" class="{{ 'on' if path == '/taste' }}">My taste</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
