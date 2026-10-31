@@ -61,7 +61,7 @@
         <label>Started
           <input type="date" name="started_on" value="{{ diary.started_on.isoformat() if diary and diary.started_on else '' }}">
         </label>
-        <label>Finished or dropped
+        <label>Finished or stopped
           <input type="date" name="finished_on" value="{{ diary.finished_on.isoformat() if diary and diary.finished_on else '' }}">
         </label>
       </div>
@@ -77,7 +77,7 @@
         if (field && !field.value) field.value = today;
       }
     </script>
-    <p class="meta">Picking a status fills in today's date; clear it if you don't know the date. Dropped counts against this game's tags, like a 2-star rating, until you rate it.</p>
+    <p class="meta">Picking a status fills in today's date; clear it if you don't know the date. <strong>Played</strong> is for a game you finished or played as much as you wanted (an endless multiplayer game fits here); <strong>Dropped</strong> is a game you stopped before the end. A status is a record only and does not change your recommendations: rate the game, make it a favorite or mark it not interested to teach them.</p>
 
     <form method="post" action="/game/{{ game.steam_app_id }}/favorite" class="inline">
       {% if diary and diary.favorite %}

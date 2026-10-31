@@ -15,10 +15,10 @@ from shelflife.models import DiaryEntry, Game
 STATUSES = ("playing", "played", "dropped")
 STATUS_LABELS = {"playing": "Playing", "played": "Played", "dropped": "Dropped"}
 
-# What a status says about taste, as the star rating it counts as when the game has
-# no rating of its own (a rating always wins). Dropping a game is a no, like "not
-# interested"; a favorite is a yes. "Playing" and "played" say nothing by themselves.
-DROPPED_RATING = 2.0
+# A favorite counts as this star rating when the game has no rating of its own (a
+# rating always wins). A status says nothing about taste: "dropped" would mean a
+# story game quit halfway as much as an endless multiplayer game you left after 600
+# hours, so only what you say outright (rating, favorite, not interested) counts.
 FAVORITE_RATING = 5.0
 
 KEEP = object()  # "leave this field as it is" for set_status
@@ -50,19 +50,21 @@ def load_not_interested(session: Session) -> dict[int, str]:
     return {app_id: name for app_id, name in rows}
 
 
-def implicit_ratings(session: Session) -> dict[int, float]:
-    """steam_app_id -> the rating a game's status stands in for (dropped, favorite).
+def favorite_ratings(session: Session) -> dict[int, float]:
+    """steam_app_id -> the rating a favorite stands in for, for favorites without a
+    rating of their own."""
+    return {
+        e.steam_app_id: FAVORITE_RATING
+        for e in session.scalars(
+            select(DiaryEntry).where(DiaryEntry.rating.is_(None), DiaryEntry.favorite.is_(True))
+        )
+    }
 
-    Only games without a rating of their own; a favorite that was also dropped
-    counts as a favorite.
-    """
-    out: dict[int, float] = {}
-    for e in session.scalars(select(DiaryEntry).where(DiaryEntry.rating.is_(None))):
-        if e.favorite:
-            out[e.steam_app_id] = FAVORITE_RATING
-        elif e.status == "dropped":
-            out[e.steam_app_id] = DROPPED_RATING
-    return out
+
+def tracked_ids(session: Session) -> set[int]:
+    """Games you gave a status (playing, played or dropped): you have engaged with
+    them, so they are not backlog or discovery candidates."""
+    return set(session.scalars(select(DiaryEntry.steam_app_id).where(DiaryEntry.status.is_not(None))))
 
 
 def load_entries(session: Session) -> dict[int, DiaryEntry]:

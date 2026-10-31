@@ -106,7 +106,7 @@ The fetching scripts are deliberately slow to respect the services' limits (abou
 - **Recommendations:** your backlog, family and discovery lists, paged, each pick with the games and tags behind it. Rate or dismiss from the card.
 - **Library:** your owned and family games with covers. Set a rating or a status, or type hours for family games, right in the row. Filter by status, or use the **Recommended** filter to keep the unplayed games that fit you best (top 50%, 25% or 10%).
 - **Explore:** games you don't own, ranked by fit, with the same filter, search and sorting.
-- **Diary:** your games by status (playing, played, dropped), newest first, with your favorites on top. Set a status, its dates and a favorite on a game's page; picking a status fills in today's date, and you can clear it for a game you can't date.
+- **Diary:** your games by status (playing, played, dropped), newest first, with your favorites on top. Set a status, its dates and a favorite on a game's page; picking a status fills in today's date, and you can clear it for a game you can't date. "Played" means finished or played as much as you wanted, so it fits endless multiplayer games too.
 - **Stats:** games and hours in your library, your diary by status, games finished per year, how you rate, and your most played games.
 - **Game page, My ratings, My taste:** why a game fits you and how you played it; your ratings and reviews (edit or delete in place); and the tag profile behind it all.
 
@@ -142,7 +142,7 @@ Personal data lives in `shelflife.db`, `.env` and the `data/` folder, all git-ig
 
 *Recency:* Steam gives only lifetime hours and a last-played date, and one minute today resets that date. So the unlock dates of your achievements show *when* you really played: each unlock counts less the older it is (halving every 3 years). A game you play right now counts as fully current.
 
-**2. Taste profile.** Each played game gets a weight from −1 to +1: a rating gives `(rating − 3) / 2` (and is never faded), and "not interested" counts as 2 stars. So does "dropped", and a favorite counts as 5 stars, both only until you rate the game ("playing" and "played" change nothing). An unrated game gets up to +0.5 from its engagement score. The profile sums each game's tags (vote share of the top 15 tags, scaled down for tags common in your library) times its weight.
+**2. Taste profile.** Each played game gets a weight from −1 to +1: a rating gives `(rating − 3) / 2` (and is never faded), and "not interested" counts as 2 stars. A favorite counts as 5 stars until you rate the game. A status (playing, played, dropped) is a record only: it takes the game out of the recommendations but does not change your taste, because "dropped" can mean a story game quit halfway or an endless multiplayer game you left after hundreds of hours. An unrated game gets up to +0.5 from its engagement score. The profile sums each game's tags (vote share of the top 15 tags, scaled down for tags common in your library) times its weight.
 
 **3. Scoring.**
 

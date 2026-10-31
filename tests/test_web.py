@@ -340,7 +340,7 @@ def test_the_game_page_shows_the_status_dates_and_favorite(client, scenario):
     html = client.get("/game/20").text
     assert re.search(r'<option value="dropped" selected', html)
     assert 'value="2025-01-02"' in html and 'value="2025-02-03"' in html
-    assert "favorites" in html and "Dropped counts against" in html
+    assert "favorites" in html and "does not change your recommendations" in html
 
 
 def test_the_library_row_has_a_status_picker_with_the_current_status(client, scenario):

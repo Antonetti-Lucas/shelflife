@@ -174,49 +174,53 @@ def test_score_all_agrees_with_recommend(session):
 # ---- what the diary status says about taste ----
 
 
-def test_a_dropped_game_pushes_its_tags_away(session):
-    build_scenario(session)
-    ratings = {2: 1.0}  # game 1 (stealth) is unrated
-    before = taste_profile(session, ratings, {}).profile.get("Stealth", 0.0)
-    diary.set_status(session, 1, "dropped")
-    after = taste_profile(session, ratings, {}).profile["Stealth"]
-    assert after < before and after < 0
-
-
 def test_a_favorite_pulls_its_tags_in(session):
     build_scenario(session)
-    ratings = {2: 1.0}
+    ratings = {2: 1.0}  # game 1 (stealth) is unrated
     before = taste_profile(session, ratings, {}).profile.get("Stealth", 0.0)
     diary.set_favorite(session, 1, True)
     after = taste_profile(session, ratings, {}).profile["Stealth"]
     assert after > before and after > 0
 
 
-def test_a_rating_beats_the_dropped_status(session):
+def test_a_rating_beats_a_favorite(session):
     build_scenario(session)
-    diary.save_rating(session, 1, 5.0)
+    diary.save_rating(session, 1, 2.0)
+    diary.set_favorite(session, 1, True)
     ratings = diary.load_ratings(session)
-    before = taste_profile(session, ratings, {}).profile["Stealth"]
-    diary.set_status(session, 1, "dropped")
-    assert taste_profile(session, ratings, {}).profile["Stealth"] == pytest.approx(before)
+    assert taste_profile(session, ratings, {}).profile["Stealth"] < 0  # still the 2 stars
 
 
-def test_playing_and_played_do_not_change_the_taste(session):
+@pytest.mark.parametrize("status", ["playing", "played", "dropped"])
+def test_a_status_alone_does_not_change_the_taste(session, status):
+    # "Dropped" means too many things (a story game quit halfway, an endless
+    # multiplayer game left after 600 hours) to say what you like.
     build_scenario(session)
     ratings = {1: 5.0, 2: 1.0}
+    unrated = {2: 1.0}
     before = taste_profile(session, ratings, {}).profile
-    diary.set_status(session, 1, "playing")
-    diary.set_status(session, 2, "played")
+    before_unrated = taste_profile(session, unrated, {}).profile
+    diary.set_status(session, 1, status)
     assert taste_profile(session, ratings, {}).profile == before
+    assert taste_profile(session, unrated, {}).profile == before_unrated
 
 
-def test_a_game_you_dropped_without_playing_is_no_longer_backlog(session):
+@pytest.mark.parametrize("status", ["playing", "played", "dropped"])
+def test_a_game_with_a_status_is_no_longer_a_candidate(session, status):
     build_scenario(session)
     add_game(session, 60, "Quit Quickly", tags={"Stealth": 100})  # owned, never played: backlog
     ratings = {1: 5.0, 2: 1.0}
     assert 60 in score_all(session, ratings).backlog
-    diary.set_status(session, 60, "dropped")
+    diary.set_status(session, 60, status)
     assert 60 not in score_all(session, ratings).backlog
+
+
+def test_a_game_you_do_not_own_with_a_status_is_not_recommended_to_discover(session):
+    build_scenario(session)
+    ratings = {1: 5.0, 2: 1.0}
+    assert 40 in score_all(session, ratings).discover
+    diary.set_status(session, 40, "played")  # played it elsewhere
+    assert 40 not in score_all(session, ratings).discover
 
 
 def test_a_favorite_is_not_described_as_rated_five(session):

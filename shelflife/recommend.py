@@ -2,8 +2,9 @@
 
 Taste profile = tag vectors of your played games, each weighted by how much
 you liked it. An explicit rating always wins; for unrated games the engagement
-score stands in at reduced strength; a "not interested" or a "dropped" counts as
-a low rating and a favorite as a top one.
+score stands in at reduced strength; a "not interested" counts as a low rating and
+a favorite as a top one. A status (playing, played, dropped) is a record only: it
+takes a game out of the candidates but does not change what you like.
 
 Candidates come in three lists: games you own but have barely played (backlog),
 games you can play through Steam Family Sharing (family), and well-reviewed
@@ -17,7 +18,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from shelflife.diary import implicit_ratings
+from shelflife.diary import favorite_ratings, tracked_ids
 from shelflife.feedback import NOT_INTERESTED_RATING
 from shelflife.models import Game, LibraryEntry
 from shelflife.quality import quality_factor
@@ -140,8 +141,9 @@ def _build_model(
     session: Session, ratings: dict[int, float], not_interested: dict[int, str]
 ) -> _Model:
     effective = dict(ratings)
-    for app_id, stand_in in implicit_ratings(session).items():
+    for app_id, stand_in in favorite_ratings(session).items():
         effective.setdefault(app_id, stand_in)
+    tracked = tracked_ids(session)
     for app_id in not_interested:
         effective.setdefault(app_id, NOT_INTERESTED_RATING)
 
@@ -158,7 +160,7 @@ def _build_model(
         if entry is not None:
             (model.family_titles if family else model.owned_titles).add(_base_name(g.name))
 
-        if rating is None and not is_played(entry, family):
+        if rating is None and not is_played(entry, family) and g.steam_app_id not in tracked:
             if vectors[g.steam_app_id]:
                 model.candidates.append(g)
             continue

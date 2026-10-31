@@ -55,8 +55,8 @@
 {% else %}
   <p class="empty">
     {% if status == "playing" %}Nothing yet. Pick "Playing" on a game's page when you start one.
-    {% elif status == "played" %}Nothing yet. Pick "Played" when you finish a game, or on old ones to log them.
-    {% else %}Nothing dropped. A dropped game counts against its tags in your taste profile.{% endif %}
+    {% elif status == "played" %}Nothing yet. Pick "Played" when you finish a game or are done with an endless one, or on old games to log them.
+    {% else %}Nothing dropped. Use it for games you stopped before the end.{% endif %}
   </p>
 {% endif %}
 {% endfor %}
