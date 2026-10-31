@@ -9,7 +9,7 @@ from shelflife import learned, store, sync
 from shelflife.diary import save_rating
 from shelflife.learned import fit, likeness, text_index, text_vectors, unit
 from shelflife.models import Game, LibraryEntry
-from shelflife.recommend import _because, _build_model, engagement_fraction, explain, recommend, score_all
+from shelflife.recommend import _because, _build_model, engagement_fraction, explain, learn_play_value, recommend, score_all
 from shelflife.settings import set_taste_mode
 from shelflife.sync import about_due, enrich_one, sync_about
 from shelflife.throttle import RateLimited
@@ -264,11 +264,15 @@ def test_in_ratings_only_mode_games_you_played_but_never_rated_are_not_learned_f
     assert {i for i, _ in _build_model(session, {1: 5.0}, {}).training} == {1, 2}
 
 
-def test_the_mix_learns_from_seventy_percent_rating_and_thirty_percent_play(session):
+def test_the_mix_learns_a_rated_game_from_its_rating_and_an_unrated_one_from_play_as_your_games_show_it_means(session):
     add_game(session, 1, "Rated and played", tags={"Zeta": 100}, minutes=60000)
+    add_game(session, 2, "Played, not rated", tags={"Eta": 100}, minutes=60000)
     set_taste_mode(session, "mix")
-    (_, weight), = _build_model(session, {1: 4.0}, {}).training
-    assert weight == pytest.approx(0.7 * 0.5 + 0.3 * engagement_fraction(session.get(LibraryEntry, 1)))
+    model = _build_model(session, {1: 4.0}, {})
+    fraction = {i: engagement_fraction(session.get(LibraryEntry, i)) for i in (1, 2)}
+    value = learn_play_value([(fraction[1], 0.5)])
+    assert model.play_value == pytest.approx(value) and value > 0.5  # a game you played a lot and liked
+    assert dict(model.training) == {1: pytest.approx(0.5), 2: pytest.approx(value * fraction[2])}
 
 
 def test_the_reasons_are_worked_out_only_when_read(session, liked_and_candidates, monkeypatch):

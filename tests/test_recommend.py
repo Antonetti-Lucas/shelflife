@@ -3,7 +3,7 @@
 import pytest
 
 from shelflife import diary
-from shelflife.recommend import _base_name, explain, recommend, score_all, taste_profile, taste_weight
+from shelflife.recommend import _base_name, explain, learn_play_value, recommend, score_all, taste_profile, taste_weight
 from tests.factories import add_game, build_scenario
 
 # ---- taste weights ----
@@ -27,18 +27,35 @@ def test_a_barely_engaging_unrated_game_has_no_weight(session):
     assert taste_weight(add_game(session, 1, minutes=600).library_entry, None) == 0
 
 
-def test_in_the_mix_play_lifts_a_rating_but_the_rating_leads(session):
+def test_in_the_mix_a_rated_game_counts_by_its_rating_however_much_you_played_it(session):
+    played_a_lot = add_game(session, 1, minutes=1000 * 60, achievements=(10, 10), rarest=2.0).library_entry
+    barely_played = add_game(session, 2, minutes=600).library_entry
+    for entry in (played_a_lot, barely_played):
+        assert taste_weight(entry, 2.0) == pytest.approx(-0.5)
+        assert taste_weight(entry, 2.0, "mix") == pytest.approx(-0.5)
+        assert taste_weight(entry, 5.0) == pytest.approx(1.0)
+
+
+def test_in_the_mix_an_unrated_game_counts_as_the_rating_its_play_suggests(session):
     entry = add_game(session, 1, minutes=1000 * 60, achievements=(10, 10), rarest=2.0).library_entry
-    # a 2-star game (-0.5) played a lot (engagement fraction 1): 0.7 * -0.5 + 0.3 * 1
-    assert taste_weight(entry, 2.0) == pytest.approx(-0.05)
-    assert taste_weight(entry, 2.0, "mix") == pytest.approx(-0.05)
-    assert taste_weight(entry, 2.0) < 0  # a low rating still pulls tags away
+    assert taste_weight(entry, None, "mix", play_value=0.9) == pytest.approx(0.9)
+    assert taste_weight(entry, None, "mix", play_value=0.0) == 0
+    assert taste_weight(add_game(session, 2, minutes=600).library_entry, None, "mix", play_value=0.9) == 0
 
 
-def test_in_the_mix_a_barely_played_game_counts_by_its_rating_alone(session):
-    entry = add_game(session, 1, minutes=600).library_entry
-    assert taste_weight(entry, 5.0) == pytest.approx(0.7)  # 70% of a 5-star game
-    assert taste_weight(entry, 1.0) == pytest.approx(-0.7)
+def test_play_is_worth_the_starting_guess_until_you_have_rated_games_you_played():
+    assert learn_play_value([]) == pytest.approx(0.5)
+    assert learn_play_value([(0.0, 1.0)] * 20) == pytest.approx(0.5)  # games you barely played say nothing
+
+
+def test_play_is_worth_more_when_you_rate_the_games_you_play_most_high():
+    assert learn_play_value([(1.0, 1.0)] * 10) == pytest.approx(11 / 12)
+    assert learn_play_value([(0.5, 1.0), (1.0, 0.5)] * 5) > 0.5
+
+
+def test_play_is_worth_less_when_you_play_games_you_rate_low():
+    assert learn_play_value([(1.0, -1.0)] * 10) == 0.0
+    assert learn_play_value([(1.0, 0.0)] * 10) < 0.5
 
 
 def test_a_game_played_elsewhere_counts_by_its_rating_alone_in_the_mix():

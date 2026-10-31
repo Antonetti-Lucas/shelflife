@@ -1,9 +1,9 @@
 """Recommendations from how well a game fits what you liked, scaled by review quality.
 
 How much you liked each game you played is one number from -1 to +1 (`taste_weight`): an
-explicit rating always counts; for unrated games the engagement score stands in at reduced
-strength; a "not interested" counts as a low rating and a favorite as a top one; in the
-default mix a rated game is 70% its rating and 30% how you played it. A status (playing,
+explicit rating always counts; for unrated games the engagement score stands in, scaled by
+what play has been worth in your own rated games (`learn_play_value`); a "not interested"
+counts as a low rating and a favorite as a top one. A status (playing,
 played, dropped) is a record only: it takes a game out of the candidates but does not
 change what you like.
 
@@ -49,7 +49,7 @@ NEUTRAL_RATING = 3.0  # a 3-star rating adds nothing; lower ratings push tags aw
 IMPLICIT_MAX = 0.5  # unrated games count at most half as much as a 5-star rating
 IMPLICIT_ZERO_SCORE = 2.0  # engagement score at or below this adds nothing
 IMPLICIT_FULL_SCORE = 5.0  # ...and at or above this reaches IMPLICIT_MAX
-MIX_RATING_SHARE = 0.7  # in the mix, a rated game counts 70% by its rating, 30% by how you played it
+PLAY_PRIOR = 2.0  # the starting guess for what play is worth (IMPLICIT_MAX) counts as this many fully played games
 BACKLOG_MAX_MIN = 60  # owned and played under an hour = backlog
 
 
@@ -124,6 +124,7 @@ class _Model:
     # Every game with a verdict (a rating, or play that counts), as (id, how much you liked it).
     # A 3-star rating is a verdict of zero, so unlike `contributors` it is kept.
     training: list[tuple[int, float]] = field(default_factory=list)
+    play_value: float = IMPLICIT_MAX  # what a fully played, unrated game counts as (learned in the mix)
 
     @cached_property
     def tag_units(self) -> dict[int, Vector]:
@@ -176,8 +177,23 @@ def engagement_fraction(entry: LibraryEntry) -> float:
     return min(max(fraction, 0.0), 1.0)
 
 
+def learn_play_value(pairs: Sequence[tuple[float, float]]) -> float:
+    """What a fully played game is worth as a rating (0 to 1), learned from the games you
+    both rated and played: `pairs` is (how much you played it, 0 to 1; your rating as -1 to 1).
+    A line through zero, so a game you barely played says nothing, started from IMPLICIT_MAX and
+    pulled toward your own games as they come in: if the games you play most are the ones you
+    rate high, play counts for more; if you play games you rate low, it counts for less."""
+    sxx = sum(e * e for e, _ in pairs)
+    sxy = sum(e * r for e, r in pairs)
+    value = (sxy + PLAY_PRIOR * IMPLICIT_MAX) / (sxx + PLAY_PRIOR)
+    return min(max(value, 0.0), 1.0)
+
+
 def taste_weight(
-    entry: LibraryEntry | None, rating: float | None, mode: str = DEFAULT_TASTE_MODE
+    entry: LibraryEntry | None,
+    rating: float | None,
+    mode: str = DEFAULT_TASTE_MODE,
+    play_value: float = IMPLICIT_MAX,
 ) -> float:
     """How strongly a game shapes your taste: -1 (hated) to +1 (loved).
 
@@ -185,21 +201,16 @@ def taste_weight(
     - "ratings": only your own word. A game with no rating counts for nothing.
     - "engagement": only how you played (engagement score, which includes how
       recently). Ratings are ignored; play cannot say "disliked", so this is 0 to 1.
-    - "mix": both. A rated game is MIX_RATING_SHARE its rating and the rest how you
-      played it (so a loved game you barely played counts a little less than its rating, a
-      disliked one you played a lot a little less negative); an unrated game counts by
-      how you played it, at most IMPLICIT_MAX.
+    - "mix": both. A rated game counts by its rating, as it stands; an unrated game you played
+      counts as the rating its play suggests: `play_value` (learned from your rated games by
+      `learn_play_value`) times how much you played it.
     """
     if mode == "engagement":
         return 0.0 if entry is None else engagement_fraction(entry)
     rated = None if rating is None else (rating - NEUTRAL_RATING) / (5.0 - NEUTRAL_RATING)
-    if mode == "ratings":
+    if mode == "ratings" or rated is not None:
         return rated or 0.0
-    if rated is not None:
-        if entry is None:  # played elsewhere: nothing but your rating to go on
-            return rated
-        return MIX_RATING_SHARE * rated + (1 - MIX_RATING_SHARE) * engagement_fraction(entry)
-    return 0.0 if entry is None else IMPLICIT_MAX * engagement_fraction(entry)
+    return 0.0 if entry is None else play_value * engagement_fraction(entry)
 
 
 _EDITION_WORDS = re.compile(
@@ -258,6 +269,16 @@ def _build_model(
     vectors = {g.steam_app_id: tag_vector(g.tags, idf) for g in games}
 
     model = _Model(vectors, {}, [], [], set(), set(), set(), 0, 0, games, session=session)
+    play_value = IMPLICIT_MAX
+    if mode == "mix":
+        play_value = learn_play_value(
+            [
+                (engagement_fraction(g.library_entry), (effective[g.steam_app_id] - NEUTRAL_RATING) / (5.0 - NEUTRAL_RATING))
+                for g in games
+                if g.library_entry is not None and g.steam_app_id in effective
+            ]
+        )
+    model.play_value = play_value
     for g in games:
         entry = g.library_entry
         family = bool(g.family_shared)
@@ -271,7 +292,7 @@ def _build_model(
             continue
 
         model.played_titles.add(_base_name(g.name))
-        weight = taste_weight(entry, rating, mode)
+        weight = taste_weight(entry, rating, mode, play_value)
         if vectors[g.steam_app_id] and (weight != 0 or (rating is not None and mode != "engagement")):
             model.training.append((g.steam_app_id, weight))  # a rating of 3 stars says "neutral", not "unknown"
         if weight == 0:

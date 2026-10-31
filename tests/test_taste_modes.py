@@ -18,13 +18,14 @@ SAME_SITE = {"Origin": "http://testserver"}
 def library(session):
     """Three kinds of played game, each with its own tag, plus fillers so tags have rarity:
     one you rated 5 but barely played, one you played a great deal but did not rate,
-    and one you rated 1 and played a great deal."""
+    one you rated 1 and played a great deal, and one you rated 5 and played a great deal."""
     add_game(session, 1, "Loved, barely played", tags={"Cozy": 100}, minutes=600)
     add_game(session, 2, "Played a great deal", tags={"Grind": 100}, minutes=1000 * 60, achievements=(10, 10), rarest=2.0)
     add_game(session, 3, "Hated, played a great deal", tags={"Gloom": 100}, minutes=1000 * 60, achievements=(10, 10), rarest=2.0)
+    add_game(session, 20, "Loved, played a great deal", tags={"Saga": 100}, minutes=1000 * 60, achievements=(10, 10), rarest=2.0)
     for i, tag in enumerate(["Puzzle", "Racing", "Farming", "Chess", "Platformer", "Horror"], start=10):
         add_game(session, i, f"Filler {tag}", tags={tag: 100}, minutes=600)
-    return {1: 5.0, 3: 1.0}
+    return {1: 5.0, 3: 1.0, 20: 5.0}
 
 
 def profile(session, ratings, mode, not_interested=None):
@@ -70,11 +71,19 @@ def test_a_stored_mode_that_no_longer_exists_falls_back_to_the_default(session):
 
 def test_the_mix_learns_from_both(session, library):
     p = profile(session, library, "mix")
-    assert p["Cozy"] > 0  # rated 5: 70% of a 5-star game, even though barely played
-    assert p["Grind"] > 0  # not rated, played a great deal: counts by play, at half strength
-    assert p["Cozy"] > p["Grind"]  # the rating counts for more than play alone
-    # Hated (-1) but played a great deal (+1): 0.7 * -1 + 0.3 * 1 = -0.4, against Cozy's 0.7.
-    assert p["Gloom"] < 0 and p["Gloom"] / p["Cozy"] == pytest.approx(-0.4 / 0.7)
+    assert p["Cozy"] > 0  # rated 5: counts by the rating, even though barely played
+    assert p["Gloom"] < 0 and p["Gloom"] / p["Cozy"] == pytest.approx(-1.0)  # rated 1: by the rating, however much played
+    # Not rated, played a great deal: counts as the rating play has meant in your own games.
+    # You played two games a great deal and rated one 5 and the other 1, so play is worth
+    # (0 + 2 * 0.5) / (2 + 2) = a quarter of a 5-star rating.
+    assert p["Grind"] > 0 and p["Grind"] / p["Cozy"] == pytest.approx(0.25)
+
+
+def test_the_mix_counts_play_for_more_when_you_rate_the_games_you_play_high(session, library):
+    for i in range(30, 36):
+        add_game(session, i, f"Loved {i}", tags={"Saga": 100}, minutes=1000 * 60, achievements=(10, 10), rarest=2.0)
+    p = profile(session, {**library, **{i: 5.0 for i in range(30, 36)}}, "mix")
+    assert p["Grind"] / p["Cozy"] > 0.25  # play has meant a high rating in your games, so it counts for more
 
 
 def test_ratings_only_learns_nothing_from_play(session, library):
@@ -158,13 +167,13 @@ def test_the_reason_never_says_rated_when_ratings_are_ignored(session, library):
 def test_the_counts_say_how_many_games_taught_what(session, library):
     set_taste_mode(session, "mix")
     mix = taste_profile(session, library, {})
-    assert (mix.explicit_count, mix.implicit_count) == (2, 1)  # two rated games, one judged by play
+    assert (mix.explicit_count, mix.implicit_count) == (3, 1)  # three rated games, one judged by play
     set_taste_mode(session, "ratings")
     only = taste_profile(session, library, {})
-    assert (only.explicit_count, only.implicit_count) == (2, 0)
+    assert (only.explicit_count, only.implicit_count) == (3, 0)
     set_taste_mode(session, "engagement")
     eng = taste_profile(session, library, {})
-    assert eng.explicit_count == 0 and eng.implicit_count == 2  # the two you played a great deal
+    assert eng.explicit_count == 0 and eng.implicit_count == 3  # the three you played a great deal
 
 
 # ---- the page ----

@@ -12,9 +12,10 @@ TASTE_MODES = {
 }
 TASTE_MODE_HELP = {
     "mix": (
-        "Both count. A game you rated counts 70% by your rating and 30% by how you played it "
-        "(hours, achievements, rare ones, recency); a game you did not rate counts by how you played "
-        "it, at half strength."
+        "Both count. A game you rated counts by your rating. A game you played but did not rate "
+        "counts by how you played it (hours, achievements, rare ones, recency), as the rating that "
+        "play has meant in your own rated games: if the games you play most are the ones you rate "
+        "high, play counts for more; if not, for less."
     ),
     "ratings": (
         "Only what you say counts: ratings, favorites and \"not interested\". A game you did not rate "
