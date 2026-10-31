@@ -2,6 +2,7 @@
 
 import pytest
 
+from shelflife import diary
 from shelflife.recommend import _base_name, explain, recommend, score_all, taste_profile, taste_weight
 from tests.factories import add_game, build_scenario
 
@@ -168,3 +169,60 @@ def test_score_all_agrees_with_recommend(session):
     scores = score_all(session, ratings)
     for rec in recommend(session, ratings, limit=50).discover:
         assert scores.by_id[rec.game.steam_app_id].score == pytest.approx(rec.score)
+
+
+# ---- what the diary status says about taste ----
+
+
+def test_a_dropped_game_pushes_its_tags_away(session):
+    build_scenario(session)
+    ratings = {2: 1.0}  # game 1 (stealth) is unrated
+    before = taste_profile(session, ratings, {}).profile.get("Stealth", 0.0)
+    diary.set_status(session, 1, "dropped")
+    after = taste_profile(session, ratings, {}).profile["Stealth"]
+    assert after < before and after < 0
+
+
+def test_a_favorite_pulls_its_tags_in(session):
+    build_scenario(session)
+    ratings = {2: 1.0}
+    before = taste_profile(session, ratings, {}).profile.get("Stealth", 0.0)
+    diary.set_favorite(session, 1, True)
+    after = taste_profile(session, ratings, {}).profile["Stealth"]
+    assert after > before and after > 0
+
+
+def test_a_rating_beats_the_dropped_status(session):
+    build_scenario(session)
+    diary.save_rating(session, 1, 5.0)
+    ratings = diary.load_ratings(session)
+    before = taste_profile(session, ratings, {}).profile["Stealth"]
+    diary.set_status(session, 1, "dropped")
+    assert taste_profile(session, ratings, {}).profile["Stealth"] == pytest.approx(before)
+
+
+def test_playing_and_played_do_not_change_the_taste(session):
+    build_scenario(session)
+    ratings = {1: 5.0, 2: 1.0}
+    before = taste_profile(session, ratings, {}).profile
+    diary.set_status(session, 1, "playing")
+    diary.set_status(session, 2, "played")
+    assert taste_profile(session, ratings, {}).profile == before
+
+
+def test_a_game_you_dropped_without_playing_is_no_longer_backlog(session):
+    build_scenario(session)
+    add_game(session, 60, "Quit Quickly", tags={"Stealth": 100})  # owned, never played: backlog
+    ratings = {1: 5.0, 2: 1.0}
+    assert 60 in score_all(session, ratings).backlog
+    diary.set_status(session, 60, "dropped")
+    assert 60 not in score_all(session, ratings).backlog
+
+
+def test_a_favorite_is_not_described_as_rated_five(session):
+    build_scenario(session)
+    diary.set_favorite(session, 1, True)
+    best = recommend(session, {2: 1.0}, limit=50).backlog[0]
+    reasons = " ".join(best.because)
+    assert "Stealth Hero" in reasons and "rated" not in reasons
+

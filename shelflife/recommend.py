@@ -2,7 +2,8 @@
 
 Taste profile = tag vectors of your played games, each weighted by how much
 you liked it. An explicit rating always wins; for unrated games the engagement
-score stands in at reduced strength; a "not interested" counts as a low rating.
+score stands in at reduced strength; a "not interested" or a "dropped" counts as
+a low rating and a favorite as a top one.
 
 Candidates come in three lists: games you own but have barely played (backlog),
 games you can play through Steam Family Sharing (family), and well-reviewed
@@ -16,6 +17,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from shelflife.diary import implicit_ratings
 from shelflife.feedback import NOT_INTERESTED_RATING
 from shelflife.models import Game, LibraryEntry
 from shelflife.quality import quality_factor
@@ -124,7 +126,7 @@ def _label(game: Game, rating: float | None, similarity: float) -> str:
     return f"{name} ({played}, {similarity:.0%} similar)"
 
 
-def _is_played(entry: LibraryEntry | None, family: bool) -> bool:
+def is_played(entry: LibraryEntry | None, family: bool) -> bool:
     """Whether you've really played a game. Steam reports no playtime for family
     games, so for those any unlocked achievement counts as having played."""
     if entry is None:
@@ -138,6 +140,8 @@ def _build_model(
     session: Session, ratings: dict[int, float], not_interested: dict[int, str]
 ) -> _Model:
     effective = dict(ratings)
+    for app_id, stand_in in implicit_ratings(session).items():
+        effective.setdefault(app_id, stand_in)
     for app_id in not_interested:
         effective.setdefault(app_id, NOT_INTERESTED_RATING)
 
@@ -154,7 +158,7 @@ def _build_model(
         if entry is not None:
             (model.family_titles if family else model.owned_titles).add(_base_name(g.name))
 
-        if rating is None and not _is_played(entry, family):
+        if rating is None and not is_played(entry, family):
             if vectors[g.steam_app_id]:
                 model.candidates.append(g)
             continue
@@ -165,7 +169,8 @@ def _build_model(
             continue
         model.explicit += rating is not None
         model.implicit += rating is None
-        model.contributors.append((weight, g, rating))
+        # The real rating only: a favorite's stand-in 5 must not read "rated 5".
+        model.contributors.append((weight, g, ratings.get(g.steam_app_id)))
         for tag, value in vectors[g.steam_app_id].items():
             model.profile[tag] = model.profile.get(tag, 0.0) + weight * value
     return model

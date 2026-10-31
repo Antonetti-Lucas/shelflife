@@ -1,19 +1,35 @@
-"""Your diary: ratings, reviews and "not interested" marks, kept in the database.
+"""Your diary: ratings, reviews, "not interested" marks, and where you are with each
+game (status, dates, favorite), kept in the database.
 
 Replaces the data/ratings.csv and data/feedback.csv files; those are only read
 once, by import_legacy_csv, to bring existing entries over.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shelflife.models import DiaryEntry, Game
 
+STATUSES = ("playing", "played", "dropped")
+STATUS_LABELS = {"playing": "Playing", "played": "Played", "dropped": "Dropped"}
+
+# What a status says about taste, as the star rating it counts as when the game has
+# no rating of its own (a rating always wins). Dropping a game is a no, like "not
+# interested"; a favorite is a yes. "Playing" and "played" say nothing by themselves.
+DROPPED_RATING = 2.0
+FAVORITE_RATING = 5.0
+
+KEEP = object()  # "leave this field as it is" for set_status
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _today() -> date:
+    return _now().date()
 
 
 def load_ratings(session: Session) -> dict[int, float]:
@@ -34,6 +50,26 @@ def load_not_interested(session: Session) -> dict[int, str]:
     return {app_id: name for app_id, name in rows}
 
 
+def implicit_ratings(session: Session) -> dict[int, float]:
+    """steam_app_id -> the rating a game's status stands in for (dropped, favorite).
+
+    Only games without a rating of their own; a favorite that was also dropped
+    counts as a favorite.
+    """
+    out: dict[int, float] = {}
+    for e in session.scalars(select(DiaryEntry).where(DiaryEntry.rating.is_(None))):
+        if e.favorite:
+            out[e.steam_app_id] = FAVORITE_RATING
+        elif e.status == "dropped":
+            out[e.steam_app_id] = DROPPED_RATING
+    return out
+
+
+def load_entries(session: Session) -> dict[int, DiaryEntry]:
+    """steam_app_id -> diary entry, for every game that has one."""
+    return {e.steam_app_id: e for e in session.scalars(select(DiaryEntry))}
+
+
 def get_entry(session: Session, app_id: int) -> DiaryEntry | None:
     return session.get(DiaryEntry, app_id)
 
@@ -51,7 +87,13 @@ def _entry(session: Session, app_id: int) -> DiaryEntry:
 def _finish(session: Session, entry: DiaryEntry) -> None:
     """Save the entry, or drop it when nothing is left in it."""
     entry.updated_at = _now()
-    if entry.rating is None and not entry.not_interested and not entry.review:
+    if (
+        entry.rating is None
+        and not entry.not_interested
+        and not entry.review
+        and not entry.status
+        and not entry.favorite
+    ):
         if entry in session.new:  # created a moment ago and never saved
             session.expunge(entry)
         else:
@@ -76,6 +118,50 @@ def save_rating(
 def set_not_interested(session: Session, app_id: int, value: bool) -> None:
     entry = _entry(session, app_id)
     entry.not_interested = value
+    _finish(session, entry)
+
+
+def set_status(
+    session: Session,
+    app_id: int,
+    status: str | None,
+    started_on: date | None | object = KEEP,
+    finished_on: date | None | object = KEEP,
+) -> None:
+    """Set (or clear, with None) where you are with a game.
+
+    Dates left as KEEP stay as they are; a date of None means "unknown" and clears
+    it. When the status changes and the date it implies (started for "playing",
+    finished for "played"/"dropped") was left as KEEP and is still empty, it is
+    filled in with today, so a quick click leaves a usable diary. Clearing the
+    status clears both dates.
+    """
+    if status is not None and status not in STATUSES:
+        raise ValueError(f"Status must be one of {', '.join(STATUSES)}, got {status!r}")
+    entry = _entry(session, app_id)
+    changed = entry.status != status
+    entry.status = status
+    if status is None:
+        entry.started_on = entry.finished_on = None
+    else:
+        if started_on is not KEEP:
+            entry.started_on = started_on
+        if finished_on is not KEEP:
+            entry.finished_on = finished_on
+        if changed:
+            if status == "playing" and started_on is KEEP and entry.started_on is None:
+                entry.started_on = _today()
+            elif status != "playing" and finished_on is KEEP and entry.finished_on is None:
+                entry.finished_on = _today()
+        if entry.started_on and entry.finished_on and entry.finished_on < entry.started_on:
+            session.rollback()
+            raise ValueError("The finish date is before the start date")
+    _finish(session, entry)
+
+
+def set_favorite(session: Session, app_id: int, value: bool) -> None:
+    entry = _entry(session, app_id)
+    entry.favorite = value
     _finish(session, entry)
 
 

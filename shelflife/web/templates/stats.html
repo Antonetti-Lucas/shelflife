@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Stats · ShelfLife{% endblock %}
+{% block content %}
+<h2>Stats</h2>
+
+<div class="figures">
+  <div><strong>{{ stats.owned + stats.family }}</strong><span>games in your library<br>{{ stats.owned }} owned, {{ stats.family }} family</span></div>
+  <div><strong>{{ stats.played }}</strong><span>played<br>{{ stats.backlog }} owned games still in the backlog</span></div>
+  <div><strong>{{ "{:,.0f}".format(stats.hours_total) }}</strong><span>hours<br>family hours only if you entered them</span></div>
+  <div><strong>{{ stats.rated }}</strong><span>rated<br>{% if stats.average_rating is not none %}average {{ "%.2f"|format(stats.average_rating) }}{% else %}no ratings yet{% endif %}</span></div>
+</div>
+
+<div class="two">
+  <section>
+    <h3>Your diary</h3>
+    <ul class="plain">
+      {% for s in STATUSES %}
+        <li><a href="/library?status={{ s }}">{{ STATUS_LABELS[s] }}</a>: {{ stats.status_counts[s] }}</li>
+      {% endfor %}
+      <li><a href="/diary">★ Favorites</a>: {{ stats.favorites }}</li>
+      <li>Reviews written: {{ stats.reviews }}</li>
+    </ul>
+
+    <h3>Games finished per year</h3>
+    {% if stats.finished_by_year %}
+    <ul class="bars">
+      {% for year, count in stats.finished_by_year %}
+        <li><span>{{ year }} <small>{{ count }}</small></span><i style="width: {{ (count / most_finished * 100)|round|int }}%"></i></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+      <p class="empty">Nothing yet. Mark games "Played" and they are counted by the year you finished them.</p>
+    {% endif %}
+    {% if stats.finished_undated %}<p class="meta">{{ stats.finished_undated }} played games have no finish date and are not counted here.</p>{% endif %}
+  </section>
+
+  <section>
+    <h3>How you rate</h3>
+    {% if stats.rated %}
+    <ul class="bars">
+      {% for step, count in stats.rating_counts.items() %}
+        <li><span>{{ "%g"|format(step) }} ★ <small>{{ count }}</small></span><i style="width: {{ (count / most_rated * 100)|round|int }}%"></i></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+      <p class="empty">No ratings yet. Rate games from their page or the <a href="/library">Library</a>.</p>
+    {% endif %}
+  </section>
+</div>
+
+<section>
+  <h3>Most played</h3>
+  {% if stats.top_hours %}
+  <ul class="bars wide">
+    {% for g, hours in stats.top_hours %}
+      <li><span><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a> <small>{{ "%.0f"|format(hours) }} h</small></span><i style="width: {{ (hours / top_hours * 100)|round|int }}%"></i></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+    <p class="empty">No playtime yet. Run <code>python -m scripts.sync</code> first.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,8 +1,8 @@
 """Database models (see "Data model" in the README)."""
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import JSON, ForeignKey
+from sqlalchemy import JSON, Date, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shelflife.db import Base
@@ -54,7 +54,8 @@ class PlaytimeSnapshot(Base):
 
 
 class DiaryEntry(Base):
-    """Your own verdict on a game: rating, review, or "not interested"."""
+    """Your own verdict on a game: rating, review, "not interested", and where you
+    are with it (status, dates, favorite)."""
 
     __tablename__ = "diary_entries"
 
@@ -65,6 +66,14 @@ class DiaryEntry(Base):
     not_interested: Mapped[bool] = mapped_column(default=False)
     review: Mapped[str | None]
     updated_at: Mapped[datetime]
+
+    # "playing", "played" or "dropped"; None = not tracked. The dates are optional
+    # (an old game you can't date stays blank). Existing databases get these
+    # columns as NULL, so favorite is None, not False, for older rows.
+    status: Mapped[str | None]
+    started_on: Mapped[date | None] = mapped_column(Date)
+    finished_on: Mapped[date | None] = mapped_column(Date)
+    favorite: Mapped[bool | None]
 
 
 class LibraryEntry(Base):

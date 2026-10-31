@@ -5,6 +5,7 @@ can reach the port can change your diary, so it binds to 127.0.0.1.
 """
 
 from contextlib import asynccontextmanager
+from datetime import date
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
 
@@ -18,11 +19,12 @@ from sqlalchemy.orm import Session
 from shelflife import diary
 from shelflife.db import SessionLocal, init_db
 from shelflife.hours import set_hours
-from shelflife.models import Game, LibraryEntry
+from shelflife.models import DiaryEntry, Game, LibraryEntry
 from shelflife.quality import quality_factor
 from shelflife.recency import recency
 from shelflife.recommend import explain, recommend, score_all, taste_profile
 from shelflife.score import engagement_score
+from shelflife.stats import compute_stats
 
 BASE = Path(__file__).parent
 PAGE_SIZE = 40
@@ -77,6 +79,8 @@ def source_label(game: Game) -> str:
 
 templates.env.globals.update(
     RATING_OPTIONS=RATING_OPTIONS,
+    STATUSES=diary.STATUSES,
+    STATUS_LABELS=diary.STATUS_LABELS,
     reviews_text=reviews_text,
     rating_text=rating_text,
     source_label=source_label,
@@ -180,10 +184,13 @@ def library(
     source: str = "all",
     sort: str = "",
     rec: str = "all",
+    status: str = "all",
     page: int = 1,
     session: Session = Depends(get_session),
 ):
     ratings = diary.load_ratings(session)
+    entries = diary.load_entries(session)
+    status = status if status in (*diary.STATUSES, "none") else "all"
     scores = score_all(session, ratings, diary.load_not_interested(session))
     scope = scores.backlog | scores.family  # what "recommended" means in the library
     keep = top_share({i: scores.by_id[i].score for i in scope}, REC_FILTERS.get(rec))
@@ -205,6 +212,12 @@ def library(
     for game in session.scalars(query):
         if keep is not None and game.steam_app_id not in keep:
             continue
+        mark = entries.get(game.steam_app_id)
+        game_status = mark.status if mark else None
+        if status == "none" and game_status is not None:
+            continue
+        if status in diary.STATUSES and game_status != status:
+            continue
         entry = game.library_entry
         fit = scores.by_id[game.steam_app_id].score if game.steam_app_id in scope else None
         rows.append(
@@ -214,6 +227,7 @@ def library(
                 "score": engagement_score(entry).total,
                 "fit": None if fit is None else fit * 100,
                 "rating": ratings.get(game.steam_app_id),
+                "status": game_status,
             }
         )
 
@@ -238,6 +252,7 @@ def library(
             "source": source,
             "sort": sort,
             "rec": rec if rec in REC_FILTERS else "all",
+            "status": status,
             "page": page,
             "pages": pages,
             "here": current_url(request),
@@ -332,8 +347,6 @@ def game_page(request: Request, app_id: int, session: Session = Depends(get_sess
 
 @app.get("/ratings")
 def ratings_page(request: Request, session: Session = Depends(get_session)):
-    from shelflife.models import DiaryEntry
-
     entries = session.execute(
         select(DiaryEntry, Game)
         .join(Game, Game.steam_app_id == DiaryEntry.steam_app_id)
@@ -346,6 +359,46 @@ def ratings_page(request: Request, session: Session = Depends(get_session)):
             # A game can have just a review and no rating, so list those too.
             "rated": [(e, g) for e, g in entries if e.rating is not None or e.review],
             "marked": [(e, g) for e, g in entries if e.not_interested],
+        },
+    )
+
+
+@app.get("/diary")
+def diary_page(request: Request, session: Session = Depends(get_session)):
+    """Your games by status, newest first, with your favorites on top."""
+    rows = session.execute(
+        select(DiaryEntry, Game)
+        .join(Game, Game.steam_app_id == DiaryEntry.steam_app_id)
+        .where(or_(DiaryEntry.status.is_not(None), DiaryEntry.favorite.is_(True)))
+    ).all()
+
+    def newest_first(pair):
+        e = pair[0]
+        return e.finished_on or e.started_on or date.min  # undated games last
+
+    sections = {
+        status: sorted(
+            ((e, g) for e, g in rows if e.status == status), key=newest_first, reverse=True
+        )
+        for status in diary.STATUSES
+    }
+    favorites = sorted(((e, g) for e, g in rows if e.favorite), key=lambda p: p[1].name.lower())
+    return templates.TemplateResponse(
+        request, "diary.html", {"sections": sections, "favorites": favorites}
+    )
+
+
+@app.get("/stats")
+def stats_page(request: Request, session: Session = Depends(get_session)):
+    stats = compute_stats(session)
+    return templates.TemplateResponse(
+        request,
+        "stats.html",
+        {
+            "stats": stats,
+            "top_hours": stats.top_hours[0][1] if stats.top_hours else 1,
+            "most_rated": max(stats.rating_counts.values(), default=0) or 1,
+            "most_finished": max((n for _, n in stats.finished_by_year), default=0) or 1,
         },
     )
 
@@ -411,6 +464,51 @@ def not_interested(
 ):
     try:
         diary.set_not_interested(session, app_id, value == "1")
+    except ValueError as exc:
+        raise HTTPException(404, str(exc))
+    return RedirectResponse(safe_next(next, f"/game/{app_id}"), status_code=303)
+
+
+def parse_date(raw: str) -> date | None:
+    raw = raw.strip()
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        raise HTTPException(400, f"Not a date (use YYYY-MM-DD): {raw!r}")
+
+
+@app.post("/game/{app_id}/status")
+async def save_status(
+    request: Request,
+    app_id: int,
+    session: Session = Depends(get_session),
+):
+    # Dates only change when the form has them: the quick status picker in the
+    # library sends just the status and must not wipe the dates.
+    form = await request.form()
+    status = str(form.get("status") or "").strip() or None
+    started = parse_date(str(form["started_on"])) if "started_on" in form else diary.KEEP
+    finished = parse_date(str(form["finished_on"])) if "finished_on" in form else diary.KEEP
+    try:
+        diary.set_status(session, app_id, status, started, finished)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return RedirectResponse(
+        safe_next(str(form.get("next") or ""), f"/game/{app_id}"), status_code=303
+    )
+
+
+@app.post("/game/{app_id}/favorite")
+def favorite(
+    app_id: int,
+    value: str = Form("1"),
+    next: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    try:
+        diary.set_favorite(session, app_id, value == "1")
     except ValueError as exc:
         raise HTTPException(404, str(exc))
     return RedirectResponse(safe_next(next, f"/game/{app_id}"), status_code=303)

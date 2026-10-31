@@ -3,7 +3,7 @@
 {% block content %}
 <h2>Library <small>{{ total }} games you own or can play through your family</small></h2>
 <p class="lede">
-  Rate games and enter family-game hours right here. Games you don't own are on
+  Rate games, set their status and enter family-game hours right here. Games you don't own are on
   <a href="/explore">Explore</a>.
 </p>
 
@@ -12,6 +12,11 @@
   <select name="source" aria-label="Source">
     {% for value, label in [("all", "Owned and family"), ("owned", "Owned"), ("family", "Family")] %}
       <option value="{{ value }}" {{ "selected" if source == value }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select name="status" aria-label="Status">
+    {% for value, label in [("all", "Any status"), ("playing", "Playing"), ("played", "Played"), ("dropped", "Dropped"), ("none", "Not tracked")] %}
+      <option value="{{ value }}" {{ "selected" if status == value }}>{{ label }}</option>
     {% endfor %}
   </select>
   <select name="rec" aria-label="Recommended">
@@ -34,7 +39,7 @@
     <tr>
       <th>Game</th><th>Source</th><th class="num">Hours</th><th class="num">Engagement</th>
       <th class="num" title="Taste match × review quality, for games you haven't played yet">Fit</th>
-      <th class="num">Your rating</th>
+      <th class="num">Your rating</th><th>Status</th>
     </tr>
   </thead>
   <tbody>
@@ -73,16 +78,25 @@
           </select>
         </form>
       </td>
+      <td>
+        <form method="post" action="/game/{{ g.steam_app_id }}/status" class="cell">
+          <input type="hidden" name="next" value="{{ here }}#g{{ g.steam_app_id }}">
+          <select name="status" onchange="this.form.submit()" aria-label="Status of {{ g.name }}">
+            <option value="">—</option>
+            {% for s in STATUSES %}<option value="{{ s }}" {{ "selected" if r.status == s }}>{{ STATUS_LABELS[s] }}</option>{% endfor %}
+          </select>
+        </form>
+      </td>
     </tr>
     {% else %}
-    <tr><td colspan="6" class="empty">No games match.</td></tr>
+    <tr><td colspan="7" class="empty">No games match.</td></tr>
     {% endfor %}
   </tbody>
 </table>
 </div>
 
 {% if pages > 1 %}
-{% set base = "/library?q=" ~ (q|urlencode) ~ "&source=" ~ source ~ "&rec=" ~ rec ~ "&sort=" ~ sort %}
+{% set base = "/library?q=" ~ (q|urlencode) ~ "&source=" ~ source ~ "&status=" ~ status ~ "&rec=" ~ rec ~ "&sort=" ~ sort %}
 <p class="pager">
   {% if page > 1 %}<a href="{{ base }}&page={{ page - 1 }}">← Previous</a>{% endif %}
   Page {{ page }} of {{ pages }}

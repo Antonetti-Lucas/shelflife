@@ -50,14 +50,14 @@ def names_on(html):
 # ---- pages ----
 
 
-@pytest.mark.parametrize("path", ["/", "/library", "/explore", "/ratings", "/taste"])
+@pytest.mark.parametrize("path", ["/", "/library", "/explore", "/diary", "/ratings", "/stats", "/taste"])
 def test_every_page_loads_with_an_empty_database(client, path):
     assert client.get(path).status_code == 200
 
 
 def test_the_nav_links_every_page(client):
     html = client.get("/").text
-    for target in ("/", "/library", "/explore", "/ratings", "/taste"):
+    for target in ("/", "/library", "/explore", "/diary", "/ratings", "/stats", "/taste"):
         assert f'href="{target}"' in html
 
 
@@ -270,3 +270,133 @@ def test_redirects_never_leave_the_site(client, scenario, target):
 def test_redirects_to_a_page_on_the_site_are_kept_with_their_anchor(client, scenario):
     response = post(client, "/game/20/rate", rating="", next="/library?source=family&rec=25#g20")
     assert response.headers["location"] == "/library?source=family&rec=25#g20"
+
+
+# ---- status, dates and favorites ----
+
+
+def test_setting_a_status_fills_in_the_date_and_redirects_back(client, scenario):
+    response = post(client, "/game/20/status", status="playing", next="/library?source=owned#g20")
+    assert response.status_code == 303
+    assert response.headers["location"] == "/library?source=owned#g20"
+    entry = diary_entry(20)
+    assert (entry.status, entry.started_on) == ("playing", diary._today())
+
+
+def test_a_status_form_with_dates_saves_them(client, scenario):
+    post(client, "/game/20/status", status="played", started_on="2025-01-02", finished_on="2025-02-03")
+    entry = diary_entry(20)
+    assert (entry.started_on.isoformat(), entry.finished_on.isoformat()) == ("2025-01-02", "2025-02-03")
+
+
+def test_the_quick_status_picker_does_not_wipe_the_dates(client, scenario):
+    post(client, "/game/20/status", status="played", started_on="2025-01-02", finished_on="2025-02-03")
+    post(client, "/game/20/status", status="dropped")  # the library sends no dates
+    entry = diary_entry(20)
+    assert (entry.status, entry.finished_on.isoformat()) == ("dropped", "2025-02-03")
+
+
+def test_blank_dates_in_the_form_clear_them(client, scenario):
+    post(client, "/game/20/status", status="played")
+    post(client, "/game/20/status", status="played", started_on="", finished_on="")
+    entry = diary_entry(20)
+    assert (entry.started_on, entry.finished_on) == (None, None)
+
+
+def test_an_empty_status_clears_it(client, scenario):
+    post(client, "/game/20/status", status="played")
+    post(client, "/game/20/status", status="")
+    assert diary_entry(20) is None
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        {"status": "bogus"},
+        {"status": "played", "finished_on": "yesterday"},
+        {"status": "played", "started_on": "2025-05-01", "finished_on": "2025-02-03"},
+    ],
+)
+def test_bad_status_forms_are_rejected_and_save_nothing(client, scenario, form):
+    assert post(client, "/game/20/status", **form).status_code == 400
+    assert diary_entry(20) is None
+
+
+def test_a_status_for_a_game_that_does_not_exist_is_an_error(client, scenario):
+    assert post(client, "/game/999999/status", status="played").status_code == 400
+
+
+def test_favoriting_and_unfavoriting(client, scenario):
+    assert post(client, "/game/20/favorite", value="1").status_code == 303
+    assert diary_entry(20).favorite is True
+    post(client, "/game/20/favorite", value="0")
+    assert diary_entry(20) is None
+    assert post(client, "/game/999999/favorite", value="1").status_code == 404
+
+
+def test_the_game_page_shows_the_status_dates_and_favorite(client, scenario):
+    post(client, "/game/20/status", status="dropped", started_on="2025-01-02", finished_on="2025-02-03")
+    post(client, "/game/20/favorite", value="1")
+    html = client.get("/game/20").text
+    assert re.search(r'<option value="dropped" selected', html)
+    assert 'value="2025-01-02"' in html and 'value="2025-02-03"' in html
+    assert "favorites" in html and "Dropped counts against" in html
+
+
+def test_the_library_row_has_a_status_picker_with_the_current_status(client, scenario):
+    post(client, "/game/20/status", status="playing")
+    row = re.search(r'<tr id="g20".*?</tr>', client.get("/library").text, re.S).group(0)
+    assert re.search(r'<option value="playing" selected', row)
+
+
+def test_the_library_can_be_filtered_by_status(client, scenario):
+    post(client, "/game/20/status", status="played")
+    post(client, "/game/21/status", status="dropped")
+    only_played = client.get("/library?status=played").text
+    assert re.findall(r'<tr id="g(\d+)"', only_played) == ["20"]
+    untracked = re.findall(r'<tr id="g(\d+)"', client.get("/library?status=none").text)
+    assert "20" not in untracked and "21" not in untracked and len(untracked) > 0
+    assert 'value="played" selected' in only_played
+
+
+def test_an_unknown_status_filter_is_ignored(client, scenario):
+    everything = re.findall(r'<tr id="g(\d+)"', client.get("/library").text)
+    assert re.findall(r'<tr id="g(\d+)"', client.get("/library?status=nonsense").text) == everything
+
+
+def test_the_library_pager_keeps_the_status_filter(client, session):
+    for i in range(100, 150):
+        add_game(session, i, f"Game {i}", tags={"Stealth": 100}, minutes=600)
+        diary.set_status(session, i, "played")
+    html = client.get("/library?status=played").text
+    assert "status=played" in re.search(r'class="pager".*?</p>', html, re.S).group(0)
+
+
+def test_the_diary_page_lists_games_by_status_newest_first_with_favorites(client, scenario):
+    post(client, "/game/20/status", status="played", finished_on="2025-01-01")
+    post(client, "/game/21/status", status="played", finished_on="2026-03-01")
+    post(client, "/game/1/status", status="played", finished_on="")  # undated: last
+    post(client, "/game/30/status", status="playing", started_on="2026-05-05")
+    post(client, "/game/2/status", status="dropped")
+    post(client, "/game/40/favorite", value="1")
+    post(client, "/game/20/rate", rating="4", review="a <b>bold</b> take")
+    html = client.get("/diary").text
+    played = html[html.index("Played <small>") : html.index("Dropped <small>")]
+    assert played.index("Backlog Sports") < played.index("Backlog Stealth") < played.index("Stealth Hero")
+    assert "Family Stealth" in html and "Sports Pro" in html
+    assert "Favorites" in html and "Pool Stealth Good" in html
+    assert "&lt;b&gt;bold&lt;/b&gt;" in html and "<b>bold</b>" not in html
+
+
+def test_the_diary_page_with_nothing_tracked_explains_how_to_start(client, scenario):
+    html = client.get("/diary").text
+    assert "Nothing yet" in html and "Favorites" not in html
+
+
+def test_the_stats_page_shows_your_numbers(client, scenario):
+    post(client, "/game/20/status", status="played", finished_on="2025-06-01")
+    post(client, "/game/21/status", status="played", finished_on="2025-07-01")
+    html = client.get("/stats").text
+    assert "games in your library" in html and "10 owned, 1 family" in html
+    assert "<li><span>2025 <small>2</small></span>" in html
+    assert "average 3.00" in html  # the scenario's ratings are 5 and 1

@@ -1,5 +1,8 @@
 # ShelfLife
 
+[![Tests](https://github.com/Antonetti-Lucas/shelflife/actions/workflows/tests.yml/badge.svg)](https://github.com/Antonetti-Lucas/shelflife/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 > A Letterboxd-style game diary that imports your Steam library, uses your playtime and achievements to understand how you *really* play, and recommends what to play next.
 
 **Status:** early development. It runs entirely on your own computer: nothing is hosted, and your data never leaves your machine.
@@ -10,9 +13,9 @@ Steam knows what you own and how long you've played, but not what you *thought* 
 
 - **Steam import:** owned games, playtime, store details, community tags, review counts and achievements.
 - **Family Sharing import** (optional): games you can play through a Steam Family.
-- **Diary:** 0.5–5 star ratings, reviews, and "not interested" marks, stored locally.
+- **Diary:** 0.5–5 star ratings, reviews, "not interested" marks, a status (playing, played, dropped) with dates, and favorites, stored locally.
 - **Recommendations:** three lists (backlog, family, games you don't own), each with a reason.
-- **Web app:** recommendations, a library you can rate and edit in place, an Explore page, game pages, and your taste profile.
+- **Web app:** recommendations, a library you can rate and edit in place, an Explore page, a diary, stats, game pages, and your taste profile.
 
 ## Screenshots
 
@@ -101,8 +104,10 @@ The fetching scripts are deliberately slow to respect the services' limits (abou
 `python -m scripts.web`, then open <http://127.0.0.1:8000>. It listens only on your own machine and has no login, so don't expose it to a network.
 
 - **Recommendations:** your backlog, family and discovery lists, paged, each pick with the games and tags behind it. Rate or dismiss from the card.
-- **Library:** your owned and family games with covers. Set a rating, or type hours for family games, right in the row. The **Recommended** filter keeps the unplayed games that fit you best (top 50%, 25% or 10%).
+- **Library:** your owned and family games with covers. Set a rating or a status, or type hours for family games, right in the row. Filter by status, or use the **Recommended** filter to keep the unplayed games that fit you best (top 50%, 25% or 10%).
 - **Explore:** games you don't own, ranked by fit, with the same filter, search and sorting.
+- **Diary:** your games by status (playing, played, dropped), newest first, with your favorites on top. Set a status, its dates and a favorite on a game's page; picking a status fills in today's date, and you can clear it for a game you can't date.
+- **Stats:** games and hours in your library, your diary by status, games finished per year, how you rate, and your most played games.
 - **Game page, My ratings, My taste:** why a game fits you and how you played it; your ratings and reviews (edit or delete in place); and the tag profile behind it all.
 
 ## Family Sharing (optional)
@@ -137,7 +142,7 @@ Personal data lives in `shelflife.db`, `.env` and the `data/` folder, all git-ig
 
 *Recency:* Steam gives only lifetime hours and a last-played date, and one minute today resets that date. So the unlock dates of your achievements show *when* you really played: each unlock counts less the older it is (halving every 3 years). A game you play right now counts as fully current.
 
-**2. Taste profile.** Each played game gets a weight from −1 to +1: a rating gives `(rating − 3) / 2` (and is never faded), and "not interested" counts as 2 stars. An unrated game gets up to +0.5 from its engagement score. The profile sums each game's tags (vote share of the top 15 tags, scaled down for tags common in your library) times its weight.
+**2. Taste profile.** Each played game gets a weight from −1 to +1: a rating gives `(rating − 3) / 2` (and is never faded), and "not interested" counts as 2 stars. So does "dropped", and a favorite counts as 5 stars, both only until you rate the game ("playing" and "played" change nothing). An unrated game gets up to +0.5 from its engagement score. The profile sums each game's tags (vote share of the top 15 tags, scaled down for tags common in your library) times its weight.
 
 **3. Scoring.**
 

@@ -46,6 +46,48 @@
         <button class="ghost" type="submit">Not interested</button>
       {% endif %}
     </form>
+
+    <h3>Where you are with it</h3>
+    <form method="post" action="/game/{{ game.steam_app_id }}/status" class="stack">
+      <label>Status
+        <select name="status" onchange="fillToday(this.form)">
+          <option value="">Not tracked</option>
+          {% for s in STATUSES %}
+            <option value="{{ s }}" {{ "selected" if diary and diary.status == s }}>{{ STATUS_LABELS[s] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="dates">
+        <label>Started
+          <input type="date" name="started_on" value="{{ diary.started_on.isoformat() if diary and diary.started_on else '' }}">
+        </label>
+        <label>Finished or dropped
+          <input type="date" name="finished_on" value="{{ diary.finished_on.isoformat() if diary and diary.finished_on else '' }}">
+        </label>
+      </div>
+      <button type="submit">Save status</button>
+    </form>
+    <script>
+      // Picking a status fills in today's date when that date is empty; clear it for a game you can't date.
+      function fillToday(form) {
+        const now = new Date();
+        const today = new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+        const field = form.status.value === "playing" ? form.started_on
+          : form.status.value ? form.finished_on : null;
+        if (field && !field.value) field.value = today;
+      }
+    </script>
+    <p class="meta">Picking a status fills in today's date; clear it if you don't know the date. Dropped counts against this game's tags, like a 2-star rating, until you rate it.</p>
+
+    <form method="post" action="/game/{{ game.steam_app_id }}/favorite" class="inline">
+      {% if diary and diary.favorite %}
+        <input type="hidden" name="value" value="0">
+        <p>★ One of your <strong>favorites</strong>. It counts like a 5-star rating until you rate it. <button class="ghost" type="submit">Remove</button></p>
+      {% else %}
+        <input type="hidden" name="value" value="1">
+        <button class="ghost" type="submit">☆ Add to favorites</button>
+      {% endif %}
+    </form>
   </section>
 
   <section>

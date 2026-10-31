@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Diary · ShelfLife{% endblock %}
+{% block content %}
+{% macro thumb(g) %}
+<a class="thumb" href="/game/{{ g.steam_app_id }}">
+  {% if g.cover_url %}<img src="{{ g.cover_url }}" loading="lazy" alt="">{% else %}<span class="nocover">{{ g.name[:1] }}</span>{% endif %}
+</a>
+{% endmacro %}
+
+<h2>Diary</h2>
+<p class="lede">
+  The games you are playing, have played or dropped, newest first. Set a game's status on its
+  page or in the <a href="/library">Library</a>.
+</p>
+
+{% if favorites %}
+<h2>★ Favorites <small>{{ favorites|length }} games</small></h2>
+<div class="rows">
+  {% for e, g in favorites %}
+  <article class="row compact">
+    {{ thumb(g) }}
+    <div class="row-body">
+      <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a>
+        {% if e.rating is not none %}<small>{{ rating_text(e.rating) }} ★</small>{% endif %}</h3>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% for status in STATUSES %}
+{% set items = sections[status] %}
+<h2>{{ STATUS_LABELS[status] }} <small>{{ items|length }} games</small></h2>
+{% if items %}
+<div class="rows">
+  {% for e, g in items %}
+  <article class="row compact" id="g{{ g.steam_app_id }}">
+    {{ thumb(g) }}
+    <div class="row-body">
+      <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a>
+        {% if e.favorite %}<small>★ favorite</small>{% endif %}
+        {% if e.rating is not none %}<small>rated {{ rating_text(e.rating) }}</small>{% endif %}</h3>
+      <p class="meta">
+        {% if e.started_on %}started {{ e.started_on.isoformat() }}{% endif %}
+        {% if e.started_on and e.finished_on %} · {% endif %}
+        {% if e.finished_on %}{{ "dropped" if status == "dropped" else "finished" }} {{ e.finished_on.isoformat() }}{% endif %}
+        {% if not e.started_on and not e.finished_on %}no dates{% endif %}
+        {% if g.library_entry and g.library_entry.playtime_total_min %} · {{ "%.1f"|format(g.library_entry.playtime_total_hours) }} hours{% endif %}
+      </p>
+      {% if e.review %}<p class="review">{{ e.review }}</p>{% endif %}
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+  <p class="empty">
+    {% if status == "playing" %}Nothing yet. Pick "Playing" on a game's page when you start one.
+    {% elif status == "played" %}Nothing yet. Pick "Played" when you finish a game, or on old ones to log them.
+    {% else %}Nothing dropped. A dropped game counts against its tags in your taste profile.{% endif %}
+  </p>
+{% endif %}
+{% endfor %}
+{% endblock %}
