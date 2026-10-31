@@ -37,6 +37,7 @@ def spy(monkeypatch):
         ("Metroidvania", ["Metroidvania", "metroidvania"]),
         ("Souls-like", ["Souls-like", "souls-like", "Souls-Like"]),
         ("Roguelike", ["Roguelike", "roguelike", "rogue-like"]),
+        ("Roguelite", ["Roguelite", "roguelite", "rogue-lite"]),
         ("co-op", ["co-op", "Co-Op"]),
         ("RPG", ["RPG", "rpg", "Rpg"]),
     ],
@@ -93,3 +94,15 @@ def test_tags_steamspy_only_lists_in_lowercase_are_found_from_the_capitalised_na
     # Regression: searching for "FPS" found nothing because SteamSpy answers only to "fps".
     spy.known[steamspy_name] = games(200)
     assert len(fetch_spy_tag_games(tag)) == 200
+
+
+def test_steams_roguelite_finds_steamspys_rogue_lite(spy):
+    spy.known["rogue-lite"] = games(80)
+    assert len(fetch_spy_tag_games("Roguelite")) == 80
+
+
+@pytest.mark.parametrize("tag", ["Beat 'em up", "Shoot 'Em Up"])
+def test_tags_with_an_apostrophe_that_steamspy_does_not_know_give_nothing_not_the_stand_in(spy, tag):
+    # Regression: SteamSpy answers these with its 70-game stand-in list under every spelling.
+    spy.known[tag.lower()] = games(UNKNOWN_TAG_LIST_SIZE)
+    assert fetch_spy_tag_games(tag) == []

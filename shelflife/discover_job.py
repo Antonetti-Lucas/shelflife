@@ -1,43 +1,17 @@
 """Runs "find more games" in the background so the web page does not wait for it.
 
 Fetching is slow on purpose (about 3 seconds a game, to stay polite to Steam and
-SteamSpy), so the button starts a thread and the page shows its progress. Only one
-search runs at a time, and it only runs when you press the button.
+SteamSpy), so the button starts a thread and the page shows its progress. It only
+runs when you press the button.
 """
-
-import threading
-from collections.abc import Callable
-from dataclasses import dataclass, replace
 
 from shelflife.db import SessionLocal
 from shelflife.discovery import FindResult, find_games
+from shelflife.jobs import BackgroundJob, JobSnapshot  # noqa: F401  (JobSnapshot is re-exported)
 from shelflife.models import Game
 from shelflife.similar import reference_vector, tag_idf
 
 SECONDS_PER_GAME = 5  # for the time estimate shown next to the button; narrow tags take longer
-
-
-@dataclass(frozen=True)
-class JobSnapshot:
-    """What the page shows. state: idle, running, done, stopped or error."""
-
-    state: str = "idle"
-    phase: str = ""
-    text: str = ""
-    done: int = 0
-    total: int = 0
-    message: str = ""  # the outcome of the last search, or why it could not start
-    like_id: int | None = None  # the game a "games like this" search was for
-    like_name: str = ""
-    popular: bool = False  # a search through SteamSpy's popular games instead of tags
-
-    @property
-    def running(self) -> bool:
-        return self.state == "running"
-
-    @property
-    def failed(self) -> bool:
-        return self.state == "error"
 
 
 def summarize(
@@ -61,7 +35,7 @@ def summarize(
         parts.append(f"{result.failed} could not be fetched and will be retried next time")
     if result.empty_tags:
         names = ", ".join(f"“{t}”" for t in result.empty_tags)
-        parts.append(f"SteamSpy lists no games for {names} (check the spelling)")
+        parts.append(f"SteamSpy lists no games for {names} (it does not know that tag name; a related tag may work)")
     message = "; ".join(parts) + "."
     if result.aborted:
         message = f"Stopped early: {result.aborted} Progress is saved; try again later. " + message
@@ -79,27 +53,8 @@ def summarize(
     )
 
 
-class DiscoverJob:
-    def __init__(self, spawn: Callable[[Callable[[], None]], None] | None = None):
-        self._lock = threading.Lock()
-        self._snapshot = JobSnapshot()
-        self._stop = threading.Event()
-        # How the work gets started; tests pass something that runs it right away.
-        self._spawn = spawn or (lambda fn: threading.Thread(target=fn, daemon=True).start())
-
-    def snapshot(self) -> JobSnapshot:
-        with self._lock:
-            return self._snapshot
-
-    def _set(self, **changes) -> None:
-        with self._lock:
-            self._snapshot = replace(self._snapshot, **changes)
-
-    def fail(self, message: str) -> None:
-        """Show why a search could not start (unless one is running)."""
-        with self._lock:
-            if not self._snapshot.running:
-                self._snapshot = JobSnapshot(state="error", message=message)
+class DiscoverJob(BackgroundJob):
+    """The search for new games."""
 
     def start(
         self,
@@ -111,11 +66,8 @@ class DiscoverJob:
     ) -> bool:
         """Start a search; False if one is already running. `like`: (app id, name) of a
         game to find close matches for. `popular`: search SteamSpy's popular games, not tags."""
-        with self._lock:
-            if self._snapshot.running:
-                return False
-            self._stop.clear()
-            self._snapshot = JobSnapshot(
+        started = self._begin(
+            JobSnapshot(
                 state="running",
                 phase="lists",
                 text="Starting",
@@ -124,12 +76,11 @@ class DiscoverJob:
                 like_name=like[1] if like else "",
                 popular=popular,
             )
+        )
+        if not started:
+            return False
         self._spawn(lambda: self._work(tags, count, min_reviews, like, popular))
         return True
-
-    def cancel(self) -> None:
-        """Ask a running search to stop after the game it is on."""
-        self._stop.set()
 
     def _work(
         self,
@@ -168,8 +119,7 @@ class DiscoverJob:
                 like_name=like[1] if like else "",
                 popular=popular,
             )
-        with self._lock:
-            self._snapshot = snapshot
+        self._end(snapshot)
 
 
 job = DiscoverJob()

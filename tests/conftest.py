@@ -13,6 +13,9 @@ from pathlib import Path
 # DATABASE_URL once, when it is first imported.
 _TMP = Path(tempfile.mkdtemp(prefix="shelflife-tests-"))
 os.environ["DATABASE_URL"] = f"sqlite:///{(_TMP / 'test.db').as_posix()}"
+# Empty values keep python-dotenv from loading the real ones from a .env in the project folder.
+os.environ["STEAM_API_KEY"] = ""
+os.environ["STEAM_ID"] = ""
 
 import pytest  # noqa: E402
 

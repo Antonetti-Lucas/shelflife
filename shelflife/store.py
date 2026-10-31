@@ -121,9 +121,10 @@ def fetch_tags(app_id: int, timeout: float = 15) -> dict[str, int]:
 # SteamSpy's tag lists answer to a tag's name only in the letter case it keeps it under
 # ("metroidvania" works, "Metroidvania" returns nothing; "Souls-Like" works, "Souls-like"
 # does not), a few tags only under their old name, and a tag it does not know gets the
-# same fixed list of 70 games instead of an error.
+# same fixed list of 70 games instead of an error. Tags with an apostrophe ("Beat 'em up",
+# "Shoot 'Em Up") are not known to it under any spelling.
 UNKNOWN_TAG_LIST_SIZE = 70
-SPY_TAG_ALIASES = {"roguelike": "rogue-like"}  # Steam's current name -> the one SteamSpy lists
+SPY_TAG_ALIASES = {"roguelike": "rogue-like", "roguelite": "rogue-lite"}  # Steam's current name -> the one SteamSpy lists
 _spy_spellings: dict[str, str] = {}  # the spelling that worked for a tag, remembered for the session
 
 

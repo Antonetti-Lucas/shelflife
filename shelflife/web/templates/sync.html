@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Sync · ShelfLife{% endblock %}
+{% block head %}{% if job.running %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
+{% block content %}
+<h2>Sync <small>bring your library up to date</small></h2>
+<p class="lede">
+  Reads your Steam library and playtime, your achievements, and the store details of games it hasn't seen.
+  It talks to Steam only when you press the button.
+</p>
+
+<section class="find" id="sync">
+  {% if job.running %}
+    <p>Step {{ job.step }} of {{ job.steps }}: {{ steps[job.step - 1][1] }}{% if job.total %} ({{ job.done }} of {{ job.total }}){% endif %}</p>
+    <progress value="{{ job.done }}" max="{{ job.total or 1 }}"></progress>
+    <p class="meta">{{ job.text }}</p>
+    <form method="post" action="/sync/stop" class="inline">
+      <button class="ghost" type="submit">Stop</button>
+    </form>
+    <p class="meta">You can keep browsing; this page refreshes by itself. Stopping keeps everything done so far.</p>
+  {% else %}
+    {% if job.message %}
+      <p class="{{ 'warn' if job.failed else '' }}">{{ job.message }}
+        {% if job.state == "done" %}<a href="/library">See your library</a>{% endif %}</p>
+    {% endif %}
+    {% if finding %}
+      <p class="warn">Finding games is running, so a sync has to wait. <a href="/explore#find">See the search</a>.</p>
+    {% elif not configured %}
+      <p class="warn">Sync needs <code>STEAM_API_KEY</code> and <code>STEAM_ID</code> in your <code>.env</code> file (see Setup in the README). Add them and restart the app.</p>
+    {% else %}
+      <form method="post" action="/sync/start"><button type="submit">Sync now</button></form>
+    {% endif %}
+  {% endif %}
+  <p class="meta">
+    {% if waiting.last_synced %}Last synced {{ waiting.last_synced.strftime("%Y-%m-%d %H:%M") }} (UTC).{% else %}Not synced yet.{% endif %}
+    {{ waiting.library }} games in your library{% if waiting.family %} ({{ waiting.owned }} owned, {{ waiting.family }} from Family Sharing){% endif %}.
+    {% if waiting.details %}{{ waiting.details }} are waiting for their store details (about {{ minutes }} minute{{ "" if minutes == 1 else "s" }}).{% endif %}
+    {% if waiting.achievements %}Steam has no achievements on record for {{ waiting.achievements }} played game{{ "" if waiting.achievements == 1 else "s" }}; it sometimes cannot give them, and each sync asks again.{% endif %}
+  </p>
+</section>
+
+<h3>What a sync does</h3>
+<ol>
+  <li><strong>{{ steps[0][1] }}.</strong> One call to Steam's API: your games, hours and when you last played each.</li>
+  <li><strong>{{ steps[1][1] }}.</strong> Official API, quick. Only games you've played, and later syncs only the ones you played since.</li>
+  <li><strong>{{ steps[2][1] }}.</strong> The slow part, about 3 seconds a game, so the very first sync takes a while. Later syncs only handle games you've added.</li>
+  <li><strong>{{ steps[3][1] }}.</strong> For games you own but have barely played, so recommendations can weigh how well they are reviewed.</li>
+</ol>
+<p class="meta">
+  A sync saves as it goes. If you stop it, or Steam turns it away, the next one carries on where it left off.
+  It never changes your diary. Family Sharing games and your wishlist are not part of it.
+</p>
+{% endblock %}

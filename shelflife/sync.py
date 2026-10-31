@@ -66,8 +66,10 @@ def sync_achievements(
     api_key: str,
     steam_id: str,
     on_progress: Callable[[int, int, Game, AchievementStats], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> int:
-    """Fetch achievement progress for played games, most-played first.
+    """Fetch achievement progress for played games, most-played first. `should_stop` is
+    asked before each game; when it says yes the run ends there, keeping what is done.
 
     Fetches games never fetched before, games played in the last two weeks
     (their progress has probably changed), and games fetched before unlock
@@ -95,6 +97,8 @@ def sync_achievements(
 
     done = failures = 0
     for i, entry in enumerate(pending, start=1):
+        if should_stop is not None and should_stop():
+            break
         try:
             stats = fetch_achievements(api_key, steam_id, entry.steam_app_id)
             failures = 0
@@ -176,6 +180,7 @@ def sync_backlog_reviews(
     session: Session,
     max_playtime_min: int,
     on_progress: Callable[[int, int, Game], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> int:
     """Fetch review counts for owned games played under max_playtime_min.
 
@@ -195,6 +200,8 @@ def sync_backlog_reviews(
     )
     done = failures = 0
     for i, game in enumerate(pending, start=1):
+        if should_stop is not None and should_stop():
+            break
         try:
             counts = fetch_review_counts(game.steam_app_id)
             failures = 0
@@ -245,6 +252,7 @@ def enrich_games(
     session: Session,
     limit: int | None = None,
     on_progress: Callable[[int, int, Game], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> int:
     """Fetch store details + tags for games we haven't enriched yet.
 
@@ -265,6 +273,8 @@ def enrich_games(
 
     done = 0
     for i, game in enumerate(pending, start=1):
+        if should_stop is not None and should_stop():
+            break
         try:
             enrich_one(game)
         except (RateLimited, requests.RequestException):

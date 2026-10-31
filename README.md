@@ -15,7 +15,7 @@ Steam knows what you own and how long you've played, but not what you *thought* 
 - **Family Sharing import** (optional): games you can play through a Steam Family.
 - **Diary:** 0.5–5 star ratings, reviews, "not interested" marks, a status (playing, played, dropped) with dates, and favorites, stored locally.
 - **Recommendations:** three lists (backlog, family, games you don't own), each with a reason.
-- **Web app:** recommendations, a library you can rate and edit in place, an Explore page with a button to find more games, similar games for any game, a diary, stats, game pages, and your taste profile.
+- **Web app:** recommendations, a library you can rate and edit in place, an Explore page with a button to find more games, similar games for any game, a diary, stats, game pages, your taste profile, and a Sync button.
 
 ## Screenshots
 
@@ -77,7 +77,7 @@ python -m scripts.discover       # a pool of well-reviewed games you don't own
 python -m scripts.web            # then open http://127.0.0.1:8000
 ```
 
-The fetching scripts are deliberately slow to respect the services' limits (about 3 seconds per game, so 300 games take roughly 15 minutes). They save progress as they go: stop with Ctrl-C and run again to continue. Re-run `sync` and `achievements` any time to refresh your playtime.
+You can also sync from the web app: its **Sync** page runs the same steps (library, achievements, store details, review counts) in the background with a progress bar and a Stop button, and carries on where it left off if you stop it. The fetching scripts are deliberately slow to respect the services' limits (about 3 seconds per game, so 300 games take roughly 15 minutes). They save progress as they go: stop with Ctrl-C and run again to continue. Re-run `sync` and `achievements` any time to refresh your playtime.
 
 **If something goes wrong**
 
@@ -108,6 +108,7 @@ The fetching scripts are deliberately slow to respect the services' limits (abou
 - **Explore:** games you don't own, ranked by fit, with the same filter, search, tags and sorting. **Find more games** adds new ones for the genres or tags you pick (or the tags you like most), or with no tags at all (the best-reviewed games from SteamSpy's list of popular games), for a number of games you choose, and shows its progress. Every game page has **Games like this** (Explore ranked by how close games are to that one) and a button to search Steam for new games like it.
 - **Diary:** one tab each for playing, played, dropped and your favorites, newest first, paged, with search and a tag filter. Set a status, optional dates and a favorite on a game's page; dates are never filled in for you. "Played" means finished or played as much as you wanted, so it fits endless multiplayer games too.
 - **Tags:** pick several tags in the Library, Explore or Diary, and choose whether a game needs all of them or any of them. Tags match whole and ignore case, a game "has" a tag if it is among its 20 most voted, and the box suggests the tags that exist.
+- **Sync:** one button for your library, achievements, the store details of new games and review counts of your backlog, with progress and a Stop button. It saves as it goes, so the first (long) sync can be stopped and resumed, and later ones only handle what is new. It needs `STEAM_API_KEY` and `STEAM_ID` in `.env`, and it never runs at the same time as a game search.
 - **Stats:** games and hours in your library, your diary by status, games finished per year, how you rate, and your most played games.
 - **Game page, My ratings, My taste:** why a game fits you and how you played it; your ratings and reviews (edit or delete in place); and the tag profile behind it all, where you also choose whether your taste learns from your ratings, from how you play, or from both.
 

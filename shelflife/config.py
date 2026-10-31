@@ -14,6 +14,14 @@ class Settings:
     steam_id: str
 
 
+def try_load_settings() -> Settings | None:
+    """The key and SteamID from .env, or None when either is missing (the web app uses
+    this: it must explain a missing setting on the page, not exit)."""
+    key = os.getenv("STEAM_API_KEY", "").strip()
+    steam_id = os.getenv("STEAM_ID", "").strip()
+    return Settings(steam_api_key=key, steam_id=steam_id) if key and steam_id else None
+
+
 def load_settings() -> Settings:
     key = os.getenv("STEAM_API_KEY", "").strip()
     steam_id = os.getenv("STEAM_ID", "").strip()

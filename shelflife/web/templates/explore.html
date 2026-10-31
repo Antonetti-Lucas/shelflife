@@ -21,6 +21,7 @@
 
 <section class="find" id="find">
   <h3>Find more games</h3>
+  {% if sync_running %}<p class="warn">A sync is running, so searching has to wait. <a href="/sync">See the sync</a>.</p>{% endif %}
   {% if job.running %}
     <p>
       {% if job.phase == "lists" and job.popular %}Step 1 of 2: reading SteamSpy's popular games (page {{ job.done + 1 }} of up to {{ job.total }})

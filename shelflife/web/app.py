@@ -17,6 +17,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from shelflife import diary
+from shelflife.config import try_load_settings
 from shelflife.db import SessionLocal, init_db
 from shelflife.hours import set_hours
 from shelflife.models import DiaryEntry, Game, LibraryEntry
@@ -29,6 +30,10 @@ from shelflife.score import engagement_score
 from shelflife.settings import TASTE_MODE_HELP, TASTE_MODES, get_taste_mode, set_taste_mode
 from shelflife.similar import search_tags, similar_to, tag_idf
 from shelflife.stats import compute_stats
+from shelflife.sync_job import SECONDS_PER_GAME as SYNC_SECONDS_PER_GAME
+from shelflife.sync_job import STEPS as SYNC_STEPS
+from shelflife.sync_job import job as sync_job
+from shelflife.sync_job import what_is_waiting
 from shelflife.tagfilter import TagIndex, matches, parse_match, parse_tags
 
 BASE = Path(__file__).parent
@@ -365,6 +370,7 @@ def explore(
             "here": current_url(request),
             "ratings": ratings,
             "job": discover_job.snapshot(),
+            "sync_running": sync_job.snapshot().running,
             "taste_tags": top_taste_tags(session, ratings, not_interested),
             "find_tag_options": TagIndex(session.scalars(select(Game.tags))).popular(),
             "find_counts": FIND_COUNTS,
@@ -400,6 +406,9 @@ def find_more_games(
     """Look for new games to explore: starts a background search and returns at once.
     With `like` (a game's app id) it looks for close matches to that game instead; with
     source "popular" it ignores tags and takes the best-reviewed popular games."""
+    if sync_job.snapshot().running:
+        discover_job.fail("A sync is running. Wait for it to finish, or stop it, then look for games.")
+        return RedirectResponse("/explore#find", status_code=303)
     if like.strip():
         ref = session.get(Game, int(like)) if like.strip().isdigit() else None
         if ref is None or not ref.tags:
@@ -437,6 +446,45 @@ def find_more_games(
             choice(min_reviews, FIND_MIN_REVIEWS, MIN_REVIEWS),
         )
     return RedirectResponse("/explore#find", status_code=303)
+
+
+@app.get("/sync")
+def sync_page(request: Request, session: Session = Depends(get_session)):
+    waiting = what_is_waiting(session)
+    return templates.TemplateResponse(
+        request,
+        "sync.html",
+        {
+            "job": sync_job.snapshot(),
+            "configured": try_load_settings() is not None,
+            "finding": discover_job.snapshot().running,
+            "waiting": waiting,
+            "steps": SYNC_STEPS,
+            "minutes": -(-waiting["details"] * SYNC_SECONDS_PER_GAME // 60),
+        },
+    )
+
+
+@app.post("/sync/start")
+def sync_start():
+    """Bring your library up to date: starts the sync in the background and returns at once."""
+    settings = try_load_settings()
+    if discover_job.snapshot().running:
+        sync_job.fail("Finding games is running. Wait for it to finish, or stop it, then sync.")
+    elif settings is None:
+        sync_job.fail(
+            "Sync needs STEAM_API_KEY and STEAM_ID in your .env file (see Setup in the README). "
+            "Add them and restart the app."
+        )
+    else:
+        sync_job.start(settings.steam_api_key, settings.steam_id)
+    return RedirectResponse("/sync", status_code=303)
+
+
+@app.post("/sync/stop")
+def sync_stop():
+    sync_job.cancel()
+    return RedirectResponse("/sync", status_code=303)
 
 
 @app.post("/explore/find/stop")

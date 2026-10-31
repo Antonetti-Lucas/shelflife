@@ -50,14 +50,14 @@ def names_on(html):
 # ---- pages ----
 
 
-@pytest.mark.parametrize("path", ["/", "/library", "/explore", "/diary", "/ratings", "/stats", "/taste"])
+@pytest.mark.parametrize("path", ["/", "/library", "/explore", "/diary", "/ratings", "/stats", "/taste", "/sync"])
 def test_every_page_loads_with_an_empty_database(client, path):
     assert client.get(path).status_code == 200
 
 
 def test_the_nav_links_every_page(client):
     html = client.get("/").text
-    for target in ("/", "/library", "/explore", "/diary", "/ratings", "/stats", "/taste"):
+    for target in ("/", "/library", "/explore", "/diary", "/ratings", "/stats", "/taste", "/sync"):
         assert f'href="{target}"' in html
 
 

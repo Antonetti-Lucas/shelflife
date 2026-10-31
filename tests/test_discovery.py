@@ -402,7 +402,7 @@ def test_a_new_search_can_start_after_one_finished(inline_job, lists, session):
         (FindResult(), "done", "No new games found"),
         (FindResult(added=2, enriched=2, checked=9, skipped=7), "done", "looked at 9 and set aside 7"),
         (FindResult(added=2, enriched=2, failed=1), "done", "1 could not be fetched"),
-        (FindResult(empty_tags=["Typo"]), "done", "no games for “Typo”"),
+        (FindResult(empty_tags=["Typo"]), "done", "no games for “Typo” (it does not know that tag name"),
         (FindResult(added=2, enriched=1, aborted="rate limited."), "error", "Stopped early: rate limited."),
         (FindResult(added=2, enriched=1, stopped=True), "stopped", "Stopped."),
     ],
