@@ -29,6 +29,7 @@ class JobSnapshot:
     message: str = ""  # the outcome of the last search, or why it could not start
     like_id: int | None = None  # the game a "games like this" search was for
     like_name: str = ""
+    popular: bool = False  # a search through SteamSpy's popular games instead of tags
 
     @property
     def running(self) -> bool:
@@ -39,7 +40,9 @@ class JobSnapshot:
         return self.state == "error"
 
 
-def summarize(result: FindResult, tags: list[str], like: tuple[int, str] | None = None) -> JobSnapshot:
+def summarize(
+    result: FindResult, tags: list[str], like: tuple[int, str] | None = None, popular: bool = False
+) -> JobSnapshot:
     """Turn a finished search into the message the page shows."""
     like_id, like_name = like if like else (None, "")
     parts = []
@@ -52,6 +55,8 @@ def summarize(result: FindResult, tags: list[str], like: tuple[int, str] | None 
     if result.skipped:
         why = f"that are not close enough to {like_name}" if like else "that only mention the tag in passing"
         parts.append(f"looked at {result.checked} and set aside {result.skipped} {why}")
+    if result.not_games:
+        parts.append(f"{result.not_games} turned out not to be games (DLC or software) and are hidden")
     if result.failed:
         parts.append(f"{result.failed} could not be fetched and will be retried next time")
     if result.empty_tags:
@@ -60,11 +65,17 @@ def summarize(result: FindResult, tags: list[str], like: tuple[int, str] | None 
     message = "; ".join(parts) + "."
     if result.aborted:
         message = f"Stopped early: {result.aborted} Progress is saved; try again later. " + message
-        return JobSnapshot(state="error", message=message, like_id=like_id, like_name=like_name)
+        return JobSnapshot(state="error", message=message, like_id=like_id, like_name=like_name, popular=popular)
     if result.stopped:
-        return JobSnapshot(state="stopped", message="Stopped. " + message, like_id=like_id, like_name=like_name)
+        return JobSnapshot(
+            state="stopped", message="Stopped. " + message, like_id=like_id, like_name=like_name, popular=popular
+        )
     return JobSnapshot(
-        state="done", message=message + " They are ranked on this page.", like_id=like_id, like_name=like_name
+        state="done",
+        message=message + " They are ranked on this page.",
+        like_id=like_id,
+        like_name=like_name,
+        popular=popular,
     )
 
 
@@ -91,10 +102,15 @@ class DiscoverJob:
                 self._snapshot = JobSnapshot(state="error", message=message)
 
     def start(
-        self, tags: list[str], count: int, min_reviews: int, like: tuple[int, str] | None = None
+        self,
+        tags: list[str],
+        count: int,
+        min_reviews: int,
+        like: tuple[int, str] | None = None,
+        popular: bool = False,
     ) -> bool:
         """Start a search; False if one is already running. `like`: (app id, name) of a
-        game to find close matches for."""
+        game to find close matches for. `popular`: search SteamSpy's popular games, not tags."""
         with self._lock:
             if self._snapshot.running:
                 return False
@@ -106,8 +122,9 @@ class DiscoverJob:
                 total=len(tags),
                 like_id=like[0] if like else None,
                 like_name=like[1] if like else "",
+                popular=popular,
             )
-        self._spawn(lambda: self._work(tags, count, min_reviews, like))
+        self._spawn(lambda: self._work(tags, count, min_reviews, like, popular))
         return True
 
     def cancel(self) -> None:
@@ -115,7 +132,12 @@ class DiscoverJob:
         self._stop.set()
 
     def _work(
-        self, tags: list[str], count: int, min_reviews: int, like: tuple[int, str] | None = None
+        self,
+        tags: list[str],
+        count: int,
+        min_reviews: int,
+        like: tuple[int, str] | None = None,
+        popular: bool = False,
     ) -> None:
         def progress(phase: str, done: int, total: int, text: str) -> None:
             self._set(phase=phase, done=done, total=total, text=text)
@@ -134,14 +156,17 @@ class DiscoverJob:
                     on_progress=progress,
                     should_stop=self._stop.is_set,
                     like=reference,
+                    popular=popular,
                 )
-            snapshot = summarize(result, tags, like)
+            snapshot = summarize(result, tags, like, popular)
         except Exception as exc:  # never leave the page stuck on "running"
+            reason = (str(exc).splitlines() or [""])[0] or type(exc).__name__  # one line, not a page of SQL
             snapshot = JobSnapshot(
                 state="error",
-                message=f"Stopped early: {exc}",
+                message=f"Stopped early: {reason}",
                 like_id=like[0] if like else None,
                 like_name=like[1] if like else "",
+                popular=popular,
             )
         with self._lock:
             self._snapshot = snapshot

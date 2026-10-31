@@ -36,6 +36,7 @@ MIN_REVIEWS = 300  # skip games too obscure for their review score to mean anyth
 RELEVANT_TOP = 10  # a search tag must be among a game's 10 most voted tags
 MAX_CHECKS_PER_GAME = 8  # look at no more than this many games per game wanted
 MAX_FAILURES_IN_A_ROW = 3  # stop when the network keeps failing
+POPULAR_PAGES = 3  # at most this many pages (1,000 games each, a minute apart) for a search without tags
 OFF_TOPIC = "off-topic"  # Game.type of a game that is listed under a tag but is not about it
 
 
@@ -105,56 +106,44 @@ class FindResult:
     checked: int = 0  # games whose own tags were looked at
     skipped: int = 0  # of those, how many only mention the tag in passing
     failed: int = 0  # games skipped after a network error
+    not_games: int = 0  # fetched, but the store says it is not a game (DLC, software, ...)
     empty_tags: list[str] = field(default_factory=list)  # tags SteamSpy knows no games for
     stopped: bool = False  # cancelled before finishing
     aborted: str | None = None  # why it gave up early (rate limit, network)
 
 
-def find_games(
+def _add_by_tags(
     session: Session,
     tags: list[str],
     count: int,
-    min_reviews: int = MIN_REVIEWS,
-    on_progress: Callable[[str, int, int, str], None] | None = None,
-    should_stop: Callable[[], bool] | None = None,
-    like: tuple[dict[str, float], dict[str, float]] | None = None,
-) -> FindResult:
-    """Add up to `count` new games that are really about the given tags, and fetch
-    their store details.
-
-    `like`: (a game's tag vector, the tag rarity table) to also require each new game
-    to be at least MIN_SIMILARITY similar to that game ("games like this one").
-
-    on_progress(phase, done, total, text) reports what it is doing: phase "lists"
-    (looking up tags), "check" (reading a game's tags; done = games kept so far),
-    "details" (fetching store details), "done". Games left without details by an
-    earlier interrupted run are finished too. Everything is committed game by game,
-    so stopping loses nothing.
-    """
-    report = on_progress or (lambda *args: None)
-    stop = should_stop or (lambda: False)
-    result = FindResult()
-
+    min_reviews: int,
+    report: Callable[[str, int, int, str], None],
+    stop: Callable[[], bool],
+    result: FindResult,
+    like: tuple[dict[str, float], dict[str, float]] | None,
+    spies: dict[int, SpyDetails],
+) -> bool:
+    """Look through the tags' games and keep the ones really about them. False if it
+    ended before choosing anything (stopped, or SteamSpy could not be reached)."""
     by_tag: dict[str, list[SpyListing]] = {}
     try:
         for i, tag in enumerate(tags):
             if stop():
                 result.stopped = True
-                return result
+                return False
             report("lists", i, len(tags), f"Looking up “{tag}” on SteamSpy")
             by_tag[tag] = store.fetch_spy_tag_games(tag)
             if not by_tag[tag]:
                 result.empty_tags.append(tag)
     except RateLimited as exc:
         result.aborted = str(exc)
-        return result
+        return False
     except (requests.RequestException, ValueError) as exc:
         result.aborted = f"Could not reach SteamSpy: {exc}"
-        return result
+        return False
 
     skip = known_ids(session)
     ranked = {tag: rank_candidates(listings, skip, min_reviews) for tag, listings in by_tag.items()}
-    spies: dict[int, SpyDetails] = {}
     fetches = failures_in_a_row = 0
     for tag, listing in turns(ranked):
         if result.added >= count or fetches >= count * MAX_CHECKS_PER_GAME:
@@ -201,6 +190,87 @@ def find_games(
         if row is None:
             session.add(game)
         session.commit()
+    return True
+
+
+def _add_popular(
+    session: Session,
+    count: int,
+    min_reviews: int,
+    report: Callable[[str, int, int, str], None],
+    stop: Callable[[], bool],
+    result: FindResult,
+) -> None:
+    """Add the best-reviewed games from SteamSpy's popularity-ordered list, whatever their
+    tags. Reads up to POPULAR_PAGES pages (a page a minute), stopping as soon as there are
+    enough games you do not already have."""
+    skip = known_ids(session)
+    found: dict[int, SpyListing] = {}
+    try:
+        for page in range(POPULAR_PAGES):
+            if stop():
+                result.stopped = True
+                return
+            wait = " (SteamSpy allows one page a minute, so this waits)" if page else ""
+            report("lists", page, POPULAR_PAGES, f"Fetching SteamSpy's popular games, page {page + 1}{wait}")
+            for g in rank_candidates(store.fetch_spy_page(page), skip, min_reviews):
+                found.setdefault(g.app_id, g)
+            if len(found) >= count:
+                break
+    except RateLimited as exc:
+        result.aborted = str(exc)
+        return
+    except (requests.RequestException, ValueError) as exc:
+        result.aborted = f"Could not reach SteamSpy: {exc}"
+        return
+    best = rank_candidates(found.values(), set(), min_reviews)[:count]
+    now = _now()
+    for g in best:
+        # A tag search may have set this game aside as off-topic and kept its row. That says
+        # nothing against it as a popular game: bring it back into the pool.
+        row = session.get(Game, g.app_id)
+        if row is None:
+            row = Game(steam_app_id=g.app_id, name=g.name)
+            session.add(row)
+        row.reviews_positive, row.reviews_negative, row.reviews_fetched_at = g.positive, g.negative, now
+        row.type = None
+        row.details_fetched_at = None
+    session.commit()
+    result.added = len(best)
+
+
+def find_games(
+    session: Session,
+    tags: list[str],
+    count: int,
+    min_reviews: int = MIN_REVIEWS,
+    on_progress: Callable[[str, int, int, str], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+    like: tuple[dict[str, float], dict[str, float]] | None = None,
+    popular: bool = False,
+) -> FindResult:
+    """Add up to `count` new games that are really about the given tags, and fetch
+    their store details.
+
+    `like`: (a game's tag vector, the tag rarity table) to also require each new game
+    to be at least MIN_SIMILARITY similar to that game ("games like this one").
+    `popular`: ignore tags and take the best-reviewed of SteamSpy's most popular games.
+
+    on_progress(phase, done, total, text) reports what it is doing: phase "lists"
+    (looking up tags), "check" (reading a game's tags; done = games kept so far),
+    "details" (fetching store details), "done". Games left without details by an
+    earlier interrupted run are finished too. Everything is committed game by game,
+    so stopping loses nothing.
+    """
+    report = on_progress or (lambda *args: None)
+    stop = should_stop or (lambda: False)
+    result = FindResult()
+
+    spies: dict[int, SpyDetails] = {}
+    if popular:
+        _add_popular(session, count, min_reviews, report, stop, result)
+    elif not _add_by_tags(session, tags, count, min_reviews, report, stop, result, like, spies):
+        return result
 
     pending = pending_pool(session)
     failures_in_a_row = 0
@@ -228,5 +298,7 @@ def find_games(
         session.commit()
         failures_in_a_row = 0
         result.enriched += 1
+        if game.type != "game":
+            result.not_games += 1
     report("done", result.enriched, len(pending), "")
     return result

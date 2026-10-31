@@ -23,8 +23,10 @@
   <h3>Find more games</h3>
   {% if job.running %}
     <p>
-      {% if job.phase == "lists" %}Step 1 of 3: looking up tags ({{ job.done }} of {{ job.total }})
+      {% if job.phase == "lists" and job.popular %}Step 1 of 2: reading SteamSpy's popular games (page {{ job.done + 1 }} of up to {{ job.total }})
+      {% elif job.phase == "lists" %}Step 1 of 3: looking up tags ({{ job.done }} of {{ job.total }})
       {% elif job.phase == "check" %}Step 2 of 3: reading games' tags, kept {{ job.done }} of {{ job.total }}
+      {% elif job.popular %}Step 2 of 2: fetching game details ({{ job.done }} of {{ job.total }})
       {% else %}Step 3 of 3: fetching game details ({{ job.done }} of {{ job.total }}){% endif %}
     </p>
     <progress value="{{ job.done }}" max="{{ job.total or 1 }}"></progress>
@@ -43,6 +45,12 @@
         <input type="hidden" name="like" value="{{ ref.steam_app_id }}">
         <span class="inline-field like-note">New games like <strong>{{ ref.name }}</strong>, searching {{ like_tags|join(", ") }}</span>
       {% else %}
+      <label class="inline-field">Look
+        <select name="source" aria-label="Where to look for games">
+          <option value="tags" selected>by tags</option>
+          <option value="popular">at well-reviewed games, no tags</option>
+        </select>
+      </label>
       {{ tag_input("", find_tag_options, none, "tags", "find-tag-options",
                    "Genres or tags, e.g. Roguelike, Co-op" ~ ((" (empty: your taste, " ~ taste_tags|join(", ") ~ ")") if taste_tags else "")) }}
       {% endif %}
@@ -61,6 +69,14 @@
       (25 games is a few minutes), and only runs when you press the button. Genres are tags too: try RPG, Strategy or Roguelike.
       {% if ref %}Here it also keeps only games whose tags are close to {{ ref.name }}'s.{% endif %}
     </p>
+    {% if not ref %}
+    <p class="meta">
+      <strong>By tags</strong> is the search above. <strong>Well-reviewed games, no tags</strong> ignores tags: it takes the
+      best-reviewed games from SteamSpy's list of popular games that you don't have (SteamSpy allows one page of 1,000 a
+      minute, so it can wait a little), and Explore then ranks them by how well they fit your taste. To stay with better-known
+      games, raise "With at least" to 1,000 reviews.
+    </p>
+    {% endif %}
   {% endif %}
 </section>
 

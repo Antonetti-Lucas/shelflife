@@ -2,6 +2,7 @@
 
 import json
 import re
+import time
 from dataclasses import dataclass, field
 
 import requests
@@ -15,6 +16,7 @@ HEADERS = {"User-Agent": "ShelfLife/0.1 (personal game diary project)"}
 # The store allows roughly 200 requests / 5 min; SteamSpy asks for 1 request/second.
 store_throttle = Throttle(1.6)
 steamspy_throttle = Throttle(1.1)
+steamspy_all_throttle = Throttle(61)  # SteamSpy asks for one request a minute for its full list
 
 
 @dataclass(frozen=True)
@@ -145,7 +147,10 @@ def fetch_spy_tag_games(tag: str, timeout: float = 90) -> list[SpyListing]:
 
 def fetch_spy_tag_list(tag: str, timeout: float = 90) -> list[SpyListing]:
     """Games SteamSpy lists under a tag, with review counts (can be thousands)."""
-    data = _spy_get({"request": "tag", "tag": tag}, timeout)
+    return _listings(_spy_get({"request": "tag", "tag": tag}, timeout))
+
+
+def _listings(data: dict) -> list[SpyListing]:
     return [
         SpyListing(
             app_id=g["appid"],
@@ -155,3 +160,28 @@ def fetch_spy_tag_list(tag: str, timeout: float = 90) -> list[SpyListing]:
         )
         for g in data.values()
     ]
+
+
+# SteamSpy's full list comes most popular first, 1,000 games a page (page 0: the top
+# 1,000). Its "top 100" lists all return the same games now, so they are not used.
+PAGE_CACHE_SECONDS = 6 * 3600
+_pages: dict[int, tuple[float, list[SpyListing]]] = {}
+
+
+def fetch_spy_page(page: int, timeout: float = 120) -> list[SpyListing]:
+    """One page of SteamSpy's full list of games with their review counts, most popular
+    first. Waits as SteamSpy asks (one such request a minute) and remembers a page for a
+    few hours, so a second search does not wait again."""
+    cached = _pages.get(page)
+    if cached is not None and time.monotonic() - cached[0] < PAGE_CACHE_SECONDS:
+        return cached[1]
+    steamspy_all_throttle.wait()
+    resp = requests.get(
+        STEAMSPY_URL, params={"request": "all", "page": page}, headers=HEADERS, timeout=timeout
+    )
+    if resp.status_code in (403, 429):
+        raise RateLimited("SteamSpy is rate limiting us; try again in a few minutes.")
+    resp.raise_for_status()
+    listings = _listings(resp.json())
+    _pages[page] = (time.monotonic(), listings)
+    return listings

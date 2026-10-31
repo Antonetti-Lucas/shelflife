@@ -394,10 +394,12 @@ def find_more_games(
     count: str = Form("25"),
     min_reviews: str = Form(str(MIN_REVIEWS)),
     like: str = Form(""),
+    source: str = Form("tags"),
     session: Session = Depends(get_session),
 ):
     """Look for new games to explore: starts a background search and returns at once.
-    With `like` (a game's app id) it looks for close matches to that game instead."""
+    With `like` (a game's app id) it looks for close matches to that game instead; with
+    source "popular" it ignores tags and takes the best-reviewed popular games."""
     if like.strip():
         ref = session.get(Game, int(like)) if like.strip().isdigit() else None
         if ref is None or not ref.tags:
@@ -410,6 +412,15 @@ def find_more_games(
             like=(ref.steam_app_id, ref.name),
         )
         return RedirectResponse(f"/explore?like={ref.steam_app_id}#find", status_code=303)
+
+    if source == "popular":
+        discover_job.start(
+            [],
+            choice(count, FIND_COUNTS, 25),
+            choice(min_reviews, FIND_MIN_REVIEWS, MIN_REVIEWS),
+            popular=True,
+        )
+        return RedirectResponse("/explore#find", status_code=303)
 
     wanted = parse_tags(tags)
     if wanted:

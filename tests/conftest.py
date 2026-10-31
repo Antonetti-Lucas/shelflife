@@ -41,6 +41,7 @@ def no_waiting(monkeypatch):
         reviews.reviews_throttle,
         appnames.app_list_throttle,
         achievements.steam_throttle,
+        store.steamspy_all_throttle,
     ):
         monkeypatch.setattr(throttle, "min_interval", 0)
 
