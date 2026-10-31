@@ -27,9 +27,58 @@ def test_a_barely_engaging_unrated_game_has_no_weight(session):
     assert taste_weight(add_game(session, 1, minutes=600).library_entry, None) == 0
 
 
-def test_a_rating_overrides_the_engagement_score(session):
-    entry = add_game(session, 1, minutes=1000 * 60, achievements=(10, 10)).library_entry
-    assert taste_weight(entry, 2.0) == pytest.approx(-0.5)
+def test_in_the_mix_play_lifts_a_rating_but_the_rating_leads(session):
+    entry = add_game(session, 1, minutes=1000 * 60, achievements=(10, 10), rarest=2.0).library_entry
+    # a 2-star game (-0.5) played a lot (engagement fraction 1): 0.7 * -0.5 + 0.3 * 1
+    assert taste_weight(entry, 2.0) == pytest.approx(-0.05)
+    assert taste_weight(entry, 2.0, "mix") == pytest.approx(-0.05)
+    assert taste_weight(entry, 2.0) < 0  # a low rating still pulls tags away
+
+
+def test_in_the_mix_a_barely_played_game_counts_by_its_rating_alone(session):
+    entry = add_game(session, 1, minutes=600).library_entry
+    assert taste_weight(entry, 5.0) == pytest.approx(0.7)  # 70% of a 5-star game
+    assert taste_weight(entry, 1.0) == pytest.approx(-0.7)
+
+
+def test_a_game_played_elsewhere_counts_by_its_rating_alone_in_the_mix():
+    assert taste_weight(None, 4.0) == pytest.approx(0.5)
+
+
+# ---- the three ways of learning your taste ----
+
+
+@pytest.fixture
+def played_a_lot(session):
+    return add_game(session, 1, minutes=1000 * 60, achievements=(10, 10), rarest=2.0).library_entry
+
+
+@pytest.fixture
+def barely_played(session):
+    return add_game(session, 2, minutes=600).library_entry
+
+
+def test_ratings_only_ignores_how_you_played(session, played_a_lot, barely_played):
+    assert taste_weight(played_a_lot, 2.0, "ratings") == pytest.approx(-0.5)  # the rating decides
+    assert taste_weight(barely_played, 5.0, "ratings") == pytest.approx(1.0)
+    assert taste_weight(played_a_lot, None, "ratings") == 0  # a hundred hours teach nothing
+    assert taste_weight(None, 4.0, "ratings") == pytest.approx(0.5)
+
+
+def test_engagement_only_ignores_ratings(session, played_a_lot, barely_played):
+    assert taste_weight(played_a_lot, 1.0, "engagement") == pytest.approx(1.0)  # a hated game, played a lot
+    assert taste_weight(played_a_lot, None, "engagement") == pytest.approx(1.0)
+    assert taste_weight(barely_played, 5.0, "engagement") == 0  # a loved game, barely played
+    assert taste_weight(None, 5.0, "engagement") == 0  # played elsewhere: no play data
+
+
+@pytest.mark.parametrize("mode", ["mix", "ratings", "engagement"])
+def test_no_signal_means_no_weight_in_any_mode(mode):
+    assert taste_weight(None, None, mode) == 0
+
+
+def test_the_default_is_the_mix(session, played_a_lot):
+    assert taste_weight(played_a_lot, 2.0) == taste_weight(played_a_lot, 2.0, "mix")
 
 
 # ---- editions of the same game ----

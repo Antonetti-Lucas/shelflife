@@ -8,6 +8,15 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from shelflife.db import Base
 
 
+class Setting(Base):
+    """A choice you made in the app, kept between runs (see shelflife/settings.py)."""
+
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(primary_key=True)
+    value: Mapped[str]
+
+
 class Game(Base):
     __tablename__ = "games"
 

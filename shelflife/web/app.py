@@ -26,6 +26,7 @@ from shelflife.discover_job import SECONDS_PER_GAME, job as discover_job
 from shelflife.discovery import MIN_REVIEWS
 from shelflife.recommend import explain, recommend, score_all, taste_profile, top_taste_tags
 from shelflife.score import engagement_score
+from shelflife.settings import TASTE_MODE_HELP, TASTE_MODES, get_taste_mode, set_taste_mode
 from shelflife.similar import search_tags, similar_to, tag_idf
 from shelflife.stats import compute_stats
 from shelflife.tagfilter import TagIndex, matches, parse_match, parse_tags
@@ -158,6 +159,7 @@ def home(
             "size": size,
             "sizes": REC_PAGE_SIZES,
             "ratings": ratings,
+            "taste_mode": TASTE_MODES[get_taste_mode(session)],
         },
     )
 
@@ -582,8 +584,26 @@ def taste_page(request: Request, session: Session = Depends(get_session)):
     return templates.TemplateResponse(
         request,
         "taste.html",
-        {"taste": taste, "toward": toward, "away": away, "biggest": biggest},
+        {
+            "taste": taste,
+            "toward": toward,
+            "away": away,
+            "biggest": biggest,
+            "mode": get_taste_mode(session),
+            "modes": TASTE_MODES,
+            "mode_help": TASTE_MODE_HELP,
+        },
     )
+
+
+@app.post("/taste/mode")
+def change_taste_mode(mode: str = Form(""), session: Session = Depends(get_session)):
+    """Choose what your taste learns from: ratings, how you play, or both."""
+    try:
+        set_taste_mode(session, mode)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return RedirectResponse("/taste#mode", status_code=303)
 
 
 # ---- actions ----------------------------------------------------------------

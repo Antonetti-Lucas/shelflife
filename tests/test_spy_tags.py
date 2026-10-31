@@ -86,3 +86,10 @@ def test_the_spelling_that_worked_is_remembered_so_it_is_not_searched_for_again(
 def test_a_tag_nobody_lists_asks_each_spelling_once_and_returns_nothing(spy):
     assert fetch_spy_tag_games("Typo") == []
     assert spy.asked == spy_tag_spellings("Typo")
+
+
+@pytest.mark.parametrize("tag, steamspy_name", [("FPS", "fps"), ("Shooter", "shooter"), ("First-Person", "first-person"), ("Indie", "indie")])
+def test_tags_steamspy_only_lists_in_lowercase_are_found_from_the_capitalised_name(spy, tag, steamspy_name):
+    # Regression: searching for "FPS" found nothing because SteamSpy answers only to "fps".
+    spy.known[steamspy_name] = games(200)
+    assert len(fetch_spy_tag_games(tag)) == 200

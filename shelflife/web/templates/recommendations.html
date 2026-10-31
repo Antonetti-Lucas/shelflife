@@ -17,7 +17,9 @@
 
 <p class="lede">
   Built from {{ taste.explicit_count }} games you rated and {{ taste.implicit_count }}
-  more judged by how you played them. <a href="/taste">See your taste profile</a>.
+  more judged by how you played them. Taste mode: <strong>{{ taste_mode }}</strong>
+  (<a href="/taste#mode">change</a>). <a href="/taste">See your taste profile</a>.
+  {% if taste.explicit_count + taste.implicit_count == 0 %}<span class="warn">This mode has nothing to learn from yet, so these picks are not based on your taste.</span>{% endif %}
 </p>
 <p class="sizes">
   Per page:

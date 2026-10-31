@@ -22,6 +22,7 @@ from shelflife.diary import favorite_ratings, tracked_ids
 from shelflife.feedback import NOT_INTERESTED_RATING
 from shelflife.models import Game, LibraryEntry
 from shelflife.quality import quality_factor
+from shelflife.settings import DEFAULT_TASTE_MODE, get_taste_mode
 from shelflife.score import engagement_score
 from shelflife.tags import compute_idf, cosine, tag_vector
 
@@ -29,6 +30,7 @@ NEUTRAL_RATING = 3.0  # a 3-star rating adds nothing; lower ratings push tags aw
 IMPLICIT_MAX = 0.5  # unrated games count at most half as much as a 5-star rating
 IMPLICIT_ZERO_SCORE = 2.0  # engagement score at or below this adds nothing
 IMPLICIT_FULL_SCORE = 5.0  # ...and at or above this reaches IMPLICIT_MAX
+MIX_RATING_SHARE = 0.7  # in the mix, a rated game counts 70% by its rating, 30% by how you played it
 BACKLOG_MAX_MIN = 60  # owned and played under an hour = backlog
 
 
@@ -83,19 +85,37 @@ class Scores:
     discover: set[int]
 
 
-def taste_weight(entry: LibraryEntry | None, rating: float | None) -> float:
-    """How strongly a played game shapes your taste: -1 (hated) to +1 (loved).
-
-    A rating is your own word and counts in full. Without one, the engagement
-    score stands in; it already includes how recently you really played.
-    """
-    if rating is not None:
-        return (rating - NEUTRAL_RATING) / (5.0 - NEUTRAL_RATING)
-    if entry is None:
-        return 0.0
+def engagement_fraction(entry: LibraryEntry) -> float:
+    """How much your play of a game says you liked it, from 0 (nothing) to 1 (a lot):
+    the engagement score between IMPLICIT_ZERO_SCORE and IMPLICIT_FULL_SCORE."""
     span = IMPLICIT_FULL_SCORE - IMPLICIT_ZERO_SCORE
     fraction = (engagement_score(entry).total - IMPLICIT_ZERO_SCORE) / span
-    return IMPLICIT_MAX * min(max(fraction, 0.0), 1.0)
+    return min(max(fraction, 0.0), 1.0)
+
+
+def taste_weight(
+    entry: LibraryEntry | None, rating: float | None, mode: str = DEFAULT_TASTE_MODE
+) -> float:
+    """How strongly a game shapes your taste: -1 (hated) to +1 (loved).
+
+    `mode` says what to learn from:
+    - "ratings": only your own word. A game with no rating counts for nothing.
+    - "engagement": only how you played (engagement score, which includes how
+      recently). Ratings are ignored; play cannot say "disliked", so this is 0 to 1.
+    - "mix": both. A rated game is MIX_RATING_SHARE its rating and the rest how you
+      played it (play lifts a rating, it never lowers it); an unrated game counts by
+      how you played it, at most IMPLICIT_MAX.
+    """
+    if mode == "engagement":
+        return 0.0 if entry is None else engagement_fraction(entry)
+    rated = None if rating is None else (rating - NEUTRAL_RATING) / (5.0 - NEUTRAL_RATING)
+    if mode == "ratings":
+        return rated or 0.0
+    if rated is not None:
+        if entry is None:  # played elsewhere: nothing but your rating to go on
+            return rated
+        return MIX_RATING_SHARE * rated + (1 - MIX_RATING_SHARE) * engagement_fraction(entry)
+    return 0.0 if entry is None else IMPLICIT_MAX * engagement_fraction(entry)
 
 
 _EDITION_WORDS = re.compile(
@@ -146,6 +166,7 @@ def _build_model(
     tracked = tracked_ids(session)
     for app_id in not_interested:
         effective.setdefault(app_id, NOT_INTERESTED_RATING)
+    mode = get_taste_mode(session)
 
     games = list(session.scalars(select(Game).where(Game.type == "game")))
     # Rarity is measured on your own library, not on the pool picked by tag.
@@ -166,13 +187,16 @@ def _build_model(
             continue
 
         model.played_titles.add(_base_name(g.name))
-        weight = taste_weight(entry, rating)
+        weight = taste_weight(entry, rating, mode)
         if weight == 0:
             continue
-        model.explicit += rating is not None
-        model.implicit += rating is None
-        # The real rating only: a favorite's stand-in 5 must not read "rated 5".
-        model.contributors.append((weight, g, ratings.get(g.steam_app_id)))
+        counted_as_rated = rating is not None and mode != "engagement"
+        model.explicit += counted_as_rated
+        model.implicit += not counted_as_rated
+        # The real rating only (a favorite's stand-in 5 must not read "rated 5"), and none
+        # when ratings are being ignored.
+        shown_rating = ratings.get(g.steam_app_id) if mode != "engagement" else None
+        model.contributors.append((weight, g, shown_rating))
         for tag, value in vectors[g.steam_app_id].items():
             model.profile[tag] = model.profile.get(tag, 0.0) + weight * value
     return model

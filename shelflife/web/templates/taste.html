@@ -8,6 +8,27 @@
   much you liked the games they came from.
 </p>
 
+<section id="mode">
+  <h3>What should your taste learn from?</h3>
+  <form method="post" action="/taste/mode" class="modes">
+    {% for key, label in modes.items() %}
+    <label class="mode {{ 'on' if key == mode }}">
+      <input type="radio" name="mode" value="{{ key }}" {{ "checked" if key == mode }} onchange="this.form.submit()">
+      <span><strong>{{ label }}</strong>{{ " (default)" if key == "mix" }}<br><small>{{ mode_help[key] }}</small></span>
+    </label>
+    {% endfor %}
+    <noscript><button type="submit">Save</button></noscript>
+  </form>
+  {% if taste.explicit_count + taste.implicit_count == 0 %}
+    <p class="warn">
+      {% if mode == "ratings" %}This mode has nothing to learn from yet: you have not rated any games, so the picks below are not
+      based on your taste. Rate some games, or switch to the mix.
+      {% elif mode == "engagement" %}This mode has nothing to learn from yet: no game has enough play (hours, achievements) to count.
+      {% else %}Nothing to learn from yet: rate some games, or sync your library and achievements.{% endif %}
+    </p>
+  {% endif %}
+</section>
+
 <div class="two">
   <section>
     <h3>Leans toward</h3>
