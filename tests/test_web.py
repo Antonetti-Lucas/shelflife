@@ -238,7 +238,17 @@ def test_hours_are_refused_for_a_game_you_own(client, scenario):
 def test_the_game_page_explains_the_score_and_recency(client, scenario):
     html = client.get("/game/1").text
     assert "Engagement score" in html and "recency" in html
-    assert "Your rating decides" in html  # it is rated, so the engagement score is not used
+    assert "How much your play says you liked it" in html and "50% is your typical played game" in html
+    assert "through your rating and through how you played it" in html  # rated and played, in the mix
+
+
+def test_the_game_page_says_what_teaches_the_taste_in_each_mode(client, scenario, session):
+    from shelflife.settings import set_taste_mode
+
+    set_taste_mode(session, "ratings")
+    assert "play does not teach it" in client.get("/game/1").text
+    set_taste_mode(session, "engagement")
+    assert "your rating is not used" in client.get("/game/1").text
 
 
 def test_a_missing_game_is_a_404(client):

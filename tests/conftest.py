@@ -34,7 +34,7 @@ def isolated(tmp_path, monkeypatch):
     init_db()
     # What was learned from one test's games must not leak into the next one's.
     learned._text_cache.update(key=None, vectors={})
-    learned._fit_cache.update(key=None, value=None)
+    learned._fit_cache.clear()
     yield
 
 

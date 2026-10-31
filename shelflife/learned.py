@@ -120,6 +120,9 @@ class LearnedTaste:
     tag_part: Vector = field(default_factory=dict)  # sum of (learned weight x unit tag vector)
     text_part: Vector = field(default_factory=dict)
     trained_on: int = 0
+    # When asked for: for each game it learned from, (what `predict` would say had that game been
+    # left out, the weight it was learned with minus `mean`). Used to weigh one taste against another.
+    held_out: dict[int, tuple[float, float]] = field(default_factory=dict)
 
     def predict(self, tag_unit: Vector, text_unit: Vector | None) -> float:
         value = (1 - self.beta) * _dot(tag_unit, self.tag_part)
@@ -136,8 +139,8 @@ def likeness(a_tags: Vector, a_text: Vector | None, b_tags: Vector, b_text: Vect
     return value
 
 
-def _solve(matrix: list[list[float]], rhs: list[float]) -> list[float]:
-    """Solve a symmetric positive definite system (Cholesky)."""
+def _cholesky(matrix: list[list[float]]) -> list[list[float]]:
+    """L with L x L-transposed = matrix, for a symmetric positive definite matrix."""
     n = len(matrix)
     low = [[0.0] * n for _ in range(n)]
     for i in range(n):
@@ -146,6 +149,11 @@ def _solve(matrix: list[list[float]], rhs: list[float]) -> list[float]:
             row_j = low[j]
             s = matrix[i][j] - sum(x * y for x, y in zip(row_i[:j], row_j[:j]))
             row_i[j] = math.sqrt(max(s, 1e-12)) if i == j else s / row_j[j]
+    return low
+
+
+def _solve_factored(low: list[list[float]], rhs: list[float]) -> list[float]:
+    n = len(low)
     z = [0.0] * n
     for i in range(n):
         z[i] = (rhs[i] - sum(x * y for x, y in zip(low[i][:i], z[:i]))) / low[i][i]
@@ -155,6 +163,25 @@ def _solve(matrix: list[list[float]], rhs: list[float]) -> list[float]:
     return out
 
 
+def _solve(matrix: list[list[float]], rhs: list[float]) -> list[float]:
+    """Solve a symmetric positive definite system (Cholesky)."""
+    return _solve_factored(_cholesky(matrix), rhs)
+
+
+def _inverse_diagonal(low: list[list[float]]) -> list[float]:
+    """The diagonal of the inverse of L x L-transposed: sum over k of (L^-1)[k][i] squared."""
+    n = len(low)
+    diag = [0.0] * n
+    for j in range(n):  # column j of L^-1, by forward substitution
+        col = [0.0] * n
+        col[j] = 1 / low[j][j]
+        for i in range(j + 1, n):
+            row = low[i]
+            col[i] = -sum(row[k] * col[k] for k in range(j, i)) / row[i]
+        diag[j] = sum(x * x for x in col[j:])
+    return diag
+
+
 def fit(
     training: list[tuple[int, float]],
     tag_units: dict[int, Vector],
@@ -162,10 +189,13 @@ def fit(
     beta: float,
     ridge: float = RIDGE,
     kernel: Callable[[int, int], float] | None = None,
+    held_out: bool = False,
 ) -> LearnedTaste:
     """Learn from `training`: (game id, how much you liked it, -1 to 1). `kernel(a, b)` gives
     the likeness of two games when it is already known (the evaluation fits many times over the
-    same games); by default it is worked out here."""
+    same games); by default it is worked out here. With `held_out`, also work out what each
+    training game would have been predicted without it (the standard shortcut for ridge
+    regression, exact apart from your usual liking, which is kept as it is)."""
     n = len(training)
     if not n:
         return LearnedTaste(beta=beta)
@@ -180,7 +210,12 @@ def fit(
     for a in range(n):
         for b in range(a, n):
             gram[a][b] = gram[b][a] = kernel(ids[a], ids[b]) + (ridge if a == b else 0.0)
-    alpha = _solve(gram, centered)
+    low = _cholesky(gram)
+    alpha = _solve_factored(low, centered)
+    left_out = {}
+    if held_out:  # without game i, its prediction is its target minus alpha_i / (inverse of gram)_ii
+        for i, c, a, d in zip(ids, centered, alpha, _inverse_diagonal(low)):
+            left_out[i] = (c - a / d, c)
     tag_part: dict[str, float] = defaultdict(float)
     text_part: dict[str, float] = defaultdict(float)
     for i, a in zip(ids, alpha):
@@ -188,11 +223,14 @@ def fit(
             tag_part[t] += a * x
         for w, x in text_units.get(i, {}).items():
             text_part[w] += a * x
-    return LearnedTaste(beta=beta, mean=mean, tag_part=dict(tag_part), text_part=dict(text_part), trained_on=n)
+    return LearnedTaste(
+        beta=beta, mean=mean, tag_part=dict(tag_part), text_part=dict(text_part), trained_on=n, held_out=left_out
+    )
 
 
+FIT_CACHE_SIZE = 4  # a few tastes at once: the mix keeps one from your ratings and one from your play
 _fit_lock = threading.Lock()
-_fit_cache: dict = {"key": None, "value": None}
+_fit_cache: dict[tuple, LearnedTaste] = {}
 
 
 def fit_cached(
@@ -201,10 +239,13 @@ def fit_cached(
     tag_units: dict[int, Vector],
     text_units: dict[int, Vector],
     beta: float,
+    held_out: bool = False,
 ) -> LearnedTaste:
     """`fit`, kept until `key` (your verdicts and the games they were learned from) changes."""
+    key = (key, held_out)
     with _fit_lock:
-        if _fit_cache["key"] != key:
-            _fit_cache["value"] = fit(training, tag_units, text_units, beta)
-            _fit_cache["key"] = key
-        return _fit_cache["value"]
+        if key not in _fit_cache:
+            if len(_fit_cache) >= FIT_CACHE_SIZE:
+                del _fit_cache[next(iter(_fit_cache))]  # the oldest
+            _fit_cache[key] = fit(training, tag_units, text_units, beta, held_out=held_out)
+        return _fit_cache[key]

@@ -1,101 +1,115 @@
-"""The recommender: taste weights, candidate lists, and why a game is recommended."""
+"""The recommender: what each taste learns from, candidate lists, and why a game is recommended."""
 
 import pytest
 
 from shelflife import diary
-from shelflife.recommend import _base_name, explain, learn_play_value, recommend, score_all, taste_profile, taste_weight
+from shelflife.recommend import (
+    BLEND_START,
+    SPREAD_FLOOR,
+    _spread,
+    _base_name,
+    _build_model,
+    blend,
+    explain,
+    rating_weight,
+    recommend,
+    score_all,
+    taste_profile,
+)
 from tests.factories import add_game, build_scenario
 
-# ---- taste weights ----
+# ---- what each taste learns from ----
 
 
 @pytest.mark.parametrize("rating, weight", [(5.0, 1.0), (4.0, 0.5), (3.0, 0.0), (2.0, -0.5), (1.0, -1.0)])
 def test_a_rating_maps_to_a_weight_between_minus_one_and_one(rating, weight):
-    assert taste_weight(None, rating) == pytest.approx(weight)
-
-
-def test_an_unrated_game_with_no_library_entry_has_no_weight():
-    assert taste_weight(None, None) == 0
-
-
-def test_a_very_engaging_unrated_game_counts_for_at_most_half_a_five_star_rating(session):
-    entry = add_game(session, 1, minutes=1000 * 60, achievements=(10, 10), rarest=2.0).library_entry
-    assert taste_weight(entry, None) == pytest.approx(0.5)
-
-
-def test_a_barely_engaging_unrated_game_has_no_weight(session):
-    assert taste_weight(add_game(session, 1, minutes=600).library_entry, None) == 0
-
-
-def test_in_the_mix_a_rated_game_counts_by_its_rating_however_much_you_played_it(session):
-    played_a_lot = add_game(session, 1, minutes=1000 * 60, achievements=(10, 10), rarest=2.0).library_entry
-    barely_played = add_game(session, 2, minutes=600).library_entry
-    for entry in (played_a_lot, barely_played):
-        assert taste_weight(entry, 2.0) == pytest.approx(-0.5)
-        assert taste_weight(entry, 2.0, "mix") == pytest.approx(-0.5)
-        assert taste_weight(entry, 5.0) == pytest.approx(1.0)
-
-
-def test_in_the_mix_an_unrated_game_counts_as_the_rating_its_play_suggests(session):
-    entry = add_game(session, 1, minutes=1000 * 60, achievements=(10, 10), rarest=2.0).library_entry
-    assert taste_weight(entry, None, "mix", play_value=0.9) == pytest.approx(0.9)
-    assert taste_weight(entry, None, "mix", play_value=0.0) == 0
-    assert taste_weight(add_game(session, 2, minutes=600).library_entry, None, "mix", play_value=0.9) == 0
-
-
-def test_play_is_worth_the_starting_guess_until_you_have_rated_games_you_played():
-    assert learn_play_value([]) == pytest.approx(0.5)
-    assert learn_play_value([(0.0, 1.0)] * 20) == pytest.approx(0.5)  # games you barely played say nothing
-
-
-def test_play_is_worth_more_when_you_rate_the_games_you_play_most_high():
-    assert learn_play_value([(1.0, 1.0)] * 10) == pytest.approx(11 / 12)
-    assert learn_play_value([(0.5, 1.0), (1.0, 0.5)] * 5) > 0.5
-
-
-def test_play_is_worth_less_when_you_play_games_you_rate_low():
-    assert learn_play_value([(1.0, -1.0)] * 10) == 0.0
-    assert learn_play_value([(1.0, 0.0)] * 10) < 0.5
-
-
-def test_a_game_played_elsewhere_counts_by_its_rating_alone_in_the_mix():
-    assert taste_weight(None, 4.0) == pytest.approx(0.5)
-
-
-# ---- the three ways of learning your taste ----
+    assert rating_weight(rating) == pytest.approx(weight)
 
 
 @pytest.fixture
-def played_a_lot(session):
-    return add_game(session, 1, minutes=1000 * 60, achievements=(10, 10), rarest=2.0).library_entry
+def three_games(session):
+    """One game played a great deal, one played a little, one rated but never played here."""
+    add_game(session, 1, "Played a lot", tags={"Zeta": 100}, minutes=1000 * 60, achievements=(10, 10), rarest=2.0)
+    add_game(session, 2, "Played a little", tags={"Eta": 100}, minutes=90)
+    add_game(session, 3, "Played elsewhere", tags={"Theta": 100})
+    add_game(session, 4, "Filler", tags={"Iota": 100}, minutes=600)
 
 
-@pytest.fixture
-def barely_played(session):
-    return add_game(session, 2, minutes=600).library_entry
+def test_ratings_only_learns_from_star_ratings_and_nothing_else(session, three_games):
+    diary.set_favorite(session, 4, True)
+    model = _build_model(session, {1: 2.0, 3: 4.0}, {2: "Played a little"}, mode="ratings")
+    assert dict(model.rating_training) == {1: pytest.approx(-0.5), 3: pytest.approx(0.5)}  # no favorite, no "not interested"
+    assert model.blend[1] == 0 and model.implicit == 0
 
 
-def test_ratings_only_ignores_how_you_played(session, played_a_lot, barely_played):
-    assert taste_weight(played_a_lot, 2.0, "ratings") == pytest.approx(-0.5)  # the rating decides
-    assert taste_weight(barely_played, 5.0, "ratings") == pytest.approx(1.0)
-    assert taste_weight(played_a_lot, None, "ratings") == 0  # a hundred hours teach nothing
-    assert taste_weight(None, 4.0, "ratings") == pytest.approx(0.5)
+def test_how_you_play_learns_from_play_alone_and_can_say_not_for_me(session, three_games):
+    model = _build_model(session, {1: 1.0, 2: 5.0, 3: 5.0}, {}, mode="engagement")
+    play = dict(model.play_training)
+    assert set(play) == {1, 2, 4}  # the game played elsewhere has no play to learn from
+    assert play[1] > 0 > play[2]  # a hated game played a lot, a loved one barely played: play decides
+    assert play[2] >= -0.5  # play alone can't say "hated"
+    assert model.blend[0] == 0 and model.explicit == 0
 
 
-def test_engagement_only_ignores_ratings(session, played_a_lot, barely_played):
-    assert taste_weight(played_a_lot, 1.0, "engagement") == pytest.approx(1.0)  # a hated game, played a lot
-    assert taste_weight(played_a_lot, None, "engagement") == pytest.approx(1.0)
-    assert taste_weight(barely_played, 5.0, "engagement") == 0  # a loved game, barely played
-    assert taste_weight(None, 5.0, "engagement") == 0  # played elsewhere: no play data
+def test_the_mix_learns_a_game_you_rated_and_played_from_both(session, three_games):
+    model = _build_model(session, {1: 4.0, 3: 5.0}, {}, mode="mix")
+    assert {i for i, _ in model.rating_training} == {1, 3}
+    assert {i for i, _ in model.play_training} == {1, 2, 4}  # game 1 teaches through its rating and its play
+    assert (model.explicit, model.implicit) == (2, 2)
 
 
-@pytest.mark.parametrize("mode", ["mix", "ratings", "engagement"])
-def test_no_signal_means_no_weight_in_any_mode(mode):
-    assert taste_weight(None, None, mode) == 0
+def test_in_the_mix_favorites_and_not_interested_stand_in_for_ratings(session, three_games):
+    diary.set_favorite(session, 4, True)
+    model = _build_model(session, {}, {2: "Played a little"}, mode="mix")
+    assert dict(model.rating_training) == {4: pytest.approx(1.0), 2: pytest.approx(-0.5)}
 
 
-def test_the_default_is_the_mix(session, played_a_lot):
-    assert taste_weight(played_a_lot, 2.0) == taste_weight(played_a_lot, 2.0, "mix")
+def test_backlog_games_are_not_a_verdict(session):
+    add_game(session, 1, "Tried for ten minutes", tags={"Zeta": 100}, minutes=10)
+    model = _build_model(session, {}, {}, mode="engagement")
+    assert model.play_training == [] and [g.steam_app_id for g in model.candidates] == [1]
+
+
+# ---- how the mix weighs the two tastes ----
+
+PATTERN = [(0.3, 0.2), (-0.2, 0.2), (0.4, -0.1), (-0.3, -0.3), (0.1, 0.25), (-0.1, -0.2)] * 10
+
+
+def test_without_ratings_the_mix_is_play_alone_and_without_play_it_is_ratings_alone():
+    played = [(p, p) for _, p in PATTERN]
+    rated = [(r, p, r) for r, p in PATTERN]
+    assert blend("mix", [], played)[0] == 0 and blend("mix", [], played)[1] > 0
+    assert blend("mix", rated, [])[1] == 0 and blend("mix", rated, [])[0] > 0
+
+
+def test_the_single_modes_use_one_taste():
+    rated = [(r, p, r) for r, p in PATTERN]
+    played = [(p, p) for _, p in PATTERN]
+    assert blend("ratings", rated, played)[1] == 0
+    assert blend("engagement", rated, played)[0] == 0
+
+
+def share_of_ratings(weights, rated):
+    """The ratings taste's share of the mix, undoing the spreads it was divided by."""
+    by_r, by_p = weights
+    spread_r = max(_spread([r for r, _, _ in rated]), SPREAD_FLOOR)
+    spread_p = max(_spread([p for _, p, _ in rated]), SPREAD_FLOOR)
+    return by_r * spread_r / (by_r * spread_r + by_p * spread_p)
+
+
+def test_the_mix_leans_on_the_taste_that_predicts_your_ratings():
+    played = [(p, p) for _, p in PATTERN]
+    ratings_right = [(r, p, r * 2) for r, p in PATTERN]
+    assert share_of_ratings(blend("mix", ratings_right, played), ratings_right) > 0.7
+    play_right = [(r, p, p * 2) for r, p in PATTERN]
+    assert share_of_ratings(blend("mix", play_right, played), play_right) < 0.3
+
+
+def test_a_few_contradicting_ratings_never_switch_a_taste_off_or_count_it_backwards():
+    rated = [(-0.1, 0.0, 1.0), (0.0, 0.0, -1.0), (0.26, 0.17, -0.44)]
+    weights = blend("mix", rated, [(0.2, 0.75), (0.2, 0.75), (-0.05, -0.12)])
+    assert weights[0] > 0 and weights[1] > 0
+    assert share_of_ratings(weights, rated) == pytest.approx(BLEND_START[0])  # too few games to move the start
 
 
 # ---- editions of the same game ----

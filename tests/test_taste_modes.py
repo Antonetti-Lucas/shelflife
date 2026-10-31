@@ -69,21 +69,27 @@ def test_a_stored_mode_that_no_longer_exists_falls_back_to_the_default(session):
 # ---- what each mode learns ----
 
 
+def ratio(p, tag):
+    """A tag's weight against Cozy's (the game rated 5 but barely played), so profiles of
+    different scales can be compared."""
+    return p.get(tag, 0.0) / p["Cozy"]
+
+
 def test_the_mix_learns_from_both(session, library):
-    p = profile(session, library, "mix")
-    assert p["Cozy"] > 0  # rated 5: counts by the rating, even though barely played
-    assert p["Gloom"] < 0 and p["Gloom"] / p["Cozy"] == pytest.approx(-1.0)  # rated 1: by the rating, however much played
-    # Not rated, played a great deal: counts as the rating play has meant in your own games.
-    # You played two games a great deal and rated one 5 and the other 1, so play is worth
-    # (0 + 2 * 0.5) / (2 + 2) = a quarter of a 5-star rating.
-    assert p["Grind"] > 0 and p["Grind"] / p["Cozy"] == pytest.approx(0.25)
+    mix, only = profile(session, library, "mix"), profile(session, library, "ratings")
+    assert mix["Cozy"] > 0  # rated 5: the rating counts, even though barely played
+    assert mix["Gloom"] < 0  # rated 1: the rating still wins...
+    assert ratio(mix, "Gloom") > ratio(only, "Gloom")  # ...but the great deal of play pulls it up a little
+    assert mix["Grind"] > 0  # not rated, played a great deal: play teaches it
 
 
-def test_the_mix_counts_play_for_more_when_you_rate_the_games_you_play_high(session, library):
+def test_the_mix_counts_play_for_more_when_the_games_you_play_most_are_the_ones_you_rate_high(session, library):
+    before = ratio(profile(session, library, "mix"), "Grind")
     for i in range(30, 36):
         add_game(session, i, f"Loved {i}", tags={"Saga": 100}, minutes=1000 * 60, achievements=(10, 10), rarest=2.0)
-    p = profile(session, {**library, **{i: 5.0 for i in range(30, 36)}}, "mix")
-    assert p["Grind"] / p["Cozy"] > 0.25  # play has meant a high rating in your games, so it counts for more
+        add_game(session, i + 10, f"Disliked {i}", tags={"Dull": 100}, minutes=70)
+    rated = {**library, **{i: 5.0 for i in range(30, 36)}, **{i + 10: 1.5 for i in range(30, 36)}}
+    assert ratio(profile(session, rated, "mix"), "Grind") > before
 
 
 def test_ratings_only_learns_nothing_from_play(session, library):
@@ -94,9 +100,9 @@ def test_ratings_only_learns_nothing_from_play(session, library):
 
 def test_engagement_only_ignores_what_you_said(session, library):
     p = profile(session, library, "engagement")
-    assert p.get("Cozy", 0) == 0  # loved but barely played: nothing to go on
-    assert p["Grind"] > 0
-    assert p["Gloom"] > 0  # rated 1 but played a great deal: counted as a game you stuck with
+    assert p == profile(session, {}, "engagement")  # the same whatever your ratings
+    assert p["Grind"] > 0 and p["Gloom"] > 0  # played a great deal: liked, as far as play can tell
+    assert p["Cozy"] < 0  # played far less than your usual game: a mild "not for me"
 
 
 def test_the_three_modes_give_three_different_profiles(session, library):
@@ -104,19 +110,20 @@ def test_the_three_modes_give_three_different_profiles(session, library):
     assert len({tuple(sorted((k, round(v, 6)) for k, v in p.items())) for p in profiles}) == 3
 
 
-def test_a_favorite_counts_in_the_mix_and_ratings_but_not_in_engagement(session, library):
+def test_a_favorite_counts_in_the_mix_only(session, library):
     add_game(session, 4, "Favorite", tags={"Epic": 100}, minutes=60)
+    without = {m: profile(session, library, m) for m in ("ratings", "engagement")}
     diary.set_favorite(session, 4, True)
     assert profile(session, library, "mix")["Epic"] > 0
-    assert profile(session, library, "ratings")["Epic"] > 0
-    assert profile(session, library, "engagement").get("Epic", 0) == 0
+    assert profile(session, library, "ratings") == without["ratings"]  # only star ratings count there
+    assert profile(session, library, "engagement") == without["engagement"]
 
 
-def test_not_interested_teaches_a_dislike_except_when_only_play_counts(session, library):
+def test_not_interested_teaches_a_dislike_in_the_mix_only(session, library):
     add_game(session, 5, "Dismissed", tags={"Grim": 100}, minutes=0)
     dismissed = {5: "Dismissed"}
     assert profile(session, library, "mix", dismissed)["Grim"] < 0
-    assert profile(session, library, "ratings", dismissed)["Grim"] < 0
+    assert profile(session, library, "ratings", dismissed).get("Grim", 0) == 0
     assert profile(session, library, "engagement", dismissed).get("Grim", 0) == 0
 
 
@@ -167,13 +174,13 @@ def test_the_reason_never_says_rated_when_ratings_are_ignored(session, library):
 def test_the_counts_say_how_many_games_taught_what(session, library):
     set_taste_mode(session, "mix")
     mix = taste_profile(session, library, {})
-    assert (mix.explicit_count, mix.implicit_count) == (3, 1)  # three rated games, one judged by play
+    assert (mix.explicit_count, mix.implicit_count) == (3, 7)  # three rated games; seven more judged by play alone
     set_taste_mode(session, "ratings")
     only = taste_profile(session, library, {})
     assert (only.explicit_count, only.implicit_count) == (3, 0)
     set_taste_mode(session, "engagement")
     eng = taste_profile(session, library, {})
-    assert eng.explicit_count == 0 and eng.implicit_count == 3  # the three you played a great deal
+    assert (eng.explicit_count, eng.implicit_count) == (0, 10)  # every game you played
 
 
 # ---- the page ----

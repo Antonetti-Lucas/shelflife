@@ -12,18 +12,19 @@ TASTE_MODES = {
 }
 TASTE_MODE_HELP = {
     "mix": (
-        "Both count. A game you rated counts by your rating. A game you played but did not rate "
-        "counts by how you played it (hours, achievements, rare ones, recency), as the rating that "
-        "play has meant in your own rated games: if the games you play most are the ones you rate "
-        "high, play counts for more; if not, for less."
+        "Both count, for every game. Your taste is learned twice, once from your ratings and once from "
+        "how you play (hours, achievements and when you played, each compared with your other games), and "
+        "the two are added up, each counting by how well it predicts your own ratings. A game you rated and "
+        "played teaches through both. A favorite you did not rate counts as 5 stars, \"not interested\" as 2."
     ),
     "ratings": (
-        "Only what you say counts: ratings, favorites and \"not interested\". A game you did not rate "
-        "teaches nothing, however many hours you put in."
+        "Only your star ratings count. Play, favorites and \"not interested\" teach nothing (\"not "
+        "interested\" still hides a game), however many hours you put in."
     ),
     "engagement": (
-        "Only how you play counts: hours, achievements, rare achievements and recency. Your ratings and "
-        "favorites are ignored for taste (\"not interested\" still hides a game)."
+        "Only how you play counts: hours, achievements and when you played, each compared with your other "
+        "games. A game you played far less than usual counts as a mild \"not for me\". Your ratings, favorites "
+        "and \"not interested\" are ignored for taste (\"not interested\" still hides a game)."
     ),
 }
 DEFAULT_TASTE_MODE = "mix"

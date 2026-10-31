@@ -9,7 +9,7 @@ from shelflife import learned, store, sync
 from shelflife.diary import save_rating
 from shelflife.learned import fit, likeness, text_index, text_vectors, unit
 from shelflife.models import Game, LibraryEntry
-from shelflife.recommend import _because, _build_model, engagement_fraction, explain, learn_play_value, recommend, score_all
+from shelflife.recommend import _because, _build_model, explain, recommend, score_all
 from shelflife.settings import set_taste_mode
 from shelflife.sync import about_due, enrich_one, sync_about
 from shelflife.throttle import RateLimited
@@ -252,27 +252,28 @@ def test_a_three_star_rating_teaches_that_games_like_it_are_ordinary(session):
     set_taste_mode(session, "ratings")
     scores = score_all(session, {1: 5.0, 2: 3.0}).by_id
     assert scores[3].similarity > 0 > scores[4].similarity  # like your usual 3-star game: a little below what you love
-    assert (2, 0.0) in _build_model(session, {1: 5.0, 2: 3.0}, {}).training
+    assert (2, 0.0) in _build_model(session, {1: 5.0, 2: 3.0}, {}).rating_training
 
 
 def test_in_ratings_only_mode_games_you_played_but_never_rated_are_not_learned_from(session):
     add_game(session, 1, "Rated", tags={"Zeta": 100}, minutes=600)
     add_game(session, 2, "Played, not rated", tags={"Eta": 100}, minutes=60000)
     set_taste_mode(session, "ratings")
-    assert [i for i, _ in _build_model(session, {1: 5.0}, {}).training] == [1]
+    model = _build_model(session, {1: 5.0}, {})
+    assert [i for i, _ in model.rating_training] == [1] and model.blend[1] == 0
     set_taste_mode(session, "mix")
-    assert {i for i, _ in _build_model(session, {1: 5.0}, {}).training} == {1, 2}
+    model = _build_model(session, {1: 5.0}, {})
+    assert {i for i, _ in model.play_training} == {1, 2} and model.blend[1] > 0
 
 
-def test_the_mix_learns_a_rated_game_from_its_rating_and_an_unrated_one_from_play_as_your_games_show_it_means(session):
+def test_the_mix_learns_a_rated_game_from_its_rating_and_its_play_and_an_unrated_one_from_play(session):
     add_game(session, 1, "Rated and played", tags={"Zeta": 100}, minutes=60000)
-    add_game(session, 2, "Played, not rated", tags={"Eta": 100}, minutes=60000)
+    add_game(session, 2, "Played, not rated", tags={"Eta": 100}, minutes=600)
     set_taste_mode(session, "mix")
     model = _build_model(session, {1: 4.0}, {})
-    fraction = {i: engagement_fraction(session.get(LibraryEntry, i)) for i in (1, 2)}
-    value = learn_play_value([(fraction[1], 0.5)])
-    assert model.play_value == pytest.approx(value) and value > 0.5  # a game you played a lot and liked
-    assert dict(model.training) == {1: pytest.approx(0.5), 2: pytest.approx(value * fraction[2])}
+    assert dict(model.rating_training) == {1: pytest.approx(0.5)}
+    play = dict(model.play_training)
+    assert set(play) == {1, 2} and play[1] > 0 > play[2]  # played most / least of your two games
 
 
 def test_the_reasons_are_worked_out_only_when_read(session, liked_and_candidates, monkeypatch):
@@ -297,11 +298,12 @@ def test_what_was_learned_is_kept_until_your_ratings_change(session, liked_and_c
     real = learned.fit
     monkeypatch.setattr(learned, "fit", lambda *a, **k: fits.append(1) or real(*a, **k))
     score_all(session, liked_and_candidates)
+    learned_once = len(fits)  # one taste from ratings, one from play
     score_all(session, liked_and_candidates)
-    assert len(fits) == 1
+    assert len(fits) == learned_once
     save_rating(session, 5, 2.0)
     score_all(session, {**liked_and_candidates, 5: 2.0})
-    assert len(fits) == 2
+    assert len(fits) > learned_once
 
 
 def test_a_game_with_no_tags_scores_zero_instead_of_failing(session, liked_and_candidates):

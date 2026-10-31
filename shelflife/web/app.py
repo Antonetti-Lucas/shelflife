@@ -25,7 +25,7 @@ from shelflife.quality import quality_factor
 from shelflife.recency import recency
 from shelflife.discover_job import SECONDS_PER_GAME, job as discover_job
 from shelflife.discovery import MIN_REVIEWS
-from shelflife.recommend import explain, recommend, score_all, taste_profile, top_taste_tags
+from shelflife.recommend import explain, play_score_of, recommend, score_all, taste_profile, top_taste_tags
 from shelflife.score import engagement_score
 from shelflife.settings import TASTE_MODE_HELP, TASTE_MODES, get_taste_mode, set_taste_mode
 from shelflife.learned import text_index
@@ -645,6 +645,8 @@ def game_page(request: Request, app_id: int, session: Session = Depends(get_sess
             "like_tags": search_tags(game, tag_idf(session)) if game.tags else [],
             "find_counts": FIND_COUNTS,
             "wish_note": wishlist_note(session.get(WishlistItem, app_id), game),
+            "play": play_score_of(session, app_id),
+            "taste_mode": get_taste_mode(session),
         },
     )
 

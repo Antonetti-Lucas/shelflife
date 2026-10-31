@@ -73,7 +73,7 @@
     <form method="post" action="/game/{{ game.steam_app_id }}/favorite" class="inline">
       {% if diary and diary.favorite %}
         <input type="hidden" name="value" value="0">
-        <p>★ One of your <strong>favorites</strong>. It counts like a 5-star rating until you rate it. <button class="ghost" type="submit">Remove</button></p>
+        <p>★ One of your <strong>favorites</strong>. In the mix of ratings and play, it counts like a 5-star rating until you rate it. <button class="ghost" type="submit">Remove</button></p>
       {% else %}
         <input type="hidden" name="value" value="1">
         <button class="ghost" type="submit">☆ Add to favorites</button>
@@ -119,13 +119,21 @@
         still playing {{ "%.1f"|format(breakdown.still_playing) }},
         recency {{ "%+.1f"|format(breakdown.recency) }}</p>
       {% endif %}
+      {% if play %}
+      <p class="meta">How much your play says you liked it: <strong>{{ "%.0f"|format(play.value * 100) }}%</strong>
+        (50% is your typical played game{% for name, label in [("hours", "hours"), ("completion", "achievements unlocked"), ("rarity", "rarest achievement")] %}{% if name in play.parts %}; {{ label }}: more than {{ "%.0f"|format(play.parts[name] * 100) }}% of your played games{% endif %}{% endfor %}{% if play.recency %}; when you played: {{ "%+.0f"|format(play.recency * 100) }}{% endif %}).</p>
+      {% endif %}
       {% if recency %}
       <p class="meta">
         When you played: {{ recency.detail }}.
-        {% if diary and diary.rating is not none %}
-          Your rating decides how much this game shapes your taste; the engagement score is not used.
-        {% elif recency.points < -0.3 %}
-          Rate it to override the score.
+        {% if taste_mode == "ratings" %}
+          Your taste learns from ratings only, so play does not teach it.
+        {% elif taste_mode == "engagement" %}
+          Your taste learns from play only{% if diary and diary.rating is not none %}; your rating is not used{% endif %}.
+        {% elif diary and diary.rating is not none %}
+          In the mix this game teaches your taste through your rating and through how you played it.
+        {% elif play %}
+          In the mix its play teaches your taste; rate it to add your own word.
         {% endif %}
       </p>
       {% endif %}
