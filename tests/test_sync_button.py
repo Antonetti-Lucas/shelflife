@@ -13,6 +13,7 @@ from shelflife.achievements import AchievementStats
 from shelflife.jobs import JobSnapshot
 from shelflife.models import Game, LibraryEntry, WishlistItem
 from shelflife.steam import OwnedGame, SteamError
+from shelflife.reviews import PlayerHours
 from shelflife.sync_job import STEPS, SyncJob, SyncResult, run_sync, summarize_sync, what_is_due
 from shelflife.throttle import RateLimited
 from shelflife.wishlist import WishlistEntry
@@ -32,7 +33,7 @@ def owned(app_id, minutes=0, recent=0, name=None):
 @pytest.fixture
 def steam(monkeypatch):
     """A Steam that owns whatever `steam.library` says, and records what was asked of it."""
-    state = SimpleNamespace(library=[], wishlist=[], achievements=[], details=[], reviews=[], fail={}, order=[])
+    state = SimpleNamespace(library=[], wishlist=[], achievements=[], details=[], reviews=[], players=[], fail={}, order=[])
 
     def fetch_owned(api_key, steam_id):
         state.order.append("library")
@@ -71,7 +72,15 @@ def steam(monkeypatch):
     monkeypatch.setattr(sync_job, "fetch_wishlist", fetch_wishlist)
     monkeypatch.setattr(sync, "fetch_achievements", fetch_achievements)
     monkeypatch.setattr(sync, "enrich_one", enrich_one)
+    def fetch_player_hours(app_id, positive=None, negative=None):
+        state.order.append("players")
+        state.players.append(app_id)
+        if "players" in state.fail:
+            raise state.fail["players"]
+        return PlayerHours([2.0, 5.0, 10.0, 20.0, 40.0], 300)
+
     monkeypatch.setattr(sync, "fetch_review_counts", fetch_review_counts)
+    monkeypatch.setattr(sync.reviews, "fetch_player_hours", fetch_player_hours)
     return state
 
 
@@ -85,7 +94,7 @@ def test_a_sync_runs_all_the_steps_in_order_and_saves_everything(session, steam)
     assert (result.games, result.new_games) == (2, 2)
     assert (result.achievements, result.details, result.reviews) == (1, 2, 2)  # every game gets review counts
     assert result.aborted is None and not result.stopped
-    assert sorted(dict.fromkeys(steps)) == [1, 2, 3, 4, 6] and steps == sorted(steps)  # never goes back; step 5 (descriptions) says nothing when none are due
+    assert sorted(dict.fromkeys(steps)) == [1, 2, 3, 4, 6, 7] and steps == sorted(steps)  # never goes back; step 5 (descriptions) says nothing when none are due
     assert session.get(LibraryEntry, 1).playtime_total_min == 600
 
 
@@ -93,7 +102,7 @@ def test_the_steps_happen_in_this_order_and_each_finishes_before_the_next_begins
     steam.library = [owned(1, minutes=600), owned(2, minutes=600), owned(3, minutes=0)]
     run_sync(session, "key", "id")
     firsts = list(dict.fromkeys(steam.order))
-    assert firsts == ["library", "wishlist", "achievements", "details", "reviews"]
+    assert firsts == ["library", "wishlist", "achievements", "details", "reviews", "players"]
     runs = [key for i, key in enumerate(steam.order) if i == 0 or key != steam.order[i - 1]]
     assert runs == firsts  # no step comes back after the next one has started
 
@@ -414,7 +423,7 @@ def test_progress_updates_the_step_and_the_text(session, steam):
     original = job._set
     job._set = lambda **kw: (seen.append(kw), original(**kw))[1]
     job.start("k", "i")
-    assert {kw["step"] for kw in seen} == {1, 2, 3, 4, 6}
+    assert {kw["step"] for kw in seen} == {1, 2, 3, 4, 6, 7}
     assert any("Store details for Game 1" in kw["text"] for kw in seen)
 
 
@@ -511,7 +520,7 @@ def test_while_syncing_the_page_shows_the_step_and_a_stop_button(client, configu
     assert len(client.held) == 1  # handed to the background
     html = client.get("/sync").text
     assert '<meta http-equiv="refresh"' in html and "<progress" in html
-    assert "Step 1 of 6: Reading your library" in html
+    assert "Step 1 of 7: Reading your library" in html
     assert 'action="/sync/stop"' in html and 'action="/sync/start"' not in html
     post(client, "/sync/stop")
     assert web_app.sync_job._stop.is_set()
@@ -544,7 +553,7 @@ def test_the_page_says_what_is_due_and_roughly_how_long(client, session):
         add_game(session, i, minutes=60)
     html = " ".join(client.get("/sync").text.split())
     assert "20 games in your library." in html
-    assert "Due now: achievements for 20, store details for 20, review counts for 20 (about 2 minutes)" in html
+    assert "Due now: achievements for 20, store details for 20, review counts for 20, how long players play 20 games (about 4 minutes)" in html
 
 
 def test_a_page_with_everything_up_to_date_says_so(client, session):

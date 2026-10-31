@@ -46,6 +46,12 @@ class Game(Base):
     reviews_negative: Mapped[int | None]
     reviews_fetched_at: Mapped[datetime | None]
 
+    # How long the game's reviewers have played it: hours at the 10th, 25th, 50th, 75th and 90th
+    # percentile (shelflife/reviews.py), so your own hours can be judged against the game's length.
+    player_hours: Mapped[list[float] | None] = mapped_column(JSON(none_as_null=True))
+    player_hours_sample: Mapped[int | None]  # reviewers they come from; 0 = too few to tell
+    player_hours_fetched_at: Mapped[datetime | None]
+
     # True for games you can play through Steam Family Sharing but don't own.
     # Their library entry has no playtime (the Web API can't see it).
     family_shared: Mapped[bool | None]

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from shelflife import store
 from shelflife.achievements import AchievementsUnavailable, AchievementStats, fetch_achievements
 from shelflife.models import OFF_TOPIC, Game, LibraryEntry, PlaytimeSnapshot, WishlistItem
+from shelflife import reviews
 from shelflife.reviews import fetch_review_counts
 from shelflife.steam import OwnedGame, SteamError
 from shelflife.throttle import RateLimited
@@ -70,6 +71,7 @@ DETAILS_REFRESH_DAYS = 90  # tags and descriptions drift; refreshed a few at a t
 DETAILS_REFRESH_BATCH = 30  # at most this many stale games per sync (about a minute and a half)
 REVIEWS_REFRESH_DAYS = 30  # review counts grow
 RECENT_REREAD_HOURS = 6  # a game played lately is read again, but not minutes after it was read
+PLAYER_HOURS_REFRESH_DAYS = 180  # how long a game's players play changes slowly
 
 
 def achievements_due(
@@ -285,6 +287,59 @@ def sync_all_reviews(
 ) -> int:
     """Fetch review counts for the games `reviews_due` lists. Returns the number fetched."""
     return _fetch_reviews(session, reviews_due(session, everything=everything), on_progress, should_stop)
+
+
+def player_hours_due(session: Session, everything: bool = False) -> list[Game]:
+    """Games you have played (an hour or more, or a family game with an achievement) whose players'
+    hours were never read or were read more than PLAYER_HOURS_REFRESH_DAYS ago, most played first.
+    They are what your own hours are compared with. `everything` reads them all."""
+    played = or_(
+        LibraryEntry.playtime_total_min >= 60,
+        and_(Game.family_shared.is_(True), LibraryEntry.achievements_unlocked > 0),
+    )
+    query = (
+        select(Game)
+        .join(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
+        .where(Game.type == "game", played)
+        .order_by(LibraryEntry.playtime_total_min.desc())
+    )
+    if not everything:
+        cutoff = _now() - timedelta(days=PLAYER_HOURS_REFRESH_DAYS)
+        query = query.where(or_(Game.player_hours_fetched_at.is_(None), Game.player_hours_fetched_at < cutoff))
+    return list(session.scalars(query))
+
+
+def sync_player_hours(
+    session: Session,
+    on_progress: Callable[[int, int, Game], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+    everything: bool = False,
+) -> int:
+    """Read how long each due game's reviewers played it (up to five pages of reviews each).
+    Saves game by game. Returns the number read."""
+    pending = player_hours_due(session, everything=everything)
+    done = failures = 0
+    for i, game in enumerate(pending, start=1):
+        if should_stop is not None and should_stop():
+            break
+        try:
+            hours = reviews.fetch_player_hours(game.steam_app_id, game.reviews_positive, game.reviews_negative)
+            failures = 0
+        except RateLimited:
+            raise
+        except (requests.RequestException, ValueError) as exc:
+            failures += 1
+            if failures >= MAX_CONSECUTIVE_FAILURES:
+                raise SteamError(f"{exc} ({failures} failures in a row, stopping.)") from exc
+            continue
+        game.player_hours = hours.percentiles if hours else None
+        game.player_hours_sample = hours.sample if hours else 0
+        game.player_hours_fetched_at = _now()
+        session.commit()
+        done += 1
+        if on_progress:
+            on_progress(i, len(pending), game)
+    return done
 
 
 def about_due(session: Session) -> list[Game]:

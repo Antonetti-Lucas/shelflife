@@ -9,7 +9,9 @@
    the oldest;
 5. the store's "About this game" text for games that have their details but not the text yet
    (a one-time catch-up for games read before the text was kept; new games get it in step 4);
-6. review counts for every game that has none or whose counts are a month old.
+6. review counts for every game that has none or whose counts are a month old;
+7. how long other players play each game you have played (from up to 500 of its reviews), the
+   yardstick your own hours are measured against; read once, then every six months.
 
 Each step re-reads only what could have changed (see the rules in shelflife/sync.py);
 "check everything again" re-reads it all. Every step saves game by game, so a sync can be
@@ -34,8 +36,10 @@ from shelflife.sync import (
     enrich_games,
     reviews_due,
     sync_about,
+    player_hours_due,
     sync_achievements,
     sync_all_reviews,
+    sync_player_hours,
     upsert_library,
 )
 from shelflife.throttle import RateLimited
@@ -48,11 +52,13 @@ STEPS = (
     ("details", "Fetching store details for new games"),
     ("about", "Reading game descriptions"),
     ("reviews", "Counting reviews"),
+    ("players", "Reading how long other players play"),
 )
 SECONDS_PER_GAME = 3  # store details and tags, for the time estimate
 SECONDS_PER_ACHIEVEMENT = 1  # a game's achievements: two quick calls
 SECONDS_PER_REVIEW = 1.2
 SECONDS_PER_ABOUT = 1.6  # one store call for a game's description
+SECONDS_PER_PLAYERS = 5.5  # up to five pages of reviews
 
 
 @dataclass
@@ -66,6 +72,7 @@ class SyncResult:
     details: int = 0  # games whose store details and tags were fetched
     about: int = 0  # games whose description text was read
     reviews: int = 0  # backlog games whose review counts were fetched
+    players: int = 0  # games whose players' hours were read
     full: bool = False  # a "check everything again" run, not the usual sync
     stopped: bool = False  # stopped from the page
     aborted: str | None = None  # why it gave up early (rate limit, network, Steam)
@@ -74,7 +81,7 @@ class SyncResult:
 def run_sync(
     session: Session, api_key: str, steam_id: str, on_progress=None, should_stop=None, full: bool = False
 ) -> SyncResult:
-    """Run the six steps. on_progress(step, text, done, total): `step` counts from 1.
+    """Run the seven steps. on_progress(step, text, done, total): `step` counts from 1.
     `full` re-reads everything (all achievements, all store details, all review counts)
     instead of only what is due.
 
@@ -150,6 +157,16 @@ def run_sync(
             should_stop=stop,
             everything=full,
         )
+        if stop():
+            result.stopped = True
+            return result
+
+        result.players = sync_player_hours(
+            session,
+            on_progress=lambda i, n, game: report(7, f"How long players play {game.name}", i, n),
+            should_stop=stop,
+            everything=full,
+        )
         result.stopped = stop()
     except RateLimited as exc:
         result.aborted = str(exc)
@@ -177,6 +194,8 @@ def summarize_sync(result: SyncResult) -> JobSnapshot:
         parts.append(f"descriptions for {result.about} games")
     if result.reviews:
         parts.append(f"review counts for {result.reviews} games")
+    if result.players:
+        parts.append(f"how long players play {result.players} games")
     base = ("Checked everything again: " if result.full else "Synced: ") + "; ".join(parts) + "."
     if result.aborted:
         return JobSnapshot(
@@ -206,7 +225,7 @@ def what_is_due(session: Session, with_due: bool = True) -> dict[str, int | obje
         .join(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
         .where(Game.family_shared.is_(True))
     )
-    counts = {"achievements": None, "details": None, "about": None, "reviews": None}
+    counts = {"achievements": None, "details": None, "about": None, "reviews": None, "players": None}
     minutes = full_minutes = None
     if with_due:
         counts = {
@@ -214,18 +233,21 @@ def what_is_due(session: Session, with_due: bool = True) -> dict[str, int | obje
             "details": len(details_due(session)),
             "about": len(about_due(session)),
             "reviews": len(reviews_due(session)),
+            "players": len(player_hours_due(session)),
         }
         full = {
             "achievements": len(achievements_due(session, everything=True)),
             "details": len(details_due(session, everything=True)),
             "about": 0,  # a full re-read of the details brings the text with it
             "reviews": len(reviews_due(session, everything=True)),
+            "players": len(player_hours_due(session, everything=True)),
         }
         estimate = lambda c: _minutes(  # noqa: E731
             c["achievements"] * SECONDS_PER_ACHIEVEMENT
             + c["details"] * SECONDS_PER_GAME
             + c["about"] * SECONDS_PER_ABOUT
             + c["reviews"] * SECONDS_PER_REVIEW
+            + c["players"] * SECONDS_PER_PLAYERS
         )
         minutes, full_minutes = estimate(counts), estimate(full)
     return {

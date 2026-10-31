@@ -39,6 +39,17 @@ def isolated(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """Tests never talk to the real Steam or SteamSpy: a call that gets past the fakes fails loudly."""
+    import requests
+
+    def refuse(self, method, url, *args, **kwargs):
+        raise AssertionError(f"A test tried to reach the network: {method} {url}")
+
+    monkeypatch.setattr(requests.Session, "request", refuse)
+
+
+@pytest.fixture(autouse=True)
 def no_waiting(monkeypatch):
     """Throttles exist to be polite to real servers; tests never wait for them."""
     for throttle in (
