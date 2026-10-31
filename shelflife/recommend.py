@@ -34,6 +34,7 @@ from shelflife.learned import (
     TEXT_WEIGHT,
     LearnedTaste,
     Vector,
+    fit,
     fit_cached,
     likeness,
     text_index,
@@ -125,6 +126,10 @@ class _Model:
     # A 3-star rating is a verdict of zero, so unlike `contributors` it is kept.
     training: list[tuple[int, float]] = field(default_factory=list)
     play_value: float = IMPLICIT_MAX  # what a fully played, unrated game counts as (learned in the mix)
+    # For the evaluation (held_out_liking): in the mix, the (play, rating) pairs play_value was
+    # learned from, and how much each unrated game with tags was played.
+    play_pairs: dict[int, tuple[float, float]] = field(default_factory=dict)
+    unrated_play: dict[int, float] = field(default_factory=dict)
 
     @cached_property
     def tag_units(self) -> dict[int, Vector]:
@@ -253,7 +258,7 @@ def is_played(entry: LibraryEntry | None, family: bool) -> bool:
 
 
 def _build_model(
-    session: Session, ratings: dict[int, float], not_interested: dict[int, str]
+    session: Session, ratings: dict[int, float], not_interested: dict[int, str], mode: str | None = None
 ) -> _Model:
     effective = dict(ratings)
     for app_id, stand_in in favorite_ratings(session).items():
@@ -261,7 +266,7 @@ def _build_model(
     tracked = tracked_ids(session)
     for app_id in not_interested:
         effective.setdefault(app_id, NOT_INTERESTED_RATING)
-    mode = get_taste_mode(session)
+    mode = mode or get_taste_mode(session)
 
     games = list(session.scalars(select(Game).where(Game.type == "game")))
     # Rarity is measured on your own library, not on the pool picked by tag.
@@ -271,13 +276,15 @@ def _build_model(
     model = _Model(vectors, {}, [], [], set(), set(), set(), 0, 0, games, session=session)
     play_value = IMPLICIT_MAX
     if mode == "mix":
-        play_value = learn_play_value(
-            [
-                (engagement_fraction(g.library_entry), (effective[g.steam_app_id] - NEUTRAL_RATING) / (5.0 - NEUTRAL_RATING))
-                for g in games
-                if g.library_entry is not None and g.steam_app_id in effective
-            ]
-        )
+        model.play_pairs = {
+            g.steam_app_id: (
+                engagement_fraction(g.library_entry),
+                (effective[g.steam_app_id] - NEUTRAL_RATING) / (5.0 - NEUTRAL_RATING),
+            )
+            for g in games
+            if g.library_entry is not None and g.steam_app_id in effective
+        }
+        play_value = learn_play_value(list(model.play_pairs.values()))
     model.play_value = play_value
     for g in games:
         entry = g.library_entry
@@ -292,6 +299,8 @@ def _build_model(
             continue
 
         model.played_titles.add(_base_name(g.name))
+        if mode == "mix" and rating is None and entry is not None and vectors[g.steam_app_id]:
+            model.unrated_play[g.steam_app_id] = engagement_fraction(entry)
         weight = taste_weight(entry, rating, mode, play_value)
         if vectors[g.steam_app_id] and (weight != 0 or (rating is not None and mode != "engagement")):
             model.training.append((g.steam_app_id, weight))  # a rating of 3 stars says "neutral", not "unknown"
@@ -344,6 +353,42 @@ def explain(
     if game is None or not model.vectors.get(app_id):
         return None
     return _score(game, model)
+
+
+def held_out_liking(
+    session: Session,
+    ratings: dict[int, float],
+    not_interested: dict[int, str],
+    app_ids: Collection[int],
+    mode: str | None = None,
+) -> dict[int, float]:
+    """For checking the model (tools/evaluate.py): how much you would like each game in
+    `app_ids`, predicted with everything known about that game left out (its rating, favorite,
+    play, and its part in learning what play is worth). Games without tags are skipped."""
+    model = _build_model(session, ratings, not_interested, mode)
+    known: dict[tuple[int, int], float] = {}
+
+    def kernel(a: int, b: int) -> float:
+        key = (a, b) if a <= b else (b, a)
+        if key not in known:
+            known[key] = likeness(
+                model.tag_units[a], model.text_units.get(a), model.tag_units[b], model.text_units.get(b), model.beta
+            )
+        return known[key]
+
+    out = {}
+    for app_id in app_ids:
+        if not model.vectors.get(app_id):
+            continue
+        training = [(i, w) for i, w in model.training if i != app_id]
+        if app_id in model.play_pairs:  # its rating helped learn what play is worth: learn it again without
+            value = learn_play_value([p for i, p in model.play_pairs.items() if i != app_id])
+            training = [(i, w) for i, w in training if i not in model.unrated_play] + [
+                (i, value * f) for i, f in model.unrated_play.items() if i != app_id and value * f != 0
+            ]
+        taste = fit(training, model.tag_units, model.text_units, model.beta, kernel=kernel)
+        out[app_id] = taste.predict(model.tag_units[app_id], model.text_units.get(app_id))
+    return out
 
 
 def _because(cand: Game, model: _Model) -> list[str]:

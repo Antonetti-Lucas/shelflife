@@ -17,6 +17,7 @@ import math
 import re
 import threading
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from sqlalchemy import func, select
@@ -160,8 +161,11 @@ def fit(
     text_units: dict[int, Vector],
     beta: float,
     ridge: float = RIDGE,
+    kernel: Callable[[int, int], float] | None = None,
 ) -> LearnedTaste:
-    """Learn from `training`: (game id, how much you liked it, -1 to 1)."""
+    """Learn from `training`: (game id, how much you liked it, -1 to 1). `kernel(a, b)` gives
+    the likeness of two games when it is already known (the evaluation fits many times over the
+    same games); by default it is worked out here."""
     n = len(training)
     if not n:
         return LearnedTaste(beta=beta)
@@ -169,11 +173,13 @@ def fit(
     targets = [w for _, w in training]
     mean = sum(targets) / (n + INTERCEPT_SHRINK)
     centered = [w - mean for w in targets]
+    kernel = kernel or (
+        lambda a, b: likeness(tag_units[a], text_units.get(a), tag_units[b], text_units.get(b), beta)
+    )
     gram = [[0.0] * n for _ in range(n)]
     for a in range(n):
         for b in range(a, n):
-            k = likeness(tag_units[ids[a]], text_units.get(ids[a]), tag_units[ids[b]], text_units.get(ids[b]), beta)
-            gram[a][b] = gram[b][a] = k + (ridge if a == b else 0.0)
+            gram[a][b] = gram[b][a] = kernel(ids[a], ids[b]) + (ridge if a == b else 0.0)
     alpha = _solve(gram, centered)
     tag_part: dict[str, float] = defaultdict(float)
     text_part: dict[str, float] = defaultdict(float)
