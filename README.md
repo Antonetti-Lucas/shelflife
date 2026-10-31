@@ -125,9 +125,36 @@ The script gets a short-lived token from the Steam store using your own cookies 
 
 ## Data and terms
 
-Data comes from the Steam Web API (library, playtime, achievements), the Steam store (details, covers), Valve's `IUserReviewsService` (review counts), and SteamSpy (community tags, 1 request/second). ShelfLife follows the [Steam Web API Terms of Use](https://steamcommunity.com/dev/apiterms): your key stays in `.env` on your machine, data is fetched only when you run a command, everything is stored locally, and it is not affiliated with or endorsed by Valve. A few endpoints used (Steam store `appdetails`, the family export) are undocumented and may change.
+Data comes from the Steam Web API (library, playtime, achievements), the Steam store (details, covers), Valve's `IUserReviewsService` (review counts), and SteamSpy (community tags, 1 request/second). ShelfLife follows the [Steam Web API Terms of Use](https://steamcommunity.com/dev/apiterms): your key stays in `.env` on your machine, data is fetched only when you run a command or press a button, everything is stored locally, and it is not affiliated with or endorsed by Valve. A few endpoints used (Steam store `appdetails`, the family export) are undocumented and may change.
 
 Personal data lives in `shelflife.db`, `.env` and the `data/` folder, all git-ignored.
+
+## Privacy
+
+ShelfLife runs entirely on your own computer. It has no server, no account, no analytics and no tracking, and your diary never leaves your machine.
+
+**What it stores, and where**
+
+- `.env`: your Steam API key and SteamID.
+- `shelflife.db`: your library (games, hours, when you last played, achievement counts and when you unlocked them), the hours you type in for family games, which games are shared with you through Family Sharing, your diary (ratings, reviews, statuses and dates, favorites, "not interested"), your settings, and public store data for each game (names, descriptions, tags, review counts, cover addresses).
+- `data/`: files you create or import, such as the Family Sharing export (it lists which games your family members own, so keep it private) and old CSV files.
+
+Delete `.env`, `shelflife.db` and `data/` and nothing of yours is left.
+
+**What it sends, and to whom** (only when you run a command or press a button)
+
+- **Valve's Steam Web API** (`api.steampowered.com`): your API key and SteamID, to read your own library and achievements, and your key to look up game names. Review counts and global achievement rates are asked for by game id alone.
+- **The Steam store** (`store.steampowered.com`) and **SteamSpy** (`steamspy.com`): game ids and tag names only. They never receive your key, SteamID, ratings or diary.
+- **Your browser** loads cover images from Steam's servers when you open a page.
+- Nothing else: no outside fonts, scripts or analytics. The web app listens only on `127.0.0.1` and has no login, so don't expose it to a network.
+
+**Steam's terms**
+
+ShelfLife is a personal tool. Each person uses their own API key (it is personal to you, so don't share it or commit it) to read their own account, within Valve's limit of 100,000 calls a day (a full sync uses a few hundred), and it is not affiliated with or endorsed by Valve. The [Steam Web API Terms of Use](https://steamcommunity.com/dev/apiterms) ask applications to say what Steam data they store; the list above is that statement.
+
+Some of what ShelfLife reads is not part of Valve's documented API: the store's `appdetails` endpoint, the review counts, the tag votes read from a game's store page when SteamSpy has none, and the Family Sharing export. These are read-only, throttled and run only when you ask, but Valve has not licensed them, may change or block them, and its [Steam Subscriber Agreement](https://store.steampowered.com/subscriber_agreement/) restricts scripts and bots interacting with Steam in broad terms. Using them is your choice. The normal sync relies on the store and review endpoints, so ShelfLife cannot be used strictly within the documented API; only the Family Sharing import is optional.
+
+Game names, store data and cover art belong to Valve and the game publishers. The licence below covers ShelfLife's code only.
 
 ## How recommendations work
 
