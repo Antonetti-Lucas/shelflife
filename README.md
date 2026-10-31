@@ -15,28 +15,46 @@ Steam knows what you own and how long you've played, but not what you *thought* 
 - **Family Sharing import** (optional): games you can play through a Steam Family.
 - **Wishlist:** your Steam wishlist, read by Sync and ranked by how well each game fits you (it never teaches your taste).
 - **Diary:** 0.5–5 star ratings, reviews, "not interested" marks, a status (playing, played, dropped) with dates, and favorites, stored locally.
-- **Recommendations:** three lists (backlog, family, games you don't own), each with a reason.
-- **Web app:** recommendations, a library you can rate and edit in place, an Explore page with a button to find more games, similar games for any game, a diary, stats, game pages, your taste profile, and a Sync button.
+- **Recommendations:** four lists (backlog, family, your wishlist, games you don't own), each pick with a reason.
+- **Web app:** recommendations, a library you can rate and edit in place, an Explore page with a button to find more games, similar games for any game, a wishlist page, a diary, stats, game pages, your taste profile, and a Sync button.
 
 ## Screenshots
 
-Taken on demo data: popular Steam games with made-up playtime, ratings and reviews for an imaginary player.
+Taken on demo data: popular Steam games with made-up playtime, ratings, diary entries and wishlist for an imaginary player.
 
-**Recommendations**, in three lists, each pick with the games and tags behind it:
+**Recommendations**, in four lists (backlog, family library, your wishlist and games to discover), each pick with the games and tags behind it:
 
 ![Recommendations](docs/screenshots/recommendations.jpg)
 
-**Library**, with ratings and hours editable in the row, and **Explore** for games you don't own:
+**Library**, with ratings, statuses and hours editable in the row:
 
 ![Library](docs/screenshots/library.jpg)
 
+**Explore**, for games you don't own: a panel to find more games from Steam, and a tag picker with "all of / any of" (here filtered to Platformer or Puzzle):
+
 ![Explore](docs/screenshots/explore.jpg)
 
-**Game page**, showing why a game fits you and how you played it, and **My ratings**:
+**Wishlist**, read from Steam and ranked by how well each game fits your taste, with your own rank and when you added it:
+
+![Wishlist](docs/screenshots/wishlist.jpg)
+
+**Diary**, one tab per status (playing, played, dropped, favorites) with your dates and reviews, and **Stats**:
+
+![Diary](docs/screenshots/diary.jpg)
+
+![Stats](docs/screenshots/stats.jpg)
+
+**Game page**, showing why a game fits you, how you played it, and where you are with it, and **My ratings**:
 
 ![Game page](docs/screenshots/game-page.jpg)
 
 ![My ratings](docs/screenshots/my-ratings.jpg)
+
+**My taste**, the tag profile behind it all and the choice of what it learns from, and **Sync**, which brings everything up to date in the background:
+
+![My taste](docs/screenshots/taste.jpg)
+
+![Sync](docs/screenshots/sync.jpg)
 
 ## Setup
 
@@ -105,7 +123,7 @@ You can also sync from the web app: its **Sync** page runs the same steps (libra
 
 `python -m scripts.web`, then open <http://127.0.0.1:8000>. It listens only on your own machine and has no login, so don't expose it to a network.
 
-- **Recommendations:** your backlog, family and discovery lists, paged, each pick with the games and tags behind it. Rate or dismiss from the card.
+- **Recommendations:** your backlog, family, wishlist and discovery lists, paged, each pick with the games and tags behind it. Rate or dismiss from the card.
 - **Library:** your owned and family games with covers. Set a rating or a status, or type hours for family games, right in the row. Search by name, filter by tags or status, sort by most played or **recently played**, or use the **Recommended** filter to keep the unplayed games that fit you best (top 50%, 25% or 10%).
 - **Wishlist:** your Steam wishlist ranked by how well each game fits your taste, with your own rank and the date you added each one. Search, the tag picker and the best-fit cut work as in Explore, and you can sort by fit, your own order, newest added, reviews or name. It is read by Sync (the wishlist must be public on Steam) and only shows games whose store details have arrived. Wishlisted games also get a badge and an "only my wishlist" filter in Explore, a "From your wishlist" list on the home page (instead of in "To discover"), and a note on their game page. Wanting a game is not liking it, so a wishlist never changes your taste profile.
 - **Explore:** games you don't own, ranked by fit, with the same filter, search, tags and sorting. **Find more games** adds new ones for the genres or tags you pick (or the tags you like most), or with no tags at all (the best-reviewed games from SteamSpy's list of popular games), for a number of games you choose, and shows its progress. Every game page has **Games like this** (Explore ranked by how close games are to that one) and a button to search Steam for new games like it.
@@ -174,7 +192,7 @@ Game names, store data and cover art belong to Valve and the game publishers. Th
 
 *Recency:* Steam gives only lifetime hours and a last-played date, and one minute today resets that date. So the unlock dates of your achievements show *when* you really played: each unlock counts less the older it is (halving every 3 years). A game you play right now counts as fully current.
 
-**2. Taste profile.** What the profile learns from is your choice, on the My taste page: *Mix of both* (the default), *Your ratings only* or *How you play only*. In the mix, a game you rated counts 70% by its rating, `(rating − 3) / 2`, from −1 to +1, and 30% by how you played it (the engagement score scaled from 0 to 1, so play lifts a rating and never lowers it); a game you did not rate counts by how you played it, up to +0.5. "Not interested" counts as 2 stars and a favorite as 5 until you rate the game. In *ratings only* a game you did not rate teaches nothing; in *how you play only* ratings, favorites and "not interested" are ignored for taste ("not interested" still hides the game). A status (playing, played, dropped) is a record only: it takes the game out of the recommendations but does not change your taste, because "dropped" can mean a story game quit halfway or an endless multiplayer game you left after hundreds of hours. The profile sums each game's tags times its weight. A tag counts by how relevant it is to the game: its votes relative to the game's top tag, squared (a tag with half the top tag's votes counts a quarter as much), for the top 15 tags, scaled down for tags common in your library. The squaring is one setting, `RELEVANCE_POWER` in `shelflife/tags.py`.
+**2. Taste profile.** What the profile learns from is your choice, on the My taste page: *Mix of both* (the default), *Your ratings only* or *How you play only*. In the mix, a game you rated counts 70% by its rating, `(rating − 3) / 2`, from −1 to +1, and 30% by how you played it (the engagement score scaled from 0 to 1, so a game you loved but barely played counts a little less than its rating, and one you disliked but played a lot a little less negative); a game you did not rate counts by how you played it, up to +0.5. "Not interested" counts as 2 stars and a favorite as 5 until you rate the game. In *ratings only* a game you did not rate teaches nothing; in *how you play only* ratings, favorites and "not interested" are ignored for taste ("not interested" still hides the game). A status (playing, played, dropped) is a record only: it takes the game out of the recommendations but does not change your taste, because "dropped" can mean a story game quit halfway or an endless multiplayer game you left after hundreds of hours. The profile sums each game's tags times its weight. A tag counts by how relevant it is to the game: its votes relative to the game's top tag, squared (a tag with half the top tag's votes counts a quarter as much), for the top 15 tags, scaled down for tags common in your library. The squaring is one setting, `RELEVANCE_POWER` in `shelflife/tags.py`.
 
 **3. Finding new games.** Explore's **Find more games** button (and `python -m scripts.discover`) works like this: SteamSpy lists every game under a tag, with its review counts. That list is loose (any game with even a few votes for the tag is in it), so games you already have and games with under 300 reviews are dropped, the rest are ranked by the lower bound of their positive-review share (more reviews rank higher at equal praise), and then, going down the ranking with the tags taking turns, each game's own tag votes are read and the game is kept only if the searched tag is among its 10 most voted. The others are remembered, with their tags, so they are not fetched again. Kept games get their store details fetched, about 5 seconds a game in all, and then take part in the rankings. For "games like this one", the tags searched are that game's most distinctive ones and a game must also be at least 15% similar to it. SteamSpy matches tag names in a particular letter case (and a few under older names), so several spellings are tried. Without tags, the search reads SteamSpy's popularity-ordered list instead (up to 3 pages of 1,000 games, a minute apart as SteamSpy asks, and only as many as needed) and keeps the best-reviewed games you don't have, with no tag check; raise "With at least" to 1,000 reviews to favour better-known games.
 
@@ -196,7 +214,7 @@ python -m pytest
 
 The tests use a temporary database and folder (never your own data) and make no network calls. Stack: Python, FastAPI with Jinja templates, SQLite through SQLAlchemy, pytest, GitHub Actions. The data model is in `shelflife/models.py`.
 
-To regenerate the screenshots, `python tools/make_demo_db.py demo.db` builds the demo database (real games fetched from Steam, made-up play history), and `DATABASE_URL=sqlite:///demo.db python -m scripts.web --port 8001` runs the app on it.
+To regenerate the screenshots, `python tools/make_demo_db.py demo.db` builds the demo database (real games fetched from Steam; made-up play history, ratings, diary entries and wishlist), and `DATABASE_URL=sqlite:///demo.db python -m scripts.web --port 8001` runs the app on it. For the Sync page to show its buttons, also set any placeholder `STEAM_API_KEY` and `STEAM_ID` for that run; nothing is sent unless you press a button.
 
 ## License
 

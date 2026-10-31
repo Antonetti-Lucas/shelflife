@@ -13,7 +13,7 @@ import os
 import random
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 if len(sys.argv) != 2 or "demo" not in Path(sys.argv[1]).name:
@@ -26,7 +26,7 @@ import requests  # noqa: E402
 
 from shelflife import diary  # noqa: E402
 from shelflife.db import SessionLocal, init_db  # noqa: E402
-from shelflife.models import Game, LibraryEntry  # noqa: E402
+from shelflife.models import Game, LibraryEntry, WishlistItem  # noqa: E402
 from shelflife.sync import enrich_one  # noqa: E402
 
 NOW = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -71,6 +71,28 @@ RATINGS = {  # app id: (rating, review)
     646570: (4.5, "Perfect deckbuilder."), 374320: (4.5, ""),
 }
 NOT_INTERESTED = [570]  # Dota 2
+# Where the imaginary player is with a game: app id -> (status, started, finished); dates are made up
+STATUSES = {
+    1245620: ("playing", date(2026, 9, 2), None),  # Elden Ring
+    413150: ("playing", date(2025, 3, 14), None),  # Stardew Valley
+    427520: ("playing", date(2026, 1, 8), None),  # Factorio
+    292030: ("played", date(2022, 11, 2), date(2023, 2, 20)),  # The Witcher 3
+    1145360: ("played", date(2023, 5, 1), date(2023, 7, 9)),  # Hades
+    620: ("played", date(2019, 1, 5), date(2019, 1, 9)),  # Portal 2
+    367520: ("played", date(2024, 2, 3), date(2024, 3, 1)),  # Hollow Knight
+    504230: ("played", date(2024, 6, 10), date(2024, 6, 14)),  # Celeste
+    632470: ("played", date(2024, 9, 1), date(2024, 10, 12)),  # Disco Elysium
+    646570: ("played", date(2025, 1, 4), date(2025, 2, 2)),  # Slay the Spire
+    1091500: ("played", date(2025, 6, 6), date(2025, 7, 30)),  # Cyberpunk 2077
+    268910: ("dropped", date(2023, 8, 1), date(2023, 8, 20)),  # Cuphead
+    374320: ("dropped", date(2022, 4, 1), date(2022, 5, 15)),  # Dark Souls III
+}
+FAVORITES = [1145360, 292030, 413150]  # Hades, The Witcher 3, Stardew Valley
+# Unowned games on the imaginary player's wishlist: app id -> (your rank or 0, days ago added)
+WISHLIST = {
+    1868140: (1, 400), 1229490: (2, 90), 1604030: (0, 30), 1817070: (3, 700), 1593500: (0, 15),
+    1888930: (0, 200), 1196590: (4, 55), 1151640: (0, 8), 1172620: (0, 300),
+}
 
 
 def global_achievements(app_id):
@@ -155,6 +177,17 @@ def main():
         for app_id in NOT_INTERESTED:
             if s.get(Game, app_id):
                 diary.set_not_interested(s, app_id, True)
+
+        for app_id, (status, started, finished) in STATUSES.items():
+            if s.get(Game, app_id):
+                diary.set_status(s, app_id, status, started, finished)
+        for app_id in FAVORITES:
+            if s.get(Game, app_id):
+                diary.set_favorite(s, app_id, True)
+        for app_id, (rank, days_ago) in WISHLIST.items():
+            if s.get(Game, app_id):
+                s.add(WishlistItem(steam_app_id=app_id, priority=rank, added_at=NOW - timedelta(days=days_ago), seen_at=NOW))
+        s.commit()
 
         print(f"\nDemo database ready: {DEMO_PATH}")
         print(f"games: {s.query(Game).count()} | library entries: {s.query(LibraryEntry).count()} | ratings: {len(diary.load_ratings(s))}")
