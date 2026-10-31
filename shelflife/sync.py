@@ -1,6 +1,6 @@
 """Save the Steam library to the database and enrich it with store data."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 import requests
@@ -60,6 +60,53 @@ def upsert_library(session: Session, owned: list[OwnedGame]) -> None:
 
 MAX_CONSECUTIVE_FAILURES = 3
 
+# How long before a sync looks at something again. The web page's "check everything
+# again" ignores these and re-reads it all.
+ACHIEVEMENTS_REFRESH_DAYS = 30  # catches achievements a developer added, and family games
+DETAILS_RETRY_DAYS = 7  # a game the store had no page for, or no tags for: try again
+DETAILS_REFRESH_DAYS = 90  # tags and descriptions drift; refreshed a few at a time
+DETAILS_REFRESH_BATCH = 30  # at most this many stale games per sync (about a minute and a half)
+REVIEWS_REFRESH_DAYS = 30  # review counts grow
+RECENT_REREAD_HOURS = 6  # a game played lately is read again, but not minutes after it was read
+
+
+def achievements_due(
+    session: Session, everything: bool = False, refresh_days: int = ACHIEVEMENTS_REFRESH_DAYS
+) -> list[LibraryEntry]:
+    """The library entries whose achievements a sync should read, most-played first.
+
+    Games you have played (or family games, which show no playtime) that
+    - were never read, or
+    - you played since they were last read, or in the last two weeks and they were read
+      more than RECENT_REREAD_HOURS ago (a session may still be adding achievements), or
+    - were read before unlock times were stored, or
+    - were last read more than `refresh_days` ago (a developer may have added achievements).
+    `everything` reads them all.
+    """
+    now = _now()
+    cutoff = now - timedelta(days=refresh_days)
+    recent_cutoff = now - timedelta(hours=RECENT_REREAD_HOURS)
+    played_or_family = or_(LibraryEntry.playtime_total_min > 0, Game.family_shared.is_(True))
+    conditions = [played_or_family]
+    if not everything:
+        conditions.append(
+            or_(
+                LibraryEntry.achievements_fetched_at.is_(None),
+                and_(LibraryEntry.playtime_recent_min > 0, LibraryEntry.achievements_fetched_at < recent_cutoff),
+                and_(LibraryEntry.achievements_unlocked > 0, LibraryEntry.unlock_times.is_(None)),
+                LibraryEntry.last_played > LibraryEntry.achievements_fetched_at,
+                LibraryEntry.achievements_fetched_at < cutoff,
+            )
+        )
+    return list(
+        session.scalars(
+            select(LibraryEntry)
+            .join(Game, Game.steam_app_id == LibraryEntry.steam_app_id)
+            .where(*conditions)
+            .order_by(LibraryEntry.playtime_total_min.desc())
+        )
+    )
+
 
 def sync_achievements(
     session: Session,
@@ -67,33 +114,13 @@ def sync_achievements(
     steam_id: str,
     on_progress: Callable[[int, int, Game, AchievementStats], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
+    everything: bool = False,
 ) -> int:
-    """Fetch achievement progress for played games, most-played first. `should_stop` is
-    asked before each game; when it says yes the run ends there, keeping what is done.
-
-    Fetches games never fetched before, games played in the last two weeks
-    (their progress has probably changed), and games fetched before unlock
-    times were stored. Returns the number fetched.
+    """Fetch achievement progress for the games `achievements_due` lists, most-played
+    first. `should_stop` is asked before each game; when it says yes the run ends there,
+    keeping what is done. Returns the number fetched.
     """
-    pending = list(
-        session.scalars(
-            select(LibraryEntry)
-            .join(Game, Game.steam_app_id == LibraryEntry.steam_app_id)
-            .where(
-                # Family games have no playtime; achievements show if you played them.
-                or_(LibraryEntry.playtime_total_min > 0, Game.family_shared.is_(True)),
-                or_(
-                    LibraryEntry.achievements_fetched_at.is_(None),
-                    LibraryEntry.playtime_recent_min > 0,
-                    and_(
-                        LibraryEntry.achievements_unlocked > 0,
-                        LibraryEntry.unlock_times.is_(None),
-                    ),
-                ),
-            )
-            .order_by(LibraryEntry.playtime_total_min.desc())
-        )
-    )
+    pending = achievements_due(session, everything=everything)
 
     done = failures = 0
     for i, entry in enumerate(pending, start=1):
@@ -163,7 +190,8 @@ def enrich_one(game: Game, spy: store.SpyDetails | None = None) -> None:
     already in hand."""
     details = store.fetch_store_details(game.steam_app_id)
     if details is None:
-        game.type = "unavailable"
+        if not game.type:  # a game that was fine before keeps what it had: the store may just have hiccuped
+            game.type = "unavailable"
     else:
         if details.name and (not game.name or game.name.startswith("App ")):
             game.name = details.name  # family imports start with a placeholder name
@@ -176,30 +204,14 @@ def enrich_one(game: Game, spy: store.SpyDetails | None = None) -> None:
     _fill_tags(game, spy)
 
 
-def sync_backlog_reviews(
+def _fetch_reviews(
     session: Session,
-    max_playtime_min: int,
-    on_progress: Callable[[int, int, Game], None] | None = None,
-    should_stop: Callable[[], bool] | None = None,
+    games: list[Game],
+    on_progress: Callable[[int, int, Game], None] | None,
+    should_stop: Callable[[], bool] | None,
 ) -> int:
-    """Fetch review counts for owned games played under max_playtime_min.
-
-    Only backlog games need them: the quality filter ranks candidates, not games
-    you've already played. Returns the number fetched.
-    """
-    pending = list(
-        session.scalars(
-            select(Game)
-            .join(LibraryEntry)
-            .where(
-                Game.type == "game",
-                Game.reviews_fetched_at.is_(None),
-                LibraryEntry.playtime_total_min < max_playtime_min,
-            )
-        )
-    )
     done = failures = 0
-    for i, game in enumerate(pending, start=1):
+    for i, game in enumerate(games, start=1):
         if should_stop is not None and should_stop():
             break
         try:
@@ -219,8 +231,60 @@ def sync_backlog_reviews(
         session.commit()
         done += 1
         if on_progress:
-            on_progress(i, len(pending), game)
+            on_progress(i, len(games), game)
     return done
+
+
+def sync_backlog_reviews(
+    session: Session,
+    max_playtime_min: int,
+    on_progress: Callable[[int, int, Game], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> int:
+    """Fetch review counts for owned games played under max_playtime_min (only those
+    still without counts). The command-line discovery uses this; the web sync reads
+    every game with `sync_all_reviews`. Returns the number fetched.
+    """
+    pending = list(
+        session.scalars(
+            select(Game)
+            .join(LibraryEntry)
+            .where(
+                Game.type == "game",
+                Game.reviews_fetched_at.is_(None),
+                LibraryEntry.playtime_total_min < max_playtime_min,
+            )
+        )
+    )
+    return _fetch_reviews(session, pending, on_progress, should_stop)
+
+
+def reviews_due(
+    session: Session, everything: bool = False, refresh_days: int = REVIEWS_REFRESH_DAYS
+) -> list[Game]:
+    """The library games (owned and family, played or not) whose review counts a sync should
+    read: those with none, then those read more than `refresh_days` ago, oldest first.
+    `everything` reads them all."""
+    cutoff = _now() - timedelta(days=refresh_days)
+    query = (
+        select(Game)
+        .join(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
+        .where(Game.type == "game")
+        .order_by(Game.reviews_fetched_at.asc().nulls_first())
+    )
+    if not everything:
+        query = query.where(or_(Game.reviews_fetched_at.is_(None), Game.reviews_fetched_at < cutoff))
+    return list(session.scalars(query))
+
+
+def sync_all_reviews(
+    session: Session,
+    on_progress: Callable[[int, int, Game], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+    everything: bool = False,
+) -> int:
+    """Fetch review counts for the games `reviews_due` lists. Returns the number fetched."""
+    return _fetch_reviews(session, reviews_due(session, everything=everything), on_progress, should_stop)
 
 
 def backfill_empty_tags(
@@ -248,26 +312,63 @@ def backfill_empty_tags(
     return filled
 
 
+def details_due(
+    session: Session,
+    everything: bool = False,
+    retry_days: int = DETAILS_RETRY_DAYS,
+    refresh_days: int = DETAILS_REFRESH_DAYS,
+    refresh_batch: int = DETAILS_REFRESH_BATCH,
+) -> list[Game]:
+    """The library games whose store details and tags a sync should fetch, in this order:
+    games never fetched (most-played first); games that came back empty (no store page, or
+    no tags) more than `retry_days` ago; and the `refresh_batch` oldest games fetched more
+    than `refresh_days` ago. `everything` lists every library game."""
+    in_library = select(Game).join(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
+    new = list(
+        session.scalars(
+            in_library.where(Game.details_fetched_at.is_(None)).order_by(LibraryEntry.playtime_total_min.desc())
+        )
+    )
+    fetched = list(
+        session.scalars(in_library.where(Game.details_fetched_at.is_not(None)).order_by(Game.details_fetched_at.asc()))
+    )
+    if everything:
+        return new + fetched
+    now = _now()
+    retry_cutoff, refresh_cutoff = now - timedelta(days=retry_days), now - timedelta(days=refresh_days)
+    retry = [g for g in fetched if (g.type == "unavailable" or not g.tags) and g.details_fetched_at < retry_cutoff]
+    retry_ids = {g.steam_app_id for g in retry}
+    stale = [g for g in fetched if g.details_fetched_at < refresh_cutoff and g.steam_app_id not in retry_ids]
+    return new + retry + stale[:refresh_batch]
+
+
 def enrich_games(
     session: Session,
     limit: int | None = None,
     on_progress: Callable[[int, int, Game], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
+    refresh: bool = False,
+    everything: bool = False,
 ) -> int:
     """Fetch store details + tags for games we haven't enriched yet.
 
     Most-played games go first. Each game is committed on its own, so the run
-    can be interrupted or rate-limited and simply resumed later. Returns the
-    number of games enriched.
+    can be interrupted or rate-limited and simply resumed later. With `refresh` it
+    also retries games that came back empty and refreshes a batch of the oldest
+    (`details_due`); `everything` redoes every library game. Returns the number of
+    games enriched.
     """
-    pending = list(
-        session.scalars(
-            select(Game)
-            .join(LibraryEntry)
-            .where(Game.details_fetched_at.is_(None))
-            .order_by(LibraryEntry.playtime_total_min.desc())
+    if refresh or everything:
+        pending = details_due(session, everything=everything)
+    else:
+        pending = list(
+            session.scalars(
+                select(Game)
+                .join(LibraryEntry)
+                .where(Game.details_fetched_at.is_(None))
+                .order_by(LibraryEntry.playtime_total_min.desc())
+            )
         )
-    )
     if limit is not None:
         pending = pending[:limit]
 

@@ -2,9 +2,12 @@
 
 1. your library and playtime (one call to Steam's API);
 2. your achievements (official API, quick);
-3. store details and tags for games that have none yet (slow: about 3 seconds a game, so
-   the very first sync takes a while, later ones only handle new games);
-4. review counts for the games you own but have barely played.
+3. store details and tags for new games (slow: about 3 seconds a game, so the very first
+   sync takes a while), plus games that came back empty last time and a few of the oldest;
+4. review counts for every game that has none or whose counts are a month old.
+
+Each step re-reads only what could have changed (see the rules in shelflife/sync.py);
+"check everything again" re-reads it all.
 
 Every step saves game by game, so a sync can be stopped, or fail, and the next one
 carries on where it left off. It only runs when you press the button.
@@ -19,18 +22,27 @@ from sqlalchemy.orm import Session
 from shelflife.db import SessionLocal
 from shelflife.jobs import BackgroundJob, JobSnapshot
 from shelflife.models import Game, LibraryEntry
-from shelflife.recommend import BACKLOG_MAX_MIN
 from shelflife.steam import SteamError, fetch_owned_games
-from shelflife.sync import enrich_games, sync_achievements, sync_backlog_reviews, upsert_library
+from shelflife.sync import (
+    achievements_due,
+    details_due,
+    enrich_games,
+    reviews_due,
+    sync_achievements,
+    sync_all_reviews,
+    upsert_library,
+)
 from shelflife.throttle import RateLimited
 
 STEPS = (
     ("library", "Reading your library"),
     ("achievements", "Reading your achievements"),
     ("details", "Fetching store details for new games"),
-    ("reviews", "Counting reviews for your backlog"),
+    ("reviews", "Counting reviews"),
 )
 SECONDS_PER_GAME = 3  # store details and tags, for the time estimate
+SECONDS_PER_ACHIEVEMENT = 1  # a game's achievements: two quick calls
+SECONDS_PER_REVIEW = 1.2
 
 
 @dataclass
@@ -40,19 +52,24 @@ class SyncResult:
     achievements: int = 0  # games whose achievements were fetched
     details: int = 0  # games whose store details and tags were fetched
     reviews: int = 0  # backlog games whose review counts were fetched
+    full: bool = False  # a "check everything again" run, not the usual sync
     stopped: bool = False  # stopped from the page
     aborted: str | None = None  # why it gave up early (rate limit, network, Steam)
 
 
-def run_sync(session: Session, api_key: str, steam_id: str, on_progress=None, should_stop=None) -> SyncResult:
+def run_sync(
+    session: Session, api_key: str, steam_id: str, on_progress=None, should_stop=None, full: bool = False
+) -> SyncResult:
     """Run the four steps. on_progress(step, text, done, total): `step` counts from 1.
+    `full` re-reads everything (all achievements, all store details, all review counts)
+    instead of only what is due.
 
     Ends early, keeping everything saved so far, when should_stop() says so or when Steam
     or SteamSpy turns it away.
     """
     report = on_progress or (lambda *args: None)
     stop = should_stop or (lambda: False)
-    result = SyncResult()
+    result = SyncResult(full=full)
     before = set(session.scalars(select(Game.steam_app_id)))
     try:
         report(1, "Reading your library from Steam", 0, 1)
@@ -71,6 +88,7 @@ def run_sync(session: Session, api_key: str, steam_id: str, on_progress=None, sh
             steam_id,
             on_progress=lambda i, n, game, stats: report(2, f"Achievements for {game.name}", i, n),
             should_stop=stop,
+            everything=full,
         )
         if stop():
             result.stopped = True
@@ -80,16 +98,18 @@ def run_sync(session: Session, api_key: str, steam_id: str, on_progress=None, sh
             session,
             on_progress=lambda i, n, game: report(3, f"Store details for {game.name}", i, n),
             should_stop=stop,
+            refresh=True,
+            everything=full,
         )
         if stop():
             result.stopped = True
             return result
 
-        result.reviews = sync_backlog_reviews(
+        result.reviews = sync_all_reviews(
             session,
-            BACKLOG_MAX_MIN,
             on_progress=lambda i, n, game: report(4, f"Review counts for {game.name}", i, n),
             should_stop=stop,
+            everything=full,
         )
         result.stopped = stop()
     except RateLimited as exc:
@@ -111,8 +131,8 @@ def summarize_sync(result: SyncResult) -> JobSnapshot:
     if result.details:
         parts.append(f"store details for {result.details} games")
     if result.reviews:
-        parts.append(f"review counts for {result.reviews} backlog games")
-    base = "Synced: " + "; ".join(parts) + "."
+        parts.append(f"review counts for {result.reviews} games")
+    base = ("Checked everything again: " if result.full else "Synced: ") + "; ".join(parts) + "."
     if result.aborted:
         return JobSnapshot(
             state="error",
@@ -123,10 +143,14 @@ def summarize_sync(result: SyncResult) -> JobSnapshot:
     return JobSnapshot(state="done", message=base)
 
 
-def what_is_waiting(session: Session) -> dict[str, int | object]:
-    """What a sync still has to do, for the page: library size (owned and from Family
-    Sharing), games waiting for store details, played games with no achievements on record,
-    and the last sync."""
+def _minutes(seconds: float) -> int:
+    return max(1, round(seconds / 60)) if seconds else 0
+
+
+def what_is_due(session: Session) -> dict[str, int | object]:
+    """What the next sync would do and roughly how long it takes, and what a full re-check
+    would do: library size (owned and from Family Sharing), the games due for each step, and
+    the last sync. The page and the sync use the same rules, so they agree."""
     library = session.scalar(select(func.count()).select_from(LibraryEntry)) or 0
     family = session.scalar(
         select(func.count())
@@ -134,23 +158,26 @@ def what_is_waiting(session: Session) -> dict[str, int | object]:
         .join(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
         .where(Game.family_shared.is_(True))
     )
-    details = session.scalar(
-        select(func.count())
-        .select_from(Game)
-        .join(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
-        .where(Game.details_fetched_at.is_(None))
-    )
-    achievements = session.scalar(
-        select(func.count())
-        .select_from(LibraryEntry)
-        .where(LibraryEntry.playtime_total_min > 0, LibraryEntry.achievements_fetched_at.is_(None))
+    counts = {
+        "achievements": len(achievements_due(session)),
+        "details": len(details_due(session)),
+        "reviews": len(reviews_due(session)),
+    }
+    full = {
+        "achievements": len(achievements_due(session, everything=True)),
+        "details": len(details_due(session, everything=True)),
+        "reviews": len(reviews_due(session, everything=True)),
+    }
+    estimate = lambda c: _minutes(  # noqa: E731
+        c["achievements"] * SECONDS_PER_ACHIEVEMENT + c["details"] * SECONDS_PER_GAME + c["reviews"] * SECONDS_PER_REVIEW
     )
     return {
         "library": library,
         "family": family or 0,
         "owned": library - (family or 0),
-        "details": details or 0,
-        "achievements": achievements or 0,
+        **counts,
+        "minutes": estimate(counts),
+        "full_minutes": estimate(full),
         "last_synced": session.scalar(select(func.max(LibraryEntry.last_synced))),
     }
 
@@ -158,23 +185,25 @@ def what_is_waiting(session: Session) -> dict[str, int | object]:
 class SyncJob(BackgroundJob):
     """The sync, run in the background."""
 
-    def start(self, api_key: str, steam_id: str) -> bool:
-        """Start a sync; False if one is already running."""
+    def start(self, api_key: str, steam_id: str, full: bool = False) -> bool:
+        """Start a sync (`full`: re-read everything); False if one is already running."""
         started = self._begin(
             JobSnapshot(state="running", phase="library", text="Starting", step=1, steps=len(STEPS))
         )
         if not started:
             return False
-        self._spawn(lambda: self._work(api_key, steam_id))
+        self._spawn(lambda: self._work(api_key, steam_id, full))
         return True
 
-    def _work(self, api_key: str, steam_id: str) -> None:
+    def _work(self, api_key: str, steam_id: str, full: bool = False) -> None:
         def progress(step: int, text: str, done: int, total: int) -> None:
             self._set(step=step, phase=STEPS[step - 1][0], text=text, done=done, total=total)
 
         try:
             with SessionLocal() as session:
-                result = run_sync(session, api_key, steam_id, on_progress=progress, should_stop=self._stop.is_set)
+                result = run_sync(
+                    session, api_key, steam_id, on_progress=progress, should_stop=self._stop.is_set, full=full
+                )
             snapshot = summarize_sync(result)
         except Exception as exc:  # never leave the page stuck on "running"
             reason = (str(exc).splitlines() or [""])[0] or type(exc).__name__

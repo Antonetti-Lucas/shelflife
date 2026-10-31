@@ -1,7 +1,7 @@
 """The Sync button: the four steps in the background, stopping, failing, and the page."""
 
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -13,7 +13,7 @@ from shelflife.achievements import AchievementStats
 from shelflife.jobs import JobSnapshot
 from shelflife.models import Game, LibraryEntry
 from shelflife.steam import OwnedGame, SteamError
-from shelflife.sync_job import STEPS, SyncJob, SyncResult, run_sync, summarize_sync, what_is_waiting
+from shelflife.sync_job import STEPS, SyncJob, SyncResult, run_sync, summarize_sync, what_is_due
 from shelflife.throttle import RateLimited
 from shelflife.web import app as web_app
 from tests.factories import add_game
@@ -51,7 +51,7 @@ def steam(monkeypatch):
         state.details.append(game.steam_app_id)
         if "details" in state.fail:
             raise state.fail["details"]
-        game.type, game.tags, game.details_fetched_at = "game", {"Stealth": 10}, datetime(2026, 1, 1)
+        game.type, game.tags, game.details_fetched_at = "game", {"Stealth": 10}, datetime.now()  # fetched just now
 
     def fetch_review_counts(app_id):
         state.order.append("reviews")
@@ -75,7 +75,7 @@ def test_a_sync_runs_the_four_steps_in_order_and_saves_everything(session, steam
     steps = []
     result = run_sync(session, "key", "id", on_progress=lambda step, *a: steps.append(step))
     assert (result.games, result.new_games) == (2, 2)
-    assert (result.achievements, result.details, result.reviews) == (1, 2, 1)
+    assert (result.achievements, result.details, result.reviews) == (1, 2, 2)  # every game gets review counts
     assert result.aborted is None and not result.stopped
     assert sorted(dict.fromkeys(steps)) == [1, 2, 3, 4] and steps == sorted(steps)  # never goes back a step
     assert session.get(LibraryEntry, 1).playtime_total_min == 600
@@ -90,12 +90,12 @@ def test_the_steps_happen_in_this_order_and_each_finishes_before_the_next_begins
     assert runs == firsts  # no step comes back after the next one has started
 
 
-def test_each_step_only_does_what_is_waiting(session, steam):
+def test_each_step_only_does_what_is_due(session, steam):
     steam.library = [owned(1, minutes=600), owned(2, minutes=0)]
     run_sync(session, "key", "id")
     assert steam.achievements == [1]  # only the game you played
     assert sorted(steam.details) == [1, 2]  # both are new
-    assert steam.reviews == [2]  # only the backlog game
+    assert sorted(steam.reviews) == [1, 2]  # played games too, not only the backlog
 
 
 def test_a_second_sync_has_nothing_new_to_fetch(session, steam):
@@ -122,6 +122,44 @@ def test_games_already_known_are_not_counted_as_new(session, steam):
     add_game(session, 1, "Known", minutes=0)  # e.g. from an earlier sync or a family import
     steam.library = [owned(1, minutes=10), owned(2)]
     assert run_sync(session, "key", "id").new_games == 1
+
+
+def test_a_full_check_reads_everything_again_but_a_normal_sync_does_not(session, steam):
+    steam.library = [owned(1, minutes=600), owned(2, minutes=0)]
+    run_sync(session, "key", "id")
+    for calls in (steam.achievements, steam.details, steam.reviews):
+        calls.clear()
+    normal = run_sync(session, "key", "id")
+    assert (normal.achievements, normal.details, normal.reviews) == (0, 0, 0)
+    full = run_sync(session, "key", "id", full=True)
+    assert full.full and (full.achievements, full.details, full.reviews) == (1, 2, 2)
+    assert "Checked everything again" in summarize_sync(full).message
+
+
+def test_a_normal_sync_retries_games_that_came_back_empty_and_refreshes_old_ones(session, steam):
+    steam.library = [owned(1, minutes=600), owned(2, minutes=600), owned(3, minutes=600)]
+    run_sync(session, "key", "id")
+    steam.details.clear()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    one, two, three = (session.get(Game, i) for i in (1, 2, 3))
+    one.type, one.details_fetched_at = "unavailable", now - timedelta(days=10)  # empty ten days ago
+    two.details_fetched_at = now - timedelta(days=120)  # old
+    three.details_fetched_at = now - timedelta(days=5)  # recent: left alone
+    session.commit()
+    run_sync(session, "key", "id")
+    assert sorted(steam.details) == [1, 2]
+
+
+def test_a_game_played_since_the_last_sync_gets_its_achievements_read_again(session, steam):
+    steam.library = [owned(1, minutes=600)]
+    run_sync(session, "key", "id")
+    steam.achievements.clear()
+    now = datetime.now(timezone.utc)
+    session.get(LibraryEntry, 1).achievements_fetched_at = (now - timedelta(days=20)).replace(tzinfo=None)
+    session.commit()
+    # Steam now says it was last played 18 days ago: after the last read, but not in the last two weeks.
+    steam.library = [OwnedGame(1, "Game 1", 700, 0, int((now - timedelta(days=18)).timestamp()))]
+    assert run_sync(session, "key", "id").achievements == 1 and steam.achievements == [1]
 
 
 # ---- stopping ----
@@ -232,7 +270,7 @@ def test_a_network_error_is_reported_not_raised(session, steam):
 @pytest.mark.parametrize(
     "result, state, fragments",
     [
-        (SyncResult(games=300, new_games=4, achievements=4, details=4, reviews=2), "done", ["300 owned games (4 new)", "achievements for 4 games", "store details for 4 games", "review counts for 2 backlog games"]),
+        (SyncResult(games=300, new_games=4, achievements=4, details=4, reviews=2), "done", ["300 owned games (4 new)", "achievements for 4 games", "store details for 4 games", "review counts for 2 games"]),
         (SyncResult(games=300), "done", ["300 owned games."]),
         (SyncResult(games=300, details=2, stopped=True), "stopped", ["Stopped.", "Sync again to carry on"]),
         (SyncResult(games=300, aborted="Steam is rate limiting us."), "error", ["Stopped early: Steam is rate limiting us.", "Progress is saved"]),
@@ -245,23 +283,26 @@ def test_the_outcome_message(result, state, fragments):
         assert fragment in snap.message
 
 
-def test_what_is_waiting_counts_what_a_sync_would_do(session):
-    add_game(session, 1, minutes=600)  # played, no details, no achievements fetched
+def test_what_is_due_counts_what_the_next_sync_would_do(session):
+    add_game(session, 1, minutes=600)  # played, nothing fetched yet
     add_game(session, 2, minutes=0)
-    add_game(session, 3, minutes=600, achievements=(1, 5))
-    session.get(Game, 3).details_fetched_at = datetime(2026, 1, 1)
-    session.get(LibraryEntry, 3).achievements_fetched_at = datetime(2026, 1, 1)
+    add_game(session, 3, minutes=600, achievements=(1, 5), unlock_times=[100])
+    fresh = datetime.now()
+    game3 = session.get(Game, 3)
+    game3.details_fetched_at, game3.reviews_fetched_at = fresh, fresh
+    session.get(LibraryEntry, 3).achievements_fetched_at = fresh
     session.commit()
-    add_game(session, 4, owned=False)  # not yours: not waiting
-    waiting = what_is_waiting(session)
-    assert (waiting["library"], waiting["details"], waiting["achievements"]) == (3, 2, 1)
-    assert (waiting["owned"], waiting["family"]) == (3, 0)
-    assert waiting["last_synced"] is not None
+    add_game(session, 4, owned=False)  # not yours: never due
+    due = what_is_due(session)
+    assert (due["library"], due["details"], due["achievements"], due["reviews"]) == (3, 2, 1, 2)
+    assert (due["owned"], due["family"]) == (3, 0)
+    assert due["last_synced"] is not None and due["minutes"] >= 1 and due["full_minutes"] >= due["minutes"]
 
 
-def test_nothing_waiting_in_an_empty_database(session):
-    waiting = what_is_waiting(session)
-    assert (waiting["library"], waiting["details"], waiting["achievements"], waiting["last_synced"]) == (0, 0, 0, None)
+def test_nothing_is_due_in_an_empty_database(session):
+    due = what_is_due(session)
+    assert (due["library"], due["details"], due["achievements"], due["reviews"], due["last_synced"]) == (0, 0, 0, 0, None)
+    assert (due["minutes"], due["full_minutes"]) == (0, 0)
 
 
 # ---- the background task ----
@@ -363,10 +404,19 @@ def test_with_a_key_the_page_offers_the_button_and_never_shows_the_key(client, c
 
 def test_pressing_sync_starts_it_with_your_key_and_comes_back_to_the_page(client, configured, monkeypatch):
     calls = []
-    monkeypatch.setattr(web_app.sync_job, "start", lambda key, steam_id: calls.append((key, steam_id)) or True)
+    monkeypatch.setattr(web_app.sync_job, "start", lambda key, steam_id, full=False: calls.append((key, steam_id, full)) or True)
     response = post(client, "/sync/start")
     assert response.status_code == 303 and response.headers["location"] == "/sync"
-    assert calls == [("SECRET-KEY-123", "76561190000000000")]
+    assert calls == [("SECRET-KEY-123", "76561190000000000", False)]
+
+
+def test_checking_everything_again_starts_a_full_sync(client, configured, monkeypatch):
+    calls = []
+    monkeypatch.setattr(web_app.sync_job, "start", lambda key, steam_id, full=False: calls.append(full) or True)
+    post(client, "/sync/start", full="1")
+    post(client, "/sync/start", full="")
+    post(client, "/sync/start", full="yes")  # only 1 means a full re-check
+    assert calls == [True, False, False]
 
 
 def test_pressing_sync_without_a_key_says_what_to_do_and_starts_nothing(client):
@@ -408,11 +458,26 @@ def test_a_failed_sync_shows_why(client, configured, session, steam):
     assert "rejected the API key" in client.get("/sync").text
 
 
-def test_the_page_says_what_is_waiting_and_roughly_how_long(client, session):
+def test_the_page_says_what_is_due_and_roughly_how_long(client, session):
     for i in range(1, 21):
         add_game(session, i, minutes=60)
+    html = " ".join(client.get("/sync").text.split())
+    assert "20 games in your library." in html
+    assert "Due now: achievements for 20, store details for 20, review counts for 20 (about 2 minutes)" in html
+
+
+def test_a_page_with_everything_up_to_date_says_so(client, session):
+    add_game(session, 1, minutes=0)
+    game = session.get(Game, 1)
+    game.details_fetched_at = game.reviews_fetched_at = datetime.now()
+    session.commit()
+    assert "Nothing is due: you are up to date" in client.get("/sync").text
+
+
+def test_both_buttons_are_offered_and_the_second_asks_before_re_reading_everything(client, configured, session):
     html = client.get("/sync").text
-    assert "20 games in your library." in html and "20 are waiting for their store details (about 1 minute)" in html
+    assert 'action="/sync/start"' in html and "Sync now" in html
+    assert 'name="full" value="1"' in html and "Check everything again" in html and "confirm(" in html
 
 
 def test_syncing_and_finding_games_never_run_at_once(client, configured):
@@ -440,13 +505,13 @@ def test_the_library_count_separates_owned_games_from_family_sharing(client, ses
         add_game(session, i, minutes=60)
     add_game(session, 4, owned=False, family=True)
     add_game(session, 5, owned=False, family=True)
-    waiting = what_is_waiting(session)
-    assert (waiting["library"], waiting["owned"], waiting["family"]) == (5, 3, 2)
+    due = what_is_due(session)
+    assert (due["library"], due["owned"], due["family"]) == (5, 3, 2)
     assert "5 games in your library (3 owned, 2 from Family Sharing)" in client.get("/sync").text
 
 
 def test_games_steam_cannot_give_achievements_for_are_described_honestly(client, session):
     add_game(session, 1, minutes=600)  # played, never read
     html = client.get("/sync").text
-    assert "Steam has no achievements on record for 1 played game; it sometimes cannot give them" in html
+    assert "Steam sometimes cannot give a few games' achievements" in html
     assert "have no achievements read yet" not in html

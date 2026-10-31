@@ -30,10 +30,9 @@ from shelflife.score import engagement_score
 from shelflife.settings import TASTE_MODE_HELP, TASTE_MODES, get_taste_mode, set_taste_mode
 from shelflife.similar import search_tags, similar_to, tag_idf
 from shelflife.stats import compute_stats
-from shelflife.sync_job import SECONDS_PER_GAME as SYNC_SECONDS_PER_GAME
 from shelflife.sync_job import STEPS as SYNC_STEPS
 from shelflife.sync_job import job as sync_job
-from shelflife.sync_job import what_is_waiting
+from shelflife.sync_job import what_is_due
 from shelflife.tagfilter import TagIndex, matches, parse_match, parse_tags
 
 BASE = Path(__file__).parent
@@ -450,7 +449,6 @@ def find_more_games(
 
 @app.get("/sync")
 def sync_page(request: Request, session: Session = Depends(get_session)):
-    waiting = what_is_waiting(session)
     return templates.TemplateResponse(
         request,
         "sync.html",
@@ -458,16 +456,16 @@ def sync_page(request: Request, session: Session = Depends(get_session)):
             "job": sync_job.snapshot(),
             "configured": try_load_settings() is not None,
             "finding": discover_job.snapshot().running,
-            "waiting": waiting,
+            "due": what_is_due(session),
             "steps": SYNC_STEPS,
-            "minutes": -(-waiting["details"] * SYNC_SECONDS_PER_GAME // 60),
         },
     )
 
 
 @app.post("/sync/start")
-def sync_start():
-    """Bring your library up to date: starts the sync in the background and returns at once."""
+def sync_start(full: str = Form("")):
+    """Bring your library up to date: starts the sync in the background and returns at once.
+    With full=1 it re-reads everything instead of only what is due."""
     settings = try_load_settings()
     if discover_job.snapshot().running:
         sync_job.fail("Finding games is running. Wait for it to finish, or stop it, then sync.")
@@ -477,7 +475,7 @@ def sync_start():
             "Add them and restart the app."
         )
     else:
-        sync_job.start(settings.steam_api_key, settings.steam_id)
+        sync_job.start(settings.steam_api_key, settings.steam_id, full=full == "1")
     return RedirectResponse("/sync", status_code=303)
 
 

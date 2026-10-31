@@ -4,8 +4,8 @@
 {% block content %}
 <h2>Sync <small>bring your library up to date</small></h2>
 <p class="lede">
-  Reads your Steam library and playtime, your achievements, and the store details of games it hasn't seen.
-  It talks to Steam only when you press the button.
+  Reads your Steam library and playtime, your achievements, the store details of new games and everyone's review counts.
+  It talks to Steam only when you press a button.
 </p>
 
 <section class="find" id="sync">
@@ -27,26 +27,37 @@
     {% elif not configured %}
       <p class="warn">Sync needs <code>STEAM_API_KEY</code> and <code>STEAM_ID</code> in your <code>.env</code> file (see Setup in the README). Add them and restart the app.</p>
     {% else %}
-      <form method="post" action="/sync/start"><button type="submit">Sync now</button></form>
+      {% set again = "Re-read every game's achievements, store details and review counts? This takes about " ~ due.full_minutes ~ " minutes. You can stop it, but the next one starts over." %}
+      <div class="syncbuttons">
+        <form method="post" action="/sync/start"><button type="submit">Sync now</button></form>
+        <form method="post" action="/sync/start" onsubmit='return confirm({{ again|tojson }})'>
+          <input type="hidden" name="full" value="1">
+          <button class="ghost" type="submit" title="Ignore what was read before and read everything again">Check everything again (about {{ due.full_minutes }} min)</button>
+        </form>
+      </div>
     {% endif %}
   {% endif %}
   <p class="meta">
-    {% if waiting.last_synced %}Last synced {{ waiting.last_synced.strftime("%Y-%m-%d %H:%M") }} (UTC).{% else %}Not synced yet.{% endif %}
-    {{ waiting.library }} games in your library{% if waiting.family %} ({{ waiting.owned }} owned, {{ waiting.family }} from Family Sharing){% endif %}.
-    {% if waiting.details %}{{ waiting.details }} are waiting for their store details (about {{ minutes }} minute{{ "" if minutes == 1 else "s" }}).{% endif %}
-    {% if waiting.achievements %}Steam has no achievements on record for {{ waiting.achievements }} played game{{ "" if waiting.achievements == 1 else "s" }}; it sometimes cannot give them, and each sync asks again.{% endif %}
+    {% if due.last_synced %}Last synced {{ due.last_synced.strftime("%Y-%m-%d %H:%M") }} (UTC).{% else %}Not synced yet.{% endif %}
+    {{ due.library }} games in your library{% if due.family %} ({{ due.owned }} owned, {{ due.family }} from Family Sharing){% endif %}.
+    {% if due.achievements or due.details or due.reviews %}
+      Due now: achievements for {{ due.achievements }}, store details for {{ due.details }}, review counts for {{ due.reviews }}
+      (about {{ due.minutes }} minute{{ "" if due.minutes == 1 else "s" }}).
+      {% if due.achievements %}Steam sometimes cannot give a few games' achievements, so a handful can stay on this list.{% endif %}
+    {% else %}Nothing is due: you are up to date.{% endif %}
   </p>
 </section>
 
-<h3>What a sync does</h3>
+<h3>What a sync re-reads</h3>
 <ol>
-  <li><strong>{{ steps[0][1] }}.</strong> One call to Steam's API: your games, hours and when you last played each.</li>
-  <li><strong>{{ steps[1][1] }}.</strong> Official API, quick. Only games you've played, and later syncs only the ones you played since.</li>
-  <li><strong>{{ steps[2][1] }}.</strong> The slow part, about 3 seconds a game, so the very first sync takes a while. Later syncs only handle games you've added.</li>
-  <li><strong>{{ steps[3][1] }}.</strong> For games you own but have barely played, so recommendations can weigh how well they are reviewed.</li>
+  <li><strong>{{ steps[0][1] }}.</strong> One call to Steam's API: your games, hours and when you last played each. Every sync.</li>
+  <li><strong>{{ steps[1][1] }}.</strong> Games you've played since they were last read, games never read, and any not read for 30 days (developers add achievements, and Family Sharing games show no playtime). Official API, quick.</li>
+  <li><strong>{{ steps[2][1] }}.</strong> New games; games that came back empty (no store page, no tags) a week ago; and the 30 oldest games when they are over 90 days old, because tags and descriptions drift. About 3 seconds a game, so the very first sync takes a while.</li>
+  <li><strong>{{ steps[3][1] }}.</strong> Every game, played or not, that has no counts yet or whose counts are a month old.</li>
 </ol>
 <p class="meta">
   A sync saves as it goes. If you stop it, or Steam turns it away, the next one carries on where it left off.
-  It never changes your diary. Family Sharing games and your wishlist are not part of it.
+  <strong>Check everything again</strong> ignores all these limits and re-reads every game, which is slow. A sync never changes your diary;
+  Family Sharing games are not found by it (that needs the import) and your wishlist is not part of it yet.
 </p>
 {% endblock %}
