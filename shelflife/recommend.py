@@ -105,7 +105,8 @@ def taste_weight(
     - "engagement": only how you played (engagement score, which includes how
       recently). Ratings are ignored; play cannot say "disliked", so this is 0 to 1.
     - "mix": both. A rated game is MIX_RATING_SHARE its rating and the rest how you
-      played it (play lifts a rating, it never lowers it); an unrated game counts by
+      played it (so a loved game you barely played counts a little less than its rating, a
+      disliked one you played a lot a little less negative); an unrated game counts by
       how you played it, at most IMPLICIT_MAX.
     """
     if mode == "engagement":

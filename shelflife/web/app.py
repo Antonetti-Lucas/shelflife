@@ -354,8 +354,8 @@ def explore(
         recs.append(rec_item)
 
     ref = None  # the game "like this" is about
-    if like.strip().isdigit():
-        found = session.get(Game, int(like.strip()))
+    if (like_id := parse_app_id(like)) is not None:
+        found = session.get(Game, like_id)
         ref = found if found is not None and found.tags else None
     like_tags = []
     if ref is not None:
@@ -414,6 +414,13 @@ FIND_MIN_REVIEWS = (100, 300, 1000)
 MAX_FIND_TAGS = 6
 
 
+def parse_app_id(raw: str) -> int | None:
+    """A game's app id typed into a form, or None when it is not one (so no 500 for "²" or a
+    number too big for the database)."""
+    raw = raw.strip()
+    return int(raw) if raw.isascii() and raw.isdigit() and len(raw) <= 12 else None
+
+
 def choice(raw: str, allowed: tuple[int, ...], default: int) -> int:
     try:
         value = int(raw)
@@ -438,7 +445,8 @@ def find_more_games(
         discover_job.fail("A sync is running. Wait for it to finish, or stop it, then look for games.")
         return RedirectResponse("/explore#find", status_code=303)
     if like.strip():
-        ref = session.get(Game, int(like)) if like.strip().isdigit() else None
+        like_id = parse_app_id(like)
+        ref = session.get(Game, like_id) if like_id is not None else None
         if ref is None or not ref.tags:
             discover_job.fail("That game has no tags yet, so there is nothing to compare.")
             return RedirectResponse("/explore#find", status_code=303)
@@ -568,14 +576,15 @@ def wishlist_page(
 
 @app.get("/sync")
 def sync_page(request: Request, session: Session = Depends(get_session)):
+    job = sync_job.snapshot()
     return templates.TemplateResponse(
         request,
         "sync.html",
         {
-            "job": sync_job.snapshot(),
+            "job": job,
             "configured": try_load_settings() is not None,
             "finding": discover_job.snapshot().running,
-            "due": what_is_due(session),
+            "due": what_is_due(session, with_due=not job.running),
             "steps": SYNC_STEPS,
         },
     )

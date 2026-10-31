@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shelflife import store
-from shelflife.models import Game, LibraryEntry
+from shelflife.models import OFF_TOPIC, Game, LibraryEntry, WishlistItem
 from shelflife.quality import wilson_lower_bound
 from shelflife.store import SpyDetails, SpyListing
 from shelflife.sync import enrich_one
@@ -37,7 +37,6 @@ RELEVANT_TOP = 10  # a search tag must be among a game's 10 most voted tags
 MAX_CHECKS_PER_GAME = 8  # look at no more than this many games per game wanted
 MAX_FAILURES_IN_A_ROW = 3  # stop when the network keeps failing
 POPULAR_PAGES = 3  # at most this many pages (1,000 games each, a minute apart) for a search without tags
-OFF_TOPIC = "off-topic"  # Game.type of a game that is listed under a tag but is not about it
 
 
 def rank_candidates(
@@ -86,13 +85,16 @@ def known_ids(session: Session) -> set[int]:
 
 
 def pending_pool(session: Session) -> list[Game]:
-    """Pool games whose store details and tags have not been fetched yet."""
+    """Pool games whose store details and tags have not been fetched yet. Wishlist games
+    are not pool games: a sync fetches those."""
     return list(
         session.scalars(
             select(Game)
             .outerjoin(LibraryEntry)
+            .outerjoin(WishlistItem, WishlistItem.steam_app_id == Game.steam_app_id)
             .where(
                 LibraryEntry.steam_app_id.is_(None),
+                WishlistItem.steam_app_id.is_(None),
                 Game.details_fetched_at.is_(None),
             )
         )

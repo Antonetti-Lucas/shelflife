@@ -7,6 +7,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shelflife.db import Base
 
+OFF_TOPIC = "off-topic"  # Game.type of a game a search set aside as not really about its tag
+
 
 class Setting(Base):
     """A choice you made in the app, kept between runs (see shelflife/settings.py)."""

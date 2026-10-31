@@ -67,7 +67,7 @@ class SyncResult:
 def run_sync(
     session: Session, api_key: str, steam_id: str, on_progress=None, should_stop=None, full: bool = False
 ) -> SyncResult:
-    """Run the four steps. on_progress(step, text, done, total): `step` counts from 1.
+    """Run the five steps. on_progress(step, text, done, total): `step` counts from 1.
     `full` re-reads everything (all achievements, all store details, all review counts)
     instead of only what is due.
 
@@ -174,10 +174,13 @@ def _minutes(seconds: float) -> int:
     return max(1, round(seconds / 60)) if seconds else 0
 
 
-def what_is_due(session: Session) -> dict[str, int | object]:
+def what_is_due(session: Session, with_due: bool = True) -> dict[str, int | object]:
     """What the next sync would do and roughly how long it takes, and what a full re-check
     would do: library size (owned and from Family Sharing), the games due for each step, and
-    the last sync. The page and the sync use the same rules, so they agree."""
+    the last sync. The page and the sync use the same rules, so they agree.
+
+    Working out what is due reads every game, so `with_due=False` skips it (the page does
+    while a sync runs and refreshes itself every few seconds); the due numbers are then None."""
     library = session.scalar(select(func.count()).select_from(LibraryEntry)) or 0
     family = session.scalar(
         select(func.count())
@@ -185,27 +188,31 @@ def what_is_due(session: Session) -> dict[str, int | object]:
         .join(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
         .where(Game.family_shared.is_(True))
     )
-    counts = {
-        "achievements": len(achievements_due(session)),
-        "details": len(details_due(session)),
-        "reviews": len(reviews_due(session)),
-    }
-    full = {
-        "achievements": len(achievements_due(session, everything=True)),
-        "details": len(details_due(session, everything=True)),
-        "reviews": len(reviews_due(session, everything=True)),
-    }
-    estimate = lambda c: _minutes(  # noqa: E731
-        c["achievements"] * SECONDS_PER_ACHIEVEMENT + c["details"] * SECONDS_PER_GAME + c["reviews"] * SECONDS_PER_REVIEW
-    )
+    counts = {"achievements": None, "details": None, "reviews": None}
+    minutes = full_minutes = None
+    if with_due:
+        counts = {
+            "achievements": len(achievements_due(session)),
+            "details": len(details_due(session)),
+            "reviews": len(reviews_due(session)),
+        }
+        full = {
+            "achievements": len(achievements_due(session, everything=True)),
+            "details": len(details_due(session, everything=True)),
+            "reviews": len(reviews_due(session, everything=True)),
+        }
+        estimate = lambda c: _minutes(  # noqa: E731
+            c["achievements"] * SECONDS_PER_ACHIEVEMENT + c["details"] * SECONDS_PER_GAME + c["reviews"] * SECONDS_PER_REVIEW
+        )
+        minutes, full_minutes = estimate(counts), estimate(full)
     return {
         "library": library,
         "wishlist": session.scalar(select(func.count()).select_from(WishlistItem)) or 0,
         "family": family or 0,
         "owned": library - (family or 0),
         **counts,
-        "minutes": estimate(counts),
-        "full_minutes": estimate(full),
+        "minutes": minutes,
+        "full_minutes": full_minutes,
         "last_synced": session.scalar(select(func.max(LibraryEntry.last_synced))),
     }
 

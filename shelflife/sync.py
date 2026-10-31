@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from shelflife import store
 from shelflife.achievements import AchievementsUnavailable, AchievementStats, fetch_achievements
-from shelflife.models import Game, LibraryEntry, PlaytimeSnapshot, WishlistItem
+from shelflife.models import OFF_TOPIC, Game, LibraryEntry, PlaytimeSnapshot, WishlistItem
 from shelflife.reviews import fetch_review_counts
 from shelflife.steam import OwnedGame, SteamError
 from shelflife.throttle import RateLimited
@@ -34,6 +34,8 @@ def upsert_library(session: Session, owned: list[OwnedGame]) -> None:
             session.add(game)
         else:
             game.name = og.name
+            if game.type == OFF_TOPIC:  # a search set it aside; now it is yours, so look it up properly
+                game.type, game.details_fetched_at = None, None
         game.family_shared = False  # you own it now, if it was ever a family game
 
         entry = session.get(LibraryEntry, og.app_id)
@@ -63,7 +65,7 @@ MAX_CONSECUTIVE_FAILURES = 3
 # How long before a sync looks at something again. The web page's "check everything
 # again" ignores these and re-reads it all.
 ACHIEVEMENTS_REFRESH_DAYS = 30  # catches achievements a developer added, and family games
-DETAILS_RETRY_DAYS = 7  # a game the store had no page for, or no tags for: try again
+DETAILS_RETRY_DAYS = 7  # a game the store had no page for, or a game with no tags: try again (DLC and software never have tags)
 DETAILS_REFRESH_DAYS = 90  # tags and descriptions drift; refreshed a few at a time
 DETAILS_REFRESH_BATCH = 30  # at most this many stale games per sync (about a minute and a half)
 REVIEWS_REFRESH_DAYS = 30  # review counts grow
@@ -326,8 +328,8 @@ def details_due(
     refresh_batch: int = DETAILS_REFRESH_BATCH,
 ) -> list[Game]:
     """The library and wishlist games whose store details and tags a sync should fetch, in this order:
-    games never fetched (most-played first); games that came back empty (no store page, or
-    no tags) more than `retry_days` ago; and the `refresh_batch` oldest games fetched more
+    games never fetched (most-played first); games that came back empty (no store page, or a
+    game with no tags) more than `retry_days` ago; and the `refresh_batch` oldest games fetched more
     than `refresh_days` ago. `everything` lists every library and wishlist game."""
     wanted = _wanted_games()
     new = list(
@@ -342,7 +344,11 @@ def details_due(
         return new + fetched
     now = _now()
     retry_cutoff, refresh_cutoff = now - timedelta(days=retry_days), now - timedelta(days=refresh_days)
-    retry = [g for g in fetched if (g.type == "unavailable" or not g.tags) and g.details_fetched_at < retry_cutoff]
+    retry = [
+        g
+        for g in fetched
+        if (g.type == "unavailable" or (g.type == "game" and not g.tags)) and g.details_fetched_at < retry_cutoff
+    ]
     retry_ids = {g.steam_app_id for g in retry}
     stale = [g for g in fetched if g.details_fetched_at < refresh_cutoff and g.steam_app_id not in retry_ids]
     return new + retry + stale[:refresh_batch]

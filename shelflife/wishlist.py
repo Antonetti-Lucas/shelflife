@@ -14,7 +14,7 @@ import requests
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from shelflife.models import Game, WishlistItem
+from shelflife.models import OFF_TOPIC, Game, WishlistItem
 from shelflife.store import HEADERS
 from shelflife.throttle import RateLimited
 
@@ -72,12 +72,18 @@ def import_wishlist(session: Session, entries: list[WishlistEntry]) -> WishlistI
     if not entries and existing:
         return WishlistImport(total=len(existing), added=0, removed=0, kept_old_list=True)
 
+    games = {g.steam_app_id: g for g in session.scalars(select(Game).where(Game.steam_app_id.in_([e.app_id for e in entries])))}
     seen: set[int] = set()
     added = 0
     for entry in entries:
+        if entry.app_id in seen:  # listed twice: the first one counts
+            continue
         seen.add(entry.app_id)
-        if session.get(Game, entry.app_id) is None:
+        game = games.get(entry.app_id)
+        if game is None:
             session.add(Game(steam_app_id=entry.app_id, name=f"App {entry.app_id}"))  # named when its details arrive
+        elif game.type == OFF_TOPIC:  # a search set it aside; now you want it, so look it up properly
+            game.type, game.details_fetched_at = None, None
         item = existing.get(entry.app_id)
         if item is None:
             session.add(WishlistItem(steam_app_id=entry.app_id, priority=entry.priority, added_at=entry.added_at, seen_at=now))
