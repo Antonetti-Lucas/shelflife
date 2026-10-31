@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_tagbox.html" import tag_input, tag_note %}
 {% block title %}Library · ShelfLife{% endblock %}
 {% block content %}
 <h2>Library <small>{{ total }} games you own or can play through your family</small></h2>
@@ -9,6 +10,7 @@
 
 <form class="filters" method="get" action="/library">
   <input type="search" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
+  {{ tag_input(tag, tag_options) }}
   <select name="source" aria-label="Source">
     {% for value, label in [("all", "Owned and family"), ("owned", "Owned"), ("family", "Family")] %}
       <option value="{{ value }}" {{ "selected" if source == value }}>{{ label }}</option>
@@ -25,19 +27,20 @@
     {% endfor %}
   </select>
   <select name="sort" aria-label="Sort by">
-    {% for value, label in [("hours", "Most played"), ("fit", "Best recommendation"), ("score", "Engagement score"), ("rating", "Your rating"), ("name", "Name")] %}
+    {% for value, label in [("hours", "Most played"), ("recent", "Recently played"), ("fit", "Best recommendation"), ("score", "Engagement score"), ("rating", "Your rating"), ("name", "Name")] %}
       <option value="{{ value }}" {{ "selected" if sort == value }}>{{ label }}</option>
     {% endfor %}
   </select>
   <button type="submit">Apply</button>
 </form>
+{{ tag_note(unknown_tags) }}
 <p class="meta">"Recommended" keeps the games you haven't played yet that fit your taste best, ranked together by fit.</p>
 
 <div class="table-wrap">
 <table>
   <thead>
     <tr>
-      <th>Game</th><th>Source</th><th class="num">Hours</th><th class="num">Engagement</th>
+      <th>Game</th><th>Source</th><th class="num">Hours</th><th class="num">Last played</th><th class="num">Engagement</th>
       <th class="num" title="Taste match × review quality, for games you haven't played yet">Fit</th>
       <th class="num">Your rating</th><th>Status</th>
     </tr>
@@ -67,6 +70,7 @@
           {{ "%.1f"|format(r.hours) if r.hours else "—" }}
         {% endif %}
       </td>
+      <td class="num">{{ r.last_played.strftime("%Y-%m-%d") if r.last_played else "—" }}</td>
       <td class="num">{{ "%.1f"|format(r.score) }}</td>
       <td class="num">{{ "%.0f"|format(r.fit) if r.fit is not none else "—" }}</td>
       <td class="num">
@@ -89,14 +93,14 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="7" class="empty">No games match.</td></tr>
+    <tr><td colspan="8" class="empty">No games match.</td></tr>
     {% endfor %}
   </tbody>
 </table>
 </div>
 
 {% if pages > 1 %}
-{% set base = "/library?q=" ~ (q|urlencode) ~ "&source=" ~ source ~ "&status=" ~ status ~ "&rec=" ~ rec ~ "&sort=" ~ sort %}
+{% set base = "/library?q=" ~ (q|urlencode) ~ "&source=" ~ source ~ "&tag=" ~ (tag|urlencode) ~ "&status=" ~ status ~ "&rec=" ~ rec ~ "&sort=" ~ sort %}
 <p class="pager">
   {% if page > 1 %}<a href="{{ base }}&page={{ page - 1 }}">← Previous</a>{% endif %}
   Page {{ page }} of {{ pages }}

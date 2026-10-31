@@ -1,0 +1,12 @@
+{# The tag filter: a box with suggestions, and a note when a tag matches nothing. #}
+{% macro tag_input(tag, options) %}
+<input type="search" name="tag" value="{{ tag }}" list="tag-options" class="tagbox"
+       placeholder="Tags, e.g. Roguelike, Co-op" aria-label="Filter by tags, comma separated; a game must have all of them">
+<datalist id="tag-options">{% for t in options %}<option value="{{ t }}">{% endfor %}</datalist>
+{% endmacro %}
+
+{% macro tag_note(unknown) %}
+{% if unknown %}
+<p class="meta">No game here has the tag {{ unknown|join(", ") }}. Tags are matched whole, so "Co-op" is not "Online Co-Op"; pick one from the suggestions.</p>
+{% endif %}
+{% endmacro %}

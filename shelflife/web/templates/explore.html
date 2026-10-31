@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_card.html" import card %}
+{% from "_tagbox.html" import tag_input, tag_note %}
 {% block title %}Explore · ShelfLife{% endblock %}
 {% block content %}
 <h2>Explore Steam <small>{{ total }} games you don't own</small></h2>
@@ -11,6 +12,7 @@
 
 <form class="filters" method="get" action="/explore">
   <input type="search" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
+  {{ tag_input(tag, tag_options) }}
   <select name="rec" aria-label="Recommended">
     {% for value, label in [("all", "All games"), ("50", "Recommended: top 50%"), ("25", "Recommended: top 25%"), ("10", "Recommended: top 10%")] %}
       <option value="{{ value }}" {{ "selected" if rec == value }}>{{ label }}</option>
@@ -23,6 +25,7 @@
   </select>
   <button type="submit">Apply</button>
 </form>
+{{ tag_note(unknown_tags) }}
 
 {% if recs %}
   <div class="grid">
@@ -33,7 +36,7 @@
 {% endif %}
 
 {% if pages > 1 %}
-{% set base = "/explore?q=" ~ (q|urlencode) ~ "&rec=" ~ rec ~ "&sort=" ~ sort %}
+{% set base = "/explore?q=" ~ (q|urlencode) ~ "&tag=" ~ (tag|urlencode) ~ "&rec=" ~ rec ~ "&sort=" ~ sort %}
 <p class="pager">
   {% if page > 1 %}<a href="{{ base }}&page={{ page - 1 }}">← Previous</a>{% endif %}
   Page {{ page }} of {{ pages }}

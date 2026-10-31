@@ -28,10 +28,6 @@ def _now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def _today() -> date:
-    return _now().date()
-
-
 def load_ratings(session: Session) -> dict[int, float]:
     """steam_app_id -> rating for every rated game."""
     return {
@@ -132,16 +128,13 @@ def set_status(
 ) -> None:
     """Set (or clear, with None) where you are with a game.
 
-    Dates left as KEEP stay as they are; a date of None means "unknown" and clears
-    it. When the status changes and the date it implies (started for "playing",
-    finished for "played"/"dropped") was left as KEEP and is still empty, it is
-    filled in with today, so a quick click leaves a usable diary. Clearing the
+    The dates are optional and never filled in for you: leave one as KEEP to keep
+    what is stored, give a date to set it, or None for "unknown". Clearing the
     status clears both dates.
     """
     if status is not None and status not in STATUSES:
         raise ValueError(f"Status must be one of {', '.join(STATUSES)}, got {status!r}")
     entry = _entry(session, app_id)
-    changed = entry.status != status
     entry.status = status
     if status is None:
         entry.started_on = entry.finished_on = None
@@ -150,11 +143,6 @@ def set_status(
             entry.started_on = started_on
         if finished_on is not KEEP:
             entry.finished_on = finished_on
-        if changed:
-            if status == "playing" and started_on is KEEP and entry.started_on is None:
-                entry.started_on = _today()
-            elif status != "playing" and finished_on is KEEP and entry.finished_on is None:
-                entry.finished_on = _today()
         if entry.started_on and entry.finished_on and entry.finished_on < entry.started_on:
             session.rollback()
             raise ValueError("The finish date is before the start date")

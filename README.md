@@ -104,9 +104,10 @@ The fetching scripts are deliberately slow to respect the services' limits (abou
 `python -m scripts.web`, then open <http://127.0.0.1:8000>. It listens only on your own machine and has no login, so don't expose it to a network.
 
 - **Recommendations:** your backlog, family and discovery lists, paged, each pick with the games and tags behind it. Rate or dismiss from the card.
-- **Library:** your owned and family games with covers. Set a rating or a status, or type hours for family games, right in the row. Filter by status, or use the **Recommended** filter to keep the unplayed games that fit you best (top 50%, 25% or 10%).
-- **Explore:** games you don't own, ranked by fit, with the same filter, search and sorting.
-- **Diary:** your games by status (playing, played, dropped), newest first, with your favorites on top. Set a status, its dates and a favorite on a game's page; picking a status fills in today's date, and you can clear it for a game you can't date. "Played" means finished or played as much as you wanted, so it fits endless multiplayer games too.
+- **Library:** your owned and family games with covers. Set a rating or a status, or type hours for family games, right in the row. Search by name, filter by tags or status, sort by most played or **recently played**, or use the **Recommended** filter to keep the unplayed games that fit you best (top 50%, 25% or 10%).
+- **Explore:** games you don't own, ranked by fit, with the same filter, search, tags and sorting.
+- **Diary:** one tab each for playing, played, dropped and your favorites, newest first, paged, with search and a tag filter. Set a status, optional dates and a favorite on a game's page; dates are never filled in for you. "Played" means finished or played as much as you wanted, so it fits endless multiplayer games too.
+- **Tags:** type one or more tags, separated by commas, in the Library, Explore or Diary (a game must have all of them). Tags match whole and ignore case, and the box suggests the tags that exist.
 - **Stats:** games and hours in your library, your diary by status, games finished per year, how you rate, and your most played games.
 - **Game page, My ratings, My taste:** why a game fits you and how you played it; your ratings and reviews (edit or delete in place); and the tag profile behind it all.
 

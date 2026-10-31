@@ -82,12 +82,19 @@ select { padding: 6px 8px; }
 
 .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
 .filters input[type="search"] { flex: 1; min-width: 200px; }
+.filters .tagbox { flex: 1.4; }
+
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 16px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.tabs a { padding: 6px 14px; border-radius: 8px; color: var(--muted); }
+.tabs a:hover { background: var(--accent-soft); text-decoration: none; }
+.tabs a.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.tabs small { margin-left: 4px; opacity: 0.8; }
 
 table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 th, td { padding: 9px 14px; text-align: left; border-bottom: 1px solid var(--line); }
 th { color: var(--muted); font-weight: 600; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.03em; }
 tr:last-child td { border-bottom: none; }
-.num { text-align: right; font-variant-numeric: tabular-nums; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pager { text-align: center; color: var(--muted); margin-top: 20px; }
 .pager a { margin: 0 12px; }
 

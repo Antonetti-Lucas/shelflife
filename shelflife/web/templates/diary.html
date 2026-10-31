@@ -1,49 +1,46 @@
 {% extends "base.html" %}
+{% from "_tagbox.html" import tag_input, tag_note %}
 {% block title %}Diary · ShelfLife{% endblock %}
 {% block content %}
-{% macro thumb(g) %}
-<a class="thumb" href="/game/{{ g.steam_app_id }}">
-  {% if g.cover_url %}<img src="{{ g.cover_url }}" loading="lazy" alt="">{% else %}<span class="nocover">{{ g.name[:1] }}</span>{% endif %}
-</a>
-{% endmacro %}
+{% set labels = {"playing": "Playing", "played": "Played", "dropped": "Dropped", "favorites": "★ Favorites"} %}
 
 <h2>Diary</h2>
 <p class="lede">
-  The games you are playing, have played or dropped, newest first. Set a game's status on its
-  page or in the <a href="/library">Library</a>.
+  Your games by status, newest first. Set a game's status or favorite on its page, or its status in the
+  <a href="/library">Library</a>.
 </p>
 
-{% if favorites %}
-<h2>★ Favorites <small>{{ favorites|length }} games</small></h2>
-<div class="rows">
-  {% for e, g in favorites %}
-  <article class="row compact">
-    {{ thumb(g) }}
-    <div class="row-body">
-      <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a>
-        {% if e.rating is not none %}<small>{{ rating_text(e.rating) }} ★</small>{% endif %}</h3>
-    </div>
-  </article>
+<nav class="tabs" aria-label="Diary sections">
+  {% for key in tabs %}
+    <a href="{{ url(show=key, page=1) }}" class="{{ 'on' if key == show }}">{{ labels[key] }} <small>{{ counts[key] }}</small></a>
   {% endfor %}
-</div>
-{% endif %}
+</nav>
 
-{% for status in STATUSES %}
-{% set items = sections[status] %}
-<h2>{{ STATUS_LABELS[status] }} <small>{{ items|length }} games</small></h2>
+<form class="filters" method="get" action="/diary">
+  <input type="hidden" name="show" value="{{ show }}">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
+  {{ tag_input(tag, tag_options) }}
+  <button type="submit">Apply</button>
+</form>
+{{ tag_note(unknown_tags) }}
+
+<h2>{{ labels[show] }} <small>{{ total }} game{{ "" if total == 1 else "s" }}{{ " match" if filtered }}</small></h2>
 {% if items %}
 <div class="rows">
   {% for e, g in items %}
   <article class="row compact" id="g{{ g.steam_app_id }}">
-    {{ thumb(g) }}
+    <a class="thumb" href="/game/{{ g.steam_app_id }}">
+      {% if g.cover_url %}<img src="{{ g.cover_url }}" loading="lazy" alt="">{% else %}<span class="nocover">{{ g.name[:1] }}</span>{% endif %}
+    </a>
     <div class="row-body">
       <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a>
-        {% if e.favorite %}<small>★ favorite</small>{% endif %}
+        {% if e.favorite and show != "favorites" %}<small>★ favorite</small>{% endif %}
+        {% if show == "favorites" and e.status %}<small>{{ STATUS_LABELS[e.status] }}</small>{% endif %}
         {% if e.rating is not none %}<small>rated {{ rating_text(e.rating) }}</small>{% endif %}</h3>
       <p class="meta">
         {% if e.started_on %}started {{ e.started_on.isoformat() }}{% endif %}
         {% if e.started_on and e.finished_on %} · {% endif %}
-        {% if e.finished_on %}{{ "dropped" if status == "dropped" else "finished" }} {{ e.finished_on.isoformat() }}{% endif %}
+        {% if e.finished_on %}{{ "stopped" if e.status == "dropped" else "finished" }} {{ e.finished_on.isoformat() }}{% endif %}
         {% if not e.started_on and not e.finished_on %}no dates{% endif %}
         {% if g.library_entry and g.library_entry.playtime_total_min %} · {{ "%.1f"|format(g.library_entry.playtime_total_hours) }} hours{% endif %}
       </p>
@@ -52,12 +49,22 @@
   </article>
   {% endfor %}
 </div>
+{% elif filtered %}
+  <p class="empty">No games match. Try a different search or tag.</p>
 {% else %}
   <p class="empty">
-    {% if status == "playing" %}Nothing yet. Pick "Playing" on a game's page when you start one.
-    {% elif status == "played" %}Nothing yet. Pick "Played" when you finish a game or are done with an endless one, or on old games to log them.
-    {% else %}Nothing dropped. Use it for games you stopped before the end.{% endif %}
+    {% if show == "playing" %}Nothing yet. Pick "Playing" on a game's page when you start one.
+    {% elif show == "played" %}Nothing yet. Pick "Played" when you finish a game or are done with an endless one, or on old games to log them.
+    {% elif show == "dropped" %}Nothing dropped. Use it for games you stopped before the end.
+    {% else %}No favorites yet. Add one from a game's page.{% endif %}
   </p>
 {% endif %}
-{% endfor %}
+
+{% if pages > 1 %}
+<p class="pager">
+  {% if page > 1 %}<a href="{{ url(page=page - 1) }}">← Previous</a>{% else %}<span class="off">← Previous</span>{% endif %}
+  <span>Page {{ page }} of {{ pages }}</span>
+  {% if page < pages %}<a href="{{ url(page=page + 1) }}">Next →</a>{% else %}<span class="off">Next →</span>{% endif %}
+</p>
+{% endif %}
 {% endblock %}

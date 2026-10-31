@@ -9,14 +9,6 @@ from shelflife import diary
 from shelflife.db import engine, init_db
 from tests.factories import add_game
 
-TODAY = date(2026, 7, 4)
-
-
-@pytest.fixture(autouse=True)
-def fixed_today(monkeypatch):
-    monkeypatch.setattr(diary, "_today", lambda: TODAY)
-
-
 @pytest.fixture
 def game(session):
     return add_game(session, 7, "Some Game")
@@ -42,17 +34,11 @@ def test_a_status_for_an_unknown_game_is_an_error(session):
 # ---- dates ----
 
 
-def test_playing_fills_in_todays_start_date(session, game):
-    diary.set_status(session, 7, "playing")
-    entry = diary.get_entry(session, 7)
-    assert (entry.started_on, entry.finished_on) == (TODAY, None)
-
-
-@pytest.mark.parametrize("status", ["played", "dropped"])
-def test_finishing_or_dropping_fills_in_todays_finish_date(session, game, status):
+@pytest.mark.parametrize("status", ["playing", "played", "dropped"])
+def test_a_status_never_invents_a_date(session, game, status):
     diary.set_status(session, 7, status)
     entry = diary.get_entry(session, 7)
-    assert (entry.started_on, entry.finished_on) == (None, TODAY)
+    assert (entry.started_on, entry.finished_on) == (None, None)
 
 
 def test_dates_you_give_are_kept(session, game):
@@ -61,11 +47,11 @@ def test_dates_you_give_are_kept(session, game):
     assert (entry.started_on, entry.finished_on) == (date(2025, 1, 2), date(2025, 2, 3))
 
 
-def test_moving_from_playing_to_played_keeps_the_start_and_adds_the_finish(session, game):
+def test_moving_from_playing_to_played_keeps_the_start_date_and_adds_no_finish_date(session, game):
     diary.set_status(session, 7, "playing", date(2026, 6, 1))
     diary.set_status(session, 7, "played")
     entry = diary.get_entry(session, 7)
-    assert (entry.started_on, entry.finished_on) == (date(2026, 6, 1), TODAY)
+    assert (entry.started_on, entry.finished_on) == (date(2026, 6, 1), None)
 
 
 def test_leaving_the_dates_out_keeps_them(session, game):
@@ -75,25 +61,17 @@ def test_leaving_the_dates_out_keeps_them(session, game):
     assert (entry.started_on, entry.finished_on) == (date(2025, 1, 2), date(2025, 2, 3))
 
 
-def test_a_date_can_be_cleared_when_the_status_stays_the_same(session, game):
-    diary.set_status(session, 7, "played")
+def test_a_date_can_be_cleared(session, game):
+    diary.set_status(session, 7, "played", date(2025, 1, 2), date(2025, 2, 3))
     diary.set_status(session, 7, "played", None, None)  # you don't know when
     entry = diary.get_entry(session, 7)
     assert (entry.started_on, entry.finished_on) == (None, None)
 
 
-def test_an_unknown_date_given_with_a_new_status_is_not_replaced_by_today(session, game):
-    # Logging an old game: you pick "played" and leave the date empty.
-    diary.set_status(session, 7, "played", None, None)
-    entry = diary.get_entry(session, 7)
-    assert (entry.started_on, entry.finished_on) == (None, None)
-    assert entry.status == "played"
-
-
-def test_giving_only_the_start_date_still_fills_in_the_finish_date_for_played(session, game):
+def test_giving_only_the_start_date_leaves_the_finish_date_empty(session, game):
     diary.set_status(session, 7, "played", date(2026, 6, 1))
     entry = diary.get_entry(session, 7)
-    assert (entry.started_on, entry.finished_on) == (date(2026, 6, 1), TODAY)
+    assert (entry.started_on, entry.finished_on) == (date(2026, 6, 1), None)
 
 
 def test_finishing_before_starting_is_refused_and_changes_nothing(session, game):
