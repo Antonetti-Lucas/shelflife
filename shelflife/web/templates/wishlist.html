@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% from "_card.html" import card %}
+{% from "_tagbox.html" import tag_input, tag_note %}
+{% block title %}Wishlist · ShelfLife{% endblock %}
+{% block content %}
+<h2>Wishlist <small>{{ total }} of {{ on_list }} games on your Steam wishlist</small></h2>
+<p class="lede">
+  Your Steam wishlist, ranked by how well each game fits your taste. It is read from Steam by
+  <a href="/sync">Sync</a> and never teaches your taste: wanting a game is not liking it.
+</p>
+
+{% if not on_list %}
+  <p class="empty">Nothing here yet. Press <a href="/sync">Sync</a> to read your wishlist (it must be public on Steam).</p>
+{% else %}
+<form class="filters" method="get" action="/wishlist">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
+  {{ tag_input(tag, tag_options, match) }}
+  <select name="rec" aria-label="Recommended">
+    {% for value, label in [("all", "All games"), ("50", "Best fit: top 50%"), ("25", "Best fit: top 25%"), ("10", "Best fit: top 10%")] %}
+      <option value="{{ value }}" {{ "selected" if rec == value }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select name="sort" aria-label="Sort by">
+    {% for value, label in sorts.items() %}
+      <option value="{{ value }}" {{ "selected" if sort == value }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Apply</button>
+</form>
+{{ tag_note(unknown_tags) }}
+{% if waiting %}<p class="meta">{{ waiting }} wishlist game{{ "" if waiting == 1 else "s" }} still waiting for store details: press <a href="/sync">Sync</a> to rank {{ "it" if waiting == 1 else "them" }}.</p>{% endif %}
+{% if other %}<p class="meta">{{ other }} can't be ranked (DLC or software, or no tags).</p>{% endif %}
+{% if dismissed %}<p class="meta">{{ dismissed }} you marked "not interested" {{ "is" if dismissed == 1 else "are" }} hidden.</p>{% endif %}
+
+{% if recs %}
+  <div class="grid">
+    {% for r in recs %}{{ card(r, here, ratings.get(r.game.steam_app_id), none, notes.get(r.game.steam_app_id)) }}{% endfor %}
+  </div>
+{% else %}
+  <p class="empty">No games match. Try a different search or filter.</p>
+{% endif %}
+
+{% if pages > 1 %}
+{% set base = "/wishlist?q=" ~ (q|urlencode) ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&rec=" ~ rec ~ "&sort=" ~ sort %}
+<p class="pager">
+  {% if page > 1 %}<a href="{{ base }}&page={{ page - 1 }}">← Previous</a>{% endif %}
+  Page {{ page }} of {{ pages }}
+  {% if page < pages %}<a href="{{ base }}&page={{ page + 1 }}">Next →</a>{% endif %}
+</p>
+{% endif %}
+{% endif %}
+{% endblock %}

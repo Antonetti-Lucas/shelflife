@@ -13,6 +13,7 @@ Steam knows what you own and how long you've played, but not what you *thought* 
 
 - **Steam import:** owned games, playtime, store details, community tags, review counts and achievements.
 - **Family Sharing import** (optional): games you can play through a Steam Family.
+- **Wishlist:** your Steam wishlist, read by Sync and ranked by how well each game fits you (it never teaches your taste).
 - **Diary:** 0.5–5 star ratings, reviews, "not interested" marks, a status (playing, played, dropped) with dates, and favorites, stored locally.
 - **Recommendations:** three lists (backlog, family, games you don't own), each with a reason.
 - **Web app:** recommendations, a library you can rate and edit in place, an Explore page with a button to find more games, similar games for any game, a diary, stats, game pages, your taste profile, and a Sync button.
@@ -77,7 +78,7 @@ python -m scripts.discover       # a pool of well-reviewed games you don't own
 python -m scripts.web            # then open http://127.0.0.1:8000
 ```
 
-You can also sync from the web app: its **Sync** page runs the same steps (library, achievements, store details, review counts) in the background with a progress bar and a Stop button, re-reads what could have changed, and carries on where it left off if you stop it. The fetching scripts are deliberately slow to respect the services' limits (about 3 seconds per game, so 300 games take roughly 15 minutes). They save progress as they go: stop with Ctrl-C and run again to continue. Re-run `sync` and `achievements` any time to refresh your playtime.
+You can also sync from the web app: its **Sync** page runs the same steps (library, wishlist, achievements, store details, review counts) in the background with a progress bar and a Stop button, re-reads what could have changed, and carries on where it left off if you stop it. The fetching scripts are deliberately slow to respect the services' limits (about 3 seconds per game, so 300 games take roughly 15 minutes). They save progress as they go: stop with Ctrl-C and run again to continue. Re-run `sync` and `achievements` any time to refresh your playtime.
 
 **If something goes wrong**
 
@@ -93,6 +94,7 @@ You can also sync from the web app: its **Sync** page runs the same steps (libra
 | `python -m scripts.sync [--limit N] [--fill-tags]` | Import the library; fetch details and tags |
 | `python -m scripts.scores [N]` | Rank your played games by engagement score |
 | `python -m scripts.recommend [N]` | Print recommendations in the terminal |
+| `python -m scripts.wishlist` | Read your Steam wishlist (needs only your SteamID) |
 | `python -m scripts.discover [--per-tag N] [--tags "A,B"]` | Find new games you don't own (the same as Explore's button) |
 | `python -m scripts.feedback not-interested "Name"` | Dismiss a game (also `undo`, `list`) |
 | `python -m scripts.import_family [file]` | Import a Family Sharing export (below) |
@@ -105,6 +107,7 @@ You can also sync from the web app: its **Sync** page runs the same steps (libra
 
 - **Recommendations:** your backlog, family and discovery lists, paged, each pick with the games and tags behind it. Rate or dismiss from the card.
 - **Library:** your owned and family games with covers. Set a rating or a status, or type hours for family games, right in the row. Search by name, filter by tags or status, sort by most played or **recently played**, or use the **Recommended** filter to keep the unplayed games that fit you best (top 50%, 25% or 10%).
+- **Wishlist:** your Steam wishlist ranked by how well each game fits your taste, with your own rank and the date you added each one. Search, the tag picker and the best-fit cut work as in Explore, and you can sort by fit, your own order, newest added, reviews or name. It is read by Sync (the wishlist must be public on Steam) and only shows games whose store details have arrived. Wishlisted games also get a badge and an "only my wishlist" filter in Explore, a "From your wishlist" list on the home page (instead of in "To discover"), and a note on their game page. Wanting a game is not liking it, so a wishlist never changes your taste profile.
 - **Explore:** games you don't own, ranked by fit, with the same filter, search, tags and sorting. **Find more games** adds new ones for the genres or tags you pick (or the tags you like most), or with no tags at all (the best-reviewed games from SteamSpy's list of popular games), for a number of games you choose, and shows its progress. Every game page has **Games like this** (Explore ranked by how close games are to that one) and a button to search Steam for new games like it.
 - **Diary:** one tab each for playing, played, dropped and your favorites, newest first, paged, with search and a tag filter. Set a status, optional dates and a favorite on a game's page; dates are never filled in for you. "Played" means finished or played as much as you wanted, so it fits endless multiplayer games too.
 - **Tags:** pick several tags in the Library, Explore or Diary, and choose whether a game needs all of them or any of them. Tags match whole and ignore case, a game "has" a tag if it is among its 20 most voted, and the box suggests the tags that exist.
@@ -137,14 +140,14 @@ ShelfLife runs entirely on your own computer. It has no server, no account, no a
 **What it stores, and where**
 
 - `.env`: your Steam API key and SteamID.
-- `shelflife.db`: your library (games, hours, when you last played, achievement counts and when you unlocked them), the hours you type in for family games, which games are shared with you through Family Sharing, your diary (ratings, reviews, statuses and dates, favorites, "not interested"), your settings, and public store data for each game (names, descriptions, tags, review counts, cover addresses).
+- `shelflife.db`: your library (games, hours, when you last played, achievement counts and when you unlocked them), your wishlist (game ids, your own rank and the date you added each), the hours you type in for family games, which games are shared with you through Family Sharing, your diary (ratings, reviews, statuses and dates, favorites, "not interested"), your settings, and public store data for each game (names, descriptions, tags, review counts, cover addresses).
 - `data/`: files you create or import, such as the Family Sharing export (it lists which games your family members own, so keep it private) and old CSV files.
 
 Delete `.env`, `shelflife.db` and `data/` and nothing of yours is left.
 
 **What it sends, and to whom** (only when you run a command or press a button)
 
-- **Valve's Steam Web API** (`api.steampowered.com`): your API key and SteamID, to read your own library and achievements, and your key to look up game names. Review counts and global achievement rates are asked for by game id alone.
+- **Valve's Steam Web API** (`api.steampowered.com`): your API key and SteamID, to read your own library and achievements, and your key to look up game names. Your SteamID alone (no key) is sent to read your wishlist. Review counts and global achievement rates are asked for by game id alone.
 - **The Steam store** (`store.steampowered.com`) and **SteamSpy** (`steamspy.com`): game ids and tag names only. They never receive your key, SteamID, ratings or diary.
 - **Your browser** loads cover images from Steam's servers when you open a page.
 - Nothing else: no outside fonts, scripts or analytics. The web app listens only on `127.0.0.1` and has no login, so don't expose it to a network.
@@ -153,7 +156,7 @@ Delete `.env`, `shelflife.db` and `data/` and nothing of yours is left.
 
 ShelfLife is a personal tool. Each person uses their own API key (it is personal to you, so don't share it or commit it) to read their own account, within Valve's limit of 100,000 calls a day (a full sync uses a few hundred), and it is not affiliated with or endorsed by Valve. The [Steam Web API Terms of Use](https://steamcommunity.com/dev/apiterms) ask applications to say what Steam data they store; the list above is that statement.
 
-Most of what ShelfLife reads comes from Valve's documented Web API. A few things come from endpoints Valve doesn't document: the store's `appdetails` endpoint, the review counts, the tag votes read from a game's store page when SteamSpy has none, and the Family Sharing export. They are read-only lookups, throttled and run only when you ask (the family export reads only your own account). Because they are undocumented they may change or stop working, and the [Steam Subscriber Agreement](https://store.steampowered.com/subscriber_agreement/) has a general rule about bots and scripts on Steam, whose examples are about cheating and account abuse. Using them is your choice; only the Family Sharing import is optional.
+Most of what ShelfLife reads comes from Valve's documented Web API. A few things come from endpoints Valve doesn't document: the store's `appdetails` endpoint, the review counts, the tag votes read from a game's store page when SteamSpy has none, your wishlist (`IWishlistService`), and the Family Sharing export. They are read-only lookups, throttled and run only when you ask (the family export reads only your own account). Because they are undocumented they may change or stop working, and the [Steam Subscriber Agreement](https://store.steampowered.com/subscriber_agreement/) has a general rule about bots and scripts on Steam, whose examples are about cheating and account abuse. Using them is your choice; only the Family Sharing import is optional.
 
 Game names, store data and cover art belong to Valve and the game publishers. The licence below covers ShelfLife's code only.
 

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from shelflife import store
 from shelflife.achievements import AchievementsUnavailable, AchievementStats, fetch_achievements
-from shelflife.models import Game, LibraryEntry, PlaytimeSnapshot
+from shelflife.models import Game, LibraryEntry, PlaytimeSnapshot, WishlistItem
 from shelflife.reviews import fetch_review_counts
 from shelflife.steam import OwnedGame, SteamError
 from shelflife.throttle import RateLimited
@@ -262,16 +262,11 @@ def sync_backlog_reviews(
 def reviews_due(
     session: Session, everything: bool = False, refresh_days: int = REVIEWS_REFRESH_DAYS
 ) -> list[Game]:
-    """The library games (owned and family, played or not) whose review counts a sync should
-    read: those with none, then those read more than `refresh_days` ago, oldest first.
-    `everything` reads them all."""
+    """The library and wishlist games (owned, family or wanted; played or not) whose review counts
+    a sync should read: those with none, then those read more than `refresh_days` ago, oldest
+    first. `everything` reads them all."""
     cutoff = _now() - timedelta(days=refresh_days)
-    query = (
-        select(Game)
-        .join(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
-        .where(Game.type == "game")
-        .order_by(Game.reviews_fetched_at.asc().nulls_first())
-    )
+    query = _wanted_games().where(Game.type == "game").order_by(Game.reviews_fetched_at.asc().nulls_first())
     if not everything:
         query = query.where(or_(Game.reviews_fetched_at.is_(None), Game.reviews_fetched_at < cutoff))
     return list(session.scalars(query))
@@ -312,6 +307,17 @@ def backfill_empty_tags(
     return filled
 
 
+def _wanted_games():
+    """Games in your library or on your wishlist (a wishlist game needs its tags and reviews to be
+    ranked, even though you do not own it). Library games come first, most played first."""
+    return (
+        select(Game)
+        .outerjoin(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
+        .outerjoin(WishlistItem, WishlistItem.steam_app_id == Game.steam_app_id)
+        .where(or_(LibraryEntry.steam_app_id.is_not(None), WishlistItem.steam_app_id.is_not(None)))
+    )
+
+
 def details_due(
     session: Session,
     everything: bool = False,
@@ -319,18 +325,18 @@ def details_due(
     refresh_days: int = DETAILS_REFRESH_DAYS,
     refresh_batch: int = DETAILS_REFRESH_BATCH,
 ) -> list[Game]:
-    """The library games whose store details and tags a sync should fetch, in this order:
+    """The library and wishlist games whose store details and tags a sync should fetch, in this order:
     games never fetched (most-played first); games that came back empty (no store page, or
     no tags) more than `retry_days` ago; and the `refresh_batch` oldest games fetched more
-    than `refresh_days` ago. `everything` lists every library game."""
-    in_library = select(Game).join(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
+    than `refresh_days` ago. `everything` lists every library and wishlist game."""
+    wanted = _wanted_games()
     new = list(
         session.scalars(
-            in_library.where(Game.details_fetched_at.is_(None)).order_by(LibraryEntry.playtime_total_min.desc())
+            wanted.where(Game.details_fetched_at.is_(None)).order_by(LibraryEntry.playtime_total_min.desc().nulls_last())
         )
     )
     fetched = list(
-        session.scalars(in_library.where(Game.details_fetched_at.is_not(None)).order_by(Game.details_fetched_at.asc()))
+        session.scalars(wanted.where(Game.details_fetched_at.is_not(None)).order_by(Game.details_fetched_at.asc()))
     )
     if everything:
         return new + fetched
@@ -363,10 +369,9 @@ def enrich_games(
     else:
         pending = list(
             session.scalars(
-                select(Game)
-                .join(LibraryEntry)
+                _wanted_games()
                 .where(Game.details_fetched_at.is_(None))
-                .order_by(LibraryEntry.playtime_total_min.desc())
+                .order_by(LibraryEntry.playtime_total_min.desc().nulls_last())
             )
         )
     if limit is not None:

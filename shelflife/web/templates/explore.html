@@ -85,6 +85,10 @@
   {% if ref %}<input type="hidden" name="like" value="{{ ref.steam_app_id }}">{% endif %}
   <input type="search" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
   {{ tag_input(tag, tag_options, match) }}
+  <select name="wishlist" aria-label="Wishlist">
+    <option value="all" {{ "selected" if wishlist == "all" }}>Any game</option>
+    <option value="only" {{ "selected" if wishlist == "only" }}>Only my wishlist</option>
+  </select>
   <select name="rec" aria-label="Recommended">
     {% for value, label in [("all", "All games"), ("50", "Recommended: top 50%"), ("25", "Recommended: top 25%"), ("10", "Recommended: top 10%")] %}
       <option value="{{ value }}" {{ "selected" if rec == value }}>{{ label }}</option>
@@ -101,14 +105,14 @@
 
 {% if recs %}
   <div class="grid">
-    {% for r in recs %}{{ card(r, here, ratings.get(r.game.steam_app_id), ref.name if ref else none) }}{% endfor %}
+    {% for r in recs %}{{ card(r, here, ratings.get(r.game.steam_app_id), ref.name if ref else none, notes.get(r.game.steam_app_id)) }}{% endfor %}
   </div>
 {% else %}
   <p class="empty">No games match. Try a different search or filter.</p>
 {% endif %}
 
 {% if pages > 1 %}
-{% set base = "/explore?q=" ~ (q|urlencode) ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&rec=" ~ rec ~ "&sort=" ~ sort ~ ("&like=" ~ ref.steam_app_id if ref else "") %}
+{% set base = "/explore?q=" ~ (q|urlencode) ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&wishlist=" ~ wishlist ~ "&rec=" ~ rec ~ "&sort=" ~ sort ~ ("&like=" ~ ref.steam_app_id if ref else "") %}
 <p class="pager">
   {% if page > 1 %}<a href="{{ base }}&page={{ page - 1 }}">← Previous</a>{% endif %}
   Page {{ page }} of {{ pages }}

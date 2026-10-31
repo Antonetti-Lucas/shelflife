@@ -1,6 +1,6 @@
 {# One recommendation. `next_url` is where to return after rating or dismissing;
    `rating` is your current rating of the game, if any. #}
-{% macro card(r, next_url, rating=none, similar_to=none) %}
+{% macro card(r, next_url, rating=none, similar_to=none, note=none) %}
 {% set g = r.game %}
 <article class="card">
   <a class="cover" href="/game/{{ g.steam_app_id }}">
@@ -13,6 +13,7 @@
       · quality ×{{ "%.2f"|format(r.quality) }}
       · {{ reviews_text(g) }}
     </p>
+    {% if note %}<p class="wish">★ {{ note }}</p>{% endif %}
     {% if r.because %}<p class="why">Because you played {{ r.because|join(", ") }}</p>{% endif %}
     {% if r.tags %}<p class="tags">{% if similar_to %}<span class="meta">Shares</span>{% endif %}{% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}</p>{% endif %}
     {% if r.watch %}<p class="watch">Heads-up: {{ r.watch|join(", ") }} tends to score lower for you.</p>{% endif %}

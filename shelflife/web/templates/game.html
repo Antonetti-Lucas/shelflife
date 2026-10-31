@@ -15,6 +15,7 @@
       {{ reviews_text(game) }}
       {% if game.reviews_fetched_at %}· quality ×{{ "%.2f"|format(quality) }}{% endif %}
     </p>
+    {% if wish_note %}<p class="meta">★ {{ wish_note }}</p>{% endif %}
     <p class="meta"><a href="https://store.steampowered.com/app/{{ game.steam_app_id }}/">Steam store page ↗</a></p>
   </div>
 </div>

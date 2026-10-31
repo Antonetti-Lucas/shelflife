@@ -51,6 +51,17 @@ class Game(Base):
     )
 
 
+class WishlistItem(Base):
+    """A game on your Steam wishlist as of the last sync (see shelflife/wishlist.py)."""
+
+    __tablename__ = "wishlist_items"
+
+    steam_app_id: Mapped[int] = mapped_column(ForeignKey("games.steam_app_id"), primary_key=True)
+    priority: Mapped[int | None]  # your own rank, 1 at the top; 0 or None: never ranked
+    added_at: Mapped[datetime | None]  # when you wishlisted it
+    seen_at: Mapped[datetime]  # the last sync that found it on the list
+
+
 class PlaytimeSnapshot(Base):
     """Total playtime as of a sync. Steam only reports lifetime totals, so these
     snapshots, recorded at every sync from now on, are the only way to know how

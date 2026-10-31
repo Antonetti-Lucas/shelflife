@@ -20,7 +20,7 @@ from shelflife import diary
 from shelflife.config import try_load_settings
 from shelflife.db import SessionLocal, init_db
 from shelflife.hours import set_hours
-from shelflife.models import DiaryEntry, Game, LibraryEntry
+from shelflife.models import DiaryEntry, Game, LibraryEntry, WishlistItem
 from shelflife.quality import quality_factor
 from shelflife.recency import recency
 from shelflife.discover_job import SECONDS_PER_GAME, job as discover_job
@@ -34,6 +34,7 @@ from shelflife.sync_job import STEPS as SYNC_STEPS
 from shelflife.sync_job import job as sync_job
 from shelflife.sync_job import what_is_due
 from shelflife.tagfilter import TagIndex, matches, parse_match, parse_tags
+from shelflife.wishlist import order_key, rank_label
 
 BASE = Path(__file__).parent
 PAGE_SIZE = 40
@@ -106,8 +107,27 @@ def safe_next(url: str | None, default: str) -> str:
 # ---- pages ------------------------------------------------------------------
 
 
+def wishlist_by_id(session: Session) -> dict[int, WishlistItem]:
+    return {w.steam_app_id: w for w in session.scalars(select(WishlistItem))}
+
+
+def wishlist_note(item: WishlistItem | None, game: Game) -> str | None:
+    """The small line shown with a wishlisted game: your rank, when you added it, and whether you
+    can already play it."""
+    if item is None:
+        return None
+    bits = ["On your wishlist"]
+    if rank_label(item.priority):
+        bits.append(f"your rank {rank_label(item.priority)}")
+    if item.added_at:
+        bits.append(f"added {item.added_at.strftime('%Y-%m-%d')}")
+    if game.library_entry is not None:
+        bits.append("you can already play it with Family Sharing" if game.family_shared else "you own it")
+    return " · ".join(bits)
+
+
 REC_PAGE_SIZES = (6, 12, 24, 48)
-REC_PAGE_PARAMS = {"backlog": "bp", "family": "fp", "discover": "dp"}
+REC_PAGE_PARAMS = {"backlog": "bp", "family": "fp", "wishlist": "wp", "discover": "dp"}
 
 
 @app.get("/")
@@ -117,6 +137,7 @@ def home(
     bp: int = 1,
     fp: int = 1,
     dp: int = 1,
+    wp: int = 1,
     session: Session = Depends(get_session),
 ):
     size = size if size in REC_PAGE_SIZES else 12
@@ -126,13 +147,15 @@ def home(
         ratings,
         diary.load_not_interested(session),
         limit=100_000,  # everything; the page shows `size` at a time
+        wishlist_ids=wishlist_by_id(session).keys(),
     )
 
-    wanted = {"backlog": bp, "family": fp, "discover": dp}
+    wanted = {"backlog": bp, "family": fp, "wishlist": wp, "discover": dp}
     sections = {}
     for key, recs in (
         ("backlog", result.backlog),
         ("family", result.family),
+        ("wishlist", result.wishlist),
         ("discover", result.discover),
     ):
         pages = max(1, -(-len(recs) // size))
@@ -293,6 +316,7 @@ def explore(
     tag: str = "",
     match: str = "all",
     like: str = "",
+    wishlist: str = "all",
     page: int = 1,
     session: Session = Depends(get_session),
 ):
@@ -300,6 +324,8 @@ def explore(
     how like one game (`like`) they are."""
     wanted = parse_tags(tag)
     match = parse_match(match)
+    wishlist = "only" if wishlist == "only" else "all"
+    wished = wishlist_by_id(session)
     ratings = diary.load_ratings(session)
     not_interested = diary.load_not_interested(session)
     scores = score_all(session, ratings, not_interested)
@@ -321,6 +347,7 @@ def explore(
             or game.steam_app_id in not_interested
             or (needle and needle not in game.name.lower())
             or (keep is not None and game.steam_app_id not in keep)
+            or (wishlist == "only" and game.steam_app_id not in wished)
             or not matches(game.tags, wanted, match)
         ):
             continue
@@ -362,6 +389,8 @@ def explore(
             "rec": rec if rec in REC_FILTERS else "all",
             "tag": tag,
             "match": match,
+            "wishlist": wishlist,
+            "notes": {i: wishlist_note(w, session.get(Game, i)) for i, w in wished.items()},
             "tag_options": tag_index.popular(),
             "unknown_tags": tag_index.unknown(wanted),
             "page": page,
@@ -447,6 +476,96 @@ def find_more_games(
     return RedirectResponse("/explore#find", status_code=303)
 
 
+WISHLIST_SORTS = {
+    "fit": "Best fit",
+    "priority": "Your order",
+    "added": "Newest added",
+    "reviews": "Most reviews",
+    "name": "Name",
+}
+
+
+@app.get("/wishlist")
+def wishlist_page(
+    request: Request,
+    q: str = "",
+    sort: str = "fit",
+    rec: str = "all",
+    tag: str = "",
+    match: str = "all",
+    page: int = 1,
+    session: Session = Depends(get_session),
+):
+    """Your Steam wishlist, ranked by how well each game fits your taste."""
+    wanted = parse_tags(tag)
+    match = parse_match(match)
+    sort = sort if sort in WISHLIST_SORTS else "fit"
+    items = wishlist_by_id(session)
+    games = {g.steam_app_id: g for g in session.scalars(select(Game).where(Game.steam_app_id.in_(list(items))))} if items else {}
+    ratings = diary.load_ratings(session)
+    not_interested = diary.load_not_interested(session)
+    scores = score_all(session, ratings, not_interested)
+
+    ranked, waiting, other, dismissed = [], 0, 0, 0
+    for app_id, game in games.items():
+        if app_id in not_interested:
+            dismissed += 1
+        elif app_id in scores.by_id:
+            ranked.append(scores.by_id[app_id])
+        elif game.details_fetched_at is None:
+            waiting += 1  # its store details have not been fetched yet
+        else:
+            other += 1  # DLC or software, or no tags to rank it by
+
+    keep = top_share({r.game.steam_app_id: r.score for r in ranked}, REC_FILTERS.get(rec))
+    tag_index = TagIndex(r.game.tags for r in ranked)
+    needle = q.strip().lower()
+    recs = [
+        r
+        for r in ranked
+        if (keep is None or r.game.steam_app_id in keep)
+        and (not needle or needle in r.game.name.lower())
+        and matches(r.game.tags, wanted, match)
+    ]
+    keys = {
+        "fit": lambda r: -r.score,
+        "priority": lambda r: order_key(items[r.game.steam_app_id]),
+        "added": lambda r: -(items[r.game.steam_app_id].added_at.timestamp() if items[r.game.steam_app_id].added_at else 0),
+        "reviews": lambda r: -((r.game.reviews_positive or 0) + (r.game.reviews_negative or 0)),
+        "name": lambda r: r.game.name.lower(),
+    }
+    recs.sort(key=keys[sort])
+
+    pages = max(1, -(-len(recs) // EXPLORE_PAGE_SIZE))
+    page = max(1, min(page, pages))
+    shown = recs[(page - 1) * EXPLORE_PAGE_SIZE : page * EXPLORE_PAGE_SIZE]
+    return templates.TemplateResponse(
+        request,
+        "wishlist.html",
+        {
+            "recs": shown,
+            "notes": {r.game.steam_app_id: wishlist_note(items[r.game.steam_app_id], r.game) for r in shown},
+            "total": len(recs),
+            "on_list": len(items),
+            "waiting": waiting,
+            "other": other,
+            "dismissed": dismissed,
+            "q": q,
+            "sort": sort,
+            "sorts": WISHLIST_SORTS,
+            "rec": rec if rec in REC_FILTERS else "all",
+            "tag": tag,
+            "match": match,
+            "tag_options": tag_index.popular(),
+            "unknown_tags": tag_index.unknown(wanted),
+            "page": page,
+            "pages": pages,
+            "here": current_url(request),
+            "ratings": ratings,
+        },
+    )
+
+
 @app.get("/sync")
 def sync_page(request: Request, session: Session = Depends(get_session)):
     return templates.TemplateResponse(
@@ -515,6 +634,7 @@ def game_page(request: Request, app_id: int, session: Session = Depends(get_sess
             "match": explain(session, ratings, not_interested, app_id),
             "like_tags": search_tags(game, tag_idf(session)) if game.tags else [],
             "find_counts": FIND_COUNTS,
+            "wish_note": wishlist_note(session.get(WishlistItem, app_id), game),
         },
     )
 

@@ -50,14 +50,14 @@ def names_on(html):
 # ---- pages ----
 
 
-@pytest.mark.parametrize("path", ["/", "/library", "/explore", "/diary", "/ratings", "/stats", "/taste", "/sync"])
+@pytest.mark.parametrize("path", ["/", "/library", "/explore", "/wishlist", "/diary", "/ratings", "/stats", "/taste", "/sync"])
 def test_every_page_loads_with_an_empty_database(client, path):
     assert client.get(path).status_code == 200
 
 
 def test_the_nav_links_every_page(client):
     html = client.get("/").text
-    for target in ("/", "/library", "/explore", "/diary", "/ratings", "/stats", "/taste", "/sync"):
+    for target in ("/", "/library", "/explore", "/wishlist", "/diary", "/ratings", "/stats", "/taste", "/sync"):
         assert f'href="{target}"' in html
 
 
@@ -74,7 +74,7 @@ def test_the_recommendation_lists_are_paged(client, scenario, session):
     # 6 of the 22 discover games, plus the 2 backlog and 1 family candidates
     assert len(re.findall(r'class="card"', first)) == 6 + 2 + 1
     page_two = client.get("/?size=6&dp=2").text
-    assert 'href="/?size=6&amp;bp=1&amp;fp=1&amp;dp=1#discover"' in page_two  # "Previous" keeps the other lists' pages
+    assert 'href="/?size=6&amp;bp=1&amp;fp=1&amp;wp=1&amp;dp=1#discover"' in page_two  # "Previous" keeps the other lists' pages
     assert client.get("/?size=7&bp=999&fp=-3&dp=2").status_code == 200  # odd values are tolerated
 
 

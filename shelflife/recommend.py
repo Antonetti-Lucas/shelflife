@@ -13,7 +13,8 @@ profile times a quality factor from Steam reviews.
 """
 
 import re
-from dataclasses import dataclass
+from collections.abc import Collection
+from dataclasses import dataclass, field
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -58,6 +59,7 @@ class Recommendations:
     family: list[Recommendation]
     discover: list[Recommendation]
     taste: Taste
+    wishlist: list[Recommendation] = field(default_factory=list)  # unowned games on your wishlist
 
 
 @dataclass
@@ -316,12 +318,19 @@ def recommend(
     ratings: dict[int, float],
     not_interested: dict[int, str] | None = None,
     limit: int = 10,
+    wishlist_ids: Collection[int] | None = None,
 ) -> Recommendations:
+    """The recommendation lists. Games in `wishlist_ids` that you do not own come out of
+    "discover" into their own list, so each game is listed once."""
     model = _build_model(session, ratings, not_interested or {})
     backlog_games, family_games, discover_games = _classify(model)
+    wished = set(wishlist_ids or ())
+    wishlist_games = [g for g in discover_games if g.steam_app_id in wished]
+    discover_games = [g for g in discover_games if g.steam_app_id not in wished]
     backlog = [_score(g, model) for g in backlog_games]
     family = [_score(g, model) for g in family_games]
     discover = [_score(g, model) for g in discover_games]
+    wishlist = [_score(g, model) for g in wishlist_games]
 
     def top(recs: list[Recommendation]) -> list[Recommendation]:
         recs.sort(key=lambda r: r.score, reverse=True)
@@ -339,4 +348,5 @@ def recommend(
         family=top(family),
         discover=top(discover),
         taste=Taste(model.profile, model.explicit, model.implicit),
+        wishlist=top(wishlist),
     )

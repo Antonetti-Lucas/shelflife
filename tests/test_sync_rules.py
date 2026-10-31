@@ -341,3 +341,53 @@ def test_a_game_played_in_the_last_two_weeks_is_read_again_but_not_right_after_i
     set_fetched(session, 1, achievements=ago(0.04), last_played=ago(1))  # read an hour ago
     set_fetched(session, 2, achievements=ago(0.5), last_played=ago(1))  # read twelve hours ago
     assert ids(achievements_due(session)) == [2]
+
+
+# ---- wishlist games are wanted too ----
+
+
+def wish(session, *app_ids):
+    from shelflife.wishlist import WishlistEntry, import_wishlist
+
+    import_wishlist(session, [WishlistEntry(i, 0, None) for i in app_ids])
+
+
+def test_new_wishlist_games_are_due_for_details_after_the_library_games(session):
+    add_game(session, 1, minutes=100)
+    wish(session, 50, 51)
+    due = ids(details_due(session))
+    assert due[0] == 1 and set(due) == {1, 50, 51}  # your library first, then the wishlist
+
+
+def test_wishlist_games_are_due_for_review_counts_once_their_type_is_known(session):
+    wish(session, 50)
+    assert reviews_due(session) == []  # type unknown until the store details arrive
+    session.get(Game, 50).type = "game"
+    session.commit()
+    assert ids(reviews_due(session)) == [50]
+
+
+def test_a_game_neither_in_the_library_nor_on_the_wishlist_is_still_never_due(session):
+    add_game(session, 1, owned=False)  # discovery pool
+    wish(session, 50)
+    assert 1 not in ids(details_due(session)) and 1 not in ids(reviews_due(session))
+
+
+def test_a_wishlist_game_that_came_back_empty_is_retried_like_any_other(session):
+    wish(session, 50)
+    game = session.get(Game, 50)
+    game.type, game.details_fetched_at = "unavailable", ago(10)
+    session.commit()
+    assert ids(details_due(session)) == [50]
+
+
+def test_the_command_line_default_also_fetches_wishlist_games(session, monkeypatch):
+    wish(session, 50)
+    fetched = []
+    monkeypatch.setattr(sync, "enrich_one", lambda game, spy=None: fetched.append(game.steam_app_id) or setattr(game, "details_fetched_at", ago(0)))
+    assert enrich_games(session) == 1 and fetched == [50]
+
+
+def test_wishlist_games_never_get_achievements_read(session):
+    wish(session, 50)
+    assert achievements_due(session) == []

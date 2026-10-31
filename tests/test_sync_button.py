@@ -11,10 +11,11 @@ from fastapi.testclient import TestClient
 from shelflife import sync, sync_job
 from shelflife.achievements import AchievementStats
 from shelflife.jobs import JobSnapshot
-from shelflife.models import Game, LibraryEntry
+from shelflife.models import Game, LibraryEntry, WishlistItem
 from shelflife.steam import OwnedGame, SteamError
 from shelflife.sync_job import STEPS, SyncJob, SyncResult, run_sync, summarize_sync, what_is_due
 from shelflife.throttle import RateLimited
+from shelflife.wishlist import WishlistEntry
 from shelflife.web import app as web_app
 from tests.factories import add_game
 
@@ -31,13 +32,19 @@ def owned(app_id, minutes=0, recent=0, name=None):
 @pytest.fixture
 def steam(monkeypatch):
     """A Steam that owns whatever `steam.library` says, and records what was asked of it."""
-    state = SimpleNamespace(library=[], achievements=[], details=[], reviews=[], fail={}, order=[])
+    state = SimpleNamespace(library=[], wishlist=[], achievements=[], details=[], reviews=[], fail={}, order=[])
 
     def fetch_owned(api_key, steam_id):
         state.order.append("library")
         if "library" in state.fail:
             raise state.fail["library"]
         return list(state.library)
+
+    def fetch_wishlist(steam_id):
+        state.order.append("wishlist")
+        if "wishlist" in state.fail:
+            raise state.fail["wishlist"]
+        return list(state.wishlist)
 
     def fetch_achievements(api_key, steam_id, app_id):
         state.order.append("achievements")
@@ -61,6 +68,7 @@ def steam(monkeypatch):
         return SimpleNamespace(positive=900, negative=100)
 
     monkeypatch.setattr(sync_job, "fetch_owned_games", fetch_owned)
+    monkeypatch.setattr(sync_job, "fetch_wishlist", fetch_wishlist)
     monkeypatch.setattr(sync, "fetch_achievements", fetch_achievements)
     monkeypatch.setattr(sync, "enrich_one", enrich_one)
     monkeypatch.setattr(sync, "fetch_review_counts", fetch_review_counts)
@@ -70,14 +78,14 @@ def steam(monkeypatch):
 # ---- the steps ----
 
 
-def test_a_sync_runs_the_four_steps_in_order_and_saves_everything(session, steam):
+def test_a_sync_runs_all_the_steps_in_order_and_saves_everything(session, steam):
     steam.library = [owned(1, minutes=600), owned(2, minutes=0)]
     steps = []
     result = run_sync(session, "key", "id", on_progress=lambda step, *a: steps.append(step))
     assert (result.games, result.new_games) == (2, 2)
     assert (result.achievements, result.details, result.reviews) == (1, 2, 2)  # every game gets review counts
     assert result.aborted is None and not result.stopped
-    assert sorted(dict.fromkeys(steps)) == [1, 2, 3, 4] and steps == sorted(steps)  # never goes back a step
+    assert sorted(dict.fromkeys(steps)) == [1, 2, 3, 4, 5] and steps == sorted(steps)  # never goes back a step
     assert session.get(LibraryEntry, 1).playtime_total_min == 600
 
 
@@ -85,7 +93,7 @@ def test_the_steps_happen_in_this_order_and_each_finishes_before_the_next_begins
     steam.library = [owned(1, minutes=600), owned(2, minutes=600), owned(3, minutes=0)]
     run_sync(session, "key", "id")
     firsts = list(dict.fromkeys(steam.order))
-    assert firsts == ["library", "achievements", "details", "reviews"]
+    assert firsts == ["library", "wishlist", "achievements", "details", "reviews"]
     runs = [key for i, key in enumerate(steam.order) if i == 0 or key != steam.order[i - 1]]
     assert runs == firsts  # no step comes back after the next one has started
 
@@ -160,6 +168,78 @@ def test_a_game_played_since_the_last_sync_gets_its_achievements_read_again(sess
     # Steam now says it was last played 18 days ago: after the last read, but not in the last two weeks.
     steam.library = [OwnedGame(1, "Game 1", 700, 0, int((now - timedelta(days=18)).timestamp()))]
     assert run_sync(session, "key", "id").achievements == 1 and steam.achievements == [1]
+
+
+# ---- the wishlist ----
+
+
+def wanted(app_id, priority=0):
+    return WishlistEntry(app_id, priority, datetime(2024, 5, 1))
+
+
+def test_a_sync_reads_the_wishlist_and_says_so(session, steam):
+    steam.library = [owned(1, minutes=600)]
+    steam.wishlist = [wanted(50, 3), wanted(51)]
+    result = run_sync(session, "key", "id")
+    assert (result.wishlist, result.wishlist_added) == (2, 2) and result.wishlist_note is None
+    assert session.get(WishlistItem, 50).priority == 3
+    assert "2 on your wishlist (2 new)" in summarize_sync(result).message
+
+
+def test_wishlist_games_get_store_details_and_review_counts_but_no_achievements(session, steam):
+    steam.library = [owned(1, minutes=600)]
+    steam.wishlist = [wanted(50)]
+    run_sync(session, "key", "id")
+    assert 50 in steam.details and 50 in steam.reviews
+    assert steam.achievements == [1]  # you cannot have achievements in a game you do not own
+
+
+def test_the_second_sync_adds_nothing_new_and_drops_what_you_bought(session, steam):
+    steam.library = [owned(1, minutes=600)]
+    steam.wishlist = [wanted(50), wanted(51)]
+    run_sync(session, "key", "id")
+    steam.wishlist = [wanted(51)]  # you bought 50
+    second = run_sync(session, "key", "id")
+    assert (second.wishlist, second.wishlist_added) == (1, 0)
+    assert session.get(WishlistItem, 50) is None and session.get(WishlistItem, 51) is not None
+
+
+@pytest.mark.parametrize("failure", [requests.ConnectionError("down"), RateLimited("slow down"), ValueError("not json")])
+def test_a_wishlist_that_cannot_be_read_does_not_stop_the_rest_of_the_sync(session, steam, failure):
+    steam.library = [owned(1, minutes=600)]
+    steam.fail["wishlist"] = failure
+    result = run_sync(session, "key", "id")
+    assert result.aborted is None and "could not be read" in result.wishlist_note
+    assert (result.achievements, result.details, result.reviews) == (1, 1, 1)  # everything else still happened
+    snap = summarize_sync(result)
+    assert snap.state == "done" and "your wishlist: it could not be read" in snap.message
+
+
+def test_an_empty_answer_keeps_the_earlier_wishlist_and_says_why(session, steam):
+    steam.library = [owned(1, minutes=600)]
+    steam.wishlist = [wanted(50)]
+    run_sync(session, "key", "id")
+    steam.wishlist = []  # private now, or Steam failed
+    result = run_sync(session, "key", "id")
+    assert result.wishlist == 1 and "earlier one was kept" in result.wishlist_note
+    assert session.get(WishlistItem, 50) is not None
+
+
+def test_stopping_right_after_the_wishlist_keeps_it_and_skips_the_rest(session, steam):
+    steam.library = [owned(1, minutes=600)]
+    steam.wishlist = [wanted(50)]
+    result = run_sync(session, "key", "id", should_stop=lambda: "wishlist" in steam.order)
+    assert result.stopped and result.wishlist == 1 and steam.achievements == []
+    assert session.get(WishlistItem, 50) is not None
+
+
+def test_the_sync_page_counts_the_wishlist(client, session):
+    from shelflife.wishlist import import_wishlist
+
+    add_game(session, 1, minutes=60)
+    import_wishlist(session, [wanted(50), wanted(51), wanted(52)])
+    assert ", 3 on your wishlist." in client.get("/sync").text
+    assert what_is_due(session)["wishlist"] == 3
 
 
 # ---- stopping ----
@@ -333,7 +413,7 @@ def test_progress_updates_the_step_and_the_text(session, steam):
     original = job._set
     job._set = lambda **kw: (seen.append(kw), original(**kw))[1]
     job.start("k", "i")
-    assert {kw["step"] for kw in seen} == {1, 2, 3, 4}
+    assert {kw["step"] for kw in seen} == {1, 2, 3, 4, 5}
     assert any("Store details for Game 1" in kw["text"] for kw in seen)
 
 
@@ -430,7 +510,7 @@ def test_while_syncing_the_page_shows_the_step_and_a_stop_button(client, configu
     assert len(client.held) == 1  # handed to the background
     html = client.get("/sync").text
     assert '<meta http-equiv="refresh"' in html and "<progress" in html
-    assert "Step 1 of 4: Reading your library" in html
+    assert "Step 1 of 5: Reading your library" in html
     assert 'action="/sync/stop"' in html and 'action="/sync/start"' not in html
     post(client, "/sync/stop")
     assert web_app.sync_job._stop.is_set()
