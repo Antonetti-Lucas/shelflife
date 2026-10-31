@@ -1,26 +1,44 @@
-"""Recommendations from tag similarity to your taste, scaled by review quality.
+"""Recommendations from how well a game fits what you liked, scaled by review quality.
 
-Taste profile = tag vectors of your played games, each weighted by how much
-you liked it. An explicit rating always wins; for unrated games the engagement
-score stands in at reduced strength; a "not interested" counts as a low rating and
-a favorite as a top one. A status (playing, played, dropped) is a record only: it
-takes a game out of the candidates but does not change what you like.
+How much you liked each game you played is one number from -1 to +1 (`taste_weight`): an
+explicit rating always counts; for unrated games the engagement score stands in at reduced
+strength; a "not interested" counts as a low rating and a favorite as a top one; in the
+default mix a rated game is 70% its rating and 30% how you played it. A status (playing,
+played, dropped) is a record only: it takes a game out of the candidates but does not
+change what you like.
+
+Those numbers are what shelflife/learned.py learns from: it predicts how much you would like
+any game from its tags and the words of its store text (it is fitted to your games one by
+one, so a game very close to a favourite stays close). The tag profile (the sum of your
+games' tags times those numbers) is kept for the My taste page, for the tags a pick matches,
+and for seeding the search for new games.
 
 Candidates come in three lists: games you own but have barely played (backlog),
 games you can play through Steam Family Sharing (family), and well-reviewed
-games you don't have yet (discover). Each is scored by cosine similarity to the
-profile times a quality factor from Steam reviews.
+games you don't have yet (discover). Each is scored by that prediction times a quality
+factor from Steam reviews.
 """
 
 import re
-from collections.abc import Collection
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, field
+from functools import cached_property
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shelflife.diary import favorite_ratings, tracked_ids
 from shelflife.feedback import NOT_INTERESTED_RATING
+from shelflife.learned import (
+    MATCH_SCALE,
+    TEXT_WEIGHT,
+    LearnedTaste,
+    Vector,
+    fit_cached,
+    likeness,
+    text_index,
+    unit_tag_vectors,
+)
 from shelflife.models import Game, LibraryEntry
 from shelflife.quality import quality_factor
 from shelflife.settings import DEFAULT_TASTE_MODE, get_taste_mode
@@ -35,13 +53,41 @@ MIX_RATING_SHARE = 0.7  # in the mix, a rated game counts 70% by its rating, 30%
 BACKLOG_MAX_MIN = 60  # owned and played under an hour = backlog
 
 
+class _Lazy(Sequence):
+    """A list worked out the first time it is read. The reasons behind a pick take a pass over
+    your games each, and only the picks on screen are ever read."""
+
+    def __init__(self, make: Callable[[], list[str]]):
+        self._make = make
+        self._items: list[str] | None = None
+
+    def _get(self) -> list[str]:
+        if self._items is None:
+            self._items = self._make()
+        return self._items
+
+    def __len__(self) -> int:
+        return len(self._get())
+
+    def __getitem__(self, index):
+        return self._get()[index]
+
+    def __eq__(self, other) -> bool:
+        return list(self) == list(other) if isinstance(other, (list, tuple, Sequence)) else NotImplemented
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __repr__(self) -> str:
+        return repr(self._get())
+
+
 @dataclass(frozen=True)
 class Recommendation:
     game: Game
-    score: float  # similarity x quality
-    similarity: float
+    score: float  # predicted liking x quality
+    similarity: float  # predicted liking, 0 to 1: how well the game fits you
     quality: float
-    because: list[str]  # played games that pulled this one up
+    because: Sequence[str]  # played games that pulled this one up
     tags: list[str]  # tags of this game that match your taste
     watch: list[str]  # tags of this game you tend to rate lower
 
@@ -74,6 +120,41 @@ class _Model:
     explicit: int
     implicit: int
     games: list[Game]
+    session: Session | None = None
+    # Every game with a verdict (a rating, or play that counts), as (id, how much you liked it).
+    # A 3-star rating is a verdict of zero, so unlike `contributors` it is kept.
+    training: list[tuple[int, float]] = field(default_factory=list)
+
+    @cached_property
+    def tag_units(self) -> dict[int, Vector]:
+        return unit_tag_vectors(self.vectors)
+
+    @cached_property
+    def text_units(self) -> dict[int, Vector]:
+        return text_index(self.session) if self.session is not None else {}
+
+    @cached_property
+    def beta(self) -> float:
+        """How much the store text counts: half, once any game has its text; nothing before."""
+        return TEXT_WEIGHT if self.text_units else 0.0
+
+    @cached_property
+    def learned(self) -> LearnedTaste:
+        training = sorted(self.training)
+        key = (
+            tuple(training),
+            tuple((i, tuple(sorted(self.tag_units[i].items()))) for i, _ in training),
+            self.beta,
+            len(self.text_units),
+            sum(len(v) for v in self.text_units.values()),
+        )
+        return fit_cached(key, training, self.tag_units, self.text_units, self.beta)
+
+    def liking(self, app_id: int) -> float:
+        """How much you would like this game, -1 to 1 (0 when it has no tags)."""
+        if not self.vectors.get(app_id):
+            return 0.0
+        return self.learned.predict(self.tag_units[app_id], self.text_units.get(app_id))
 
 
 @dataclass(frozen=True)
@@ -176,7 +257,7 @@ def _build_model(
     idf = compute_idf(g.tags for g in games if g.library_entry is not None)
     vectors = {g.steam_app_id: tag_vector(g.tags, idf) for g in games}
 
-    model = _Model(vectors, {}, [], [], set(), set(), set(), 0, 0, games)
+    model = _Model(vectors, {}, [], [], set(), set(), set(), 0, 0, games, session=session)
     for g in games:
         entry = g.library_entry
         family = bool(g.family_shared)
@@ -191,6 +272,8 @@ def _build_model(
 
         model.played_titles.add(_base_name(g.name))
         weight = taste_weight(entry, rating, mode)
+        if vectors[g.steam_app_id] and (weight != 0 or (rating is not None and mode != "engagement")):
+            model.training.append((g.steam_app_id, weight))  # a rating of 3 stars says "neutral", not "unknown"
         if weight == 0:
             continue
         counted_as_rated = rating is not None and mode != "engagement"
@@ -242,20 +325,28 @@ def explain(
     return _score(game, model)
 
 
-def _score(cand: Game, model: _Model) -> Recommendation:
-    vec = model.vectors[cand.steam_app_id]
-    similarity = cosine(model.profile, vec)
-
+def _because(cand: Game, model: _Model) -> list[str]:
+    """The two games you liked that this one is closest to."""
+    tags, text = model.tag_units[cand.steam_app_id], model.text_units.get(cand.steam_app_id)
     pulls = sorted(
         (
             (sim * w, sim, g, r)
             for w, g, r in model.contributors
             if w > 0 and g.steam_app_id != cand.steam_app_id  # not compared with itself
-            for sim in [cosine(model.vectors[g.steam_app_id], vec)]
+            for sim in [
+                likeness(tags, text, model.tag_units[g.steam_app_id], model.text_units.get(g.steam_app_id), model.beta)
+            ]
         ),
         key=lambda p: p[0],
         reverse=True,
     )[:2]
+    return [_label(g, r, sim) for c, sim, g, r in pulls if c > 0]
+
+
+def _score(cand: Game, model: _Model) -> Recommendation:
+    vec = model.vectors[cand.steam_app_id]
+    # Below 0: it resembles games you did not like.
+    similarity = min(model.liking(cand.steam_app_id) * MATCH_SCALE, 1.0)
 
     by_tag = sorted(((model.profile.get(t, 0.0) * v, t) for t, v in vec.items()), reverse=True)
     best = by_tag[0][0] if by_tag else 0.0
@@ -266,7 +357,7 @@ def _score(cand: Game, model: _Model) -> Recommendation:
         score=similarity * quality,
         similarity=similarity,
         quality=quality,
-        because=[_label(g, r, sim) for c, sim, g, r in pulls if c > 0],
+        because=_Lazy(lambda: _because(cand, model)),
         tags=[t for c, t in by_tag[:3] if c > 0],
         watch=[t for c, t in by_tag[-1:] if c < 0 and -c > 0.1 * best],
     )

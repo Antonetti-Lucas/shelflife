@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Date, ForeignKey
+from sqlalchemy import JSON, Date, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shelflife.db import Base
@@ -30,6 +30,9 @@ class Game(Base):
     # tag it was listed under (kept, with its tags, so it is not looked up again).
     type: Mapped[str | None]
     short_description: Mapped[str | None]
+    # The store page's "About this game" text, cleaned of markup. "" when the store has none;
+    # None when it was never read. It is long, so a query loads it only when asked to.
+    about_text: Mapped[str | None] = mapped_column(Text, deferred=True)
     genres: Mapped[list[str]] = mapped_column(JSON, default=list)
     # Community tags -> votes, e.g. {"Roguelike": 5400, "Cozy": 120}
     tags: Mapped[dict[str, int]] = mapped_column(JSON, default=dict)

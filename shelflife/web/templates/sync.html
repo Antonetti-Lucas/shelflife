@@ -41,8 +41,8 @@
     {% if due.last_synced %}Last synced {{ due.last_synced.strftime("%Y-%m-%d %H:%M") }} (UTC).{% else %}Not synced yet.{% endif %}
     {{ due.library }} games in your library{% if due.family %} ({{ due.owned }} owned, {{ due.family }} from Family Sharing){% endif %}{% if due.wishlist %}, {{ due.wishlist }} on your wishlist{% endif %}.
     {% if due.minutes is none %}
-    {% elif due.achievements or due.details or due.reviews %}
-      Due now: achievements for {{ due.achievements }}, store details for {{ due.details }}, review counts for {{ due.reviews }}
+    {% elif due.achievements or due.details or due.about or due.reviews %}
+      Due now: achievements for {{ due.achievements }}, store details for {{ due.details }}{% if due.about %}, descriptions for {{ due.about }}{% endif %}, review counts for {{ due.reviews }}
       (about {{ due.minutes }} minute{{ "" if due.minutes == 1 else "s" }}).
       {% if due.achievements %}Steam sometimes cannot give a few games' achievements, so a handful can stay on this list.{% endif %}
     {% else %}Nothing is due: you are up to date.{% endif %}
@@ -55,7 +55,8 @@
   <li><strong>{{ steps[1][1] }}.</strong> Your whole wishlist, so games you bought drop off it and new ones appear. A wishlist Steam can't give (private, or Steam failing) is skipped and the rest carries on.</li>
   <li><strong>{{ steps[2][1] }}.</strong> Games you've played since they were last read, games never read, and any not read for 30 days (developers add achievements, and Family Sharing games show no playtime). Official API, quick.</li>
   <li><strong>{{ steps[3][1] }}.</strong> New games and wishlist games; games that came back empty (no store page, or a game with no tags) a week ago; and the 30 oldest games when they are over 90 days old, because tags and descriptions drift. About 3 seconds a game, so the very first sync takes a while.</li>
-  <li><strong>{{ steps[4][1] }}.</strong> Every library and wishlist game, played or not, that has no counts yet or whose counts are a month old.</li>
+  <li><strong>{{ steps[4][1] }}.</strong> The store's "About this game" text, which recommendations compare along with tags. New games get it with their details; this step catches up the games read before it was kept (one store call each, about 1.6 seconds a game, so the first catch-up takes a while).</li>
+  <li><strong>{{ steps[5][1] }}.</strong> Every library and wishlist game, played or not, that has no counts yet or whose counts are a month old.</li>
 </ol>
 <p class="meta">
   A sync saves as it goes. If you stop it, or Steam turns it away, the next one carries on where it left off.

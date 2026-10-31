@@ -1,5 +1,6 @@
 """Steam store details (per-app) and SteamSpy community tags."""
 
+import html
 import json
 import re
 import time
@@ -27,6 +28,17 @@ class StoreDetails:
     release_date: str | None = None
     cover_url: str | None = None
     name: str | None = None
+    about_text: str = ""  # "About this game", as plain text
+
+
+_MARKUP = re.compile(r"<[^>]*>")
+_LINK = re.compile(r"https?://\S+")
+
+
+def clean_store_text(raw: str | None) -> str:
+    """The store's HTML description as plain text: no tags, links or extra white space."""
+    text = html.unescape(_MARKUP.sub(" ", raw or ""))
+    return " ".join(_LINK.sub(" ", text).split())
 
 
 def fetch_store_details(app_id: int, timeout: float = 15) -> StoreDetails | None:
@@ -53,6 +65,7 @@ def fetch_store_details(app_id: int, timeout: float = 15) -> StoreDetails | None
         release_date=(data.get("release_date") or {}).get("date") or None,
         cover_url=data.get("header_image"),
         name=data.get("name"),
+        about_text=clean_store_text(data.get("about_the_game")),
     )
 
 

@@ -4,6 +4,7 @@ Run from the project root:
     python -m scripts.sync              # library + details for every new game
     python -m scripts.sync --limit 5    # only enrich the 5 most-played new games
     python -m scripts.sync --no-details # library only
+    python -m scripts.sync --descriptions  # read the store text of games that lack it, then exit
 
 Safe to interrupt (Ctrl-C) and re-run: finished games are never fetched again.
 """
@@ -18,7 +19,7 @@ from shelflife.config import load_settings
 from shelflife.db import init_db, session_scope
 from shelflife.models import Game
 from shelflife.steam import SteamError, fetch_owned_games
-from shelflife.sync import backfill_empty_tags, enrich_games, upsert_library
+from shelflife.sync import backfill_empty_tags, enrich_games, sync_about, upsert_library
 from shelflife.throttle import RateLimited
 
 
@@ -30,7 +31,30 @@ def main() -> int:
         "--fill-tags", action="store_true",
         help="retry games with no tags using the store page, then exit",
     )
+    parser.add_argument(
+        "--descriptions", action="store_true",
+        help="read the store's 'About this game' text for games that have details but no text, then exit",
+    )
     args = parser.parse_args()
+
+    if args.descriptions:
+        init_db()
+        with session_scope() as session:
+            try:
+                done = sync_about(
+                    session, on_progress=lambda i, n, g: print(f"[{i}/{n}] {g.name}", flush=True)
+                )
+            except RateLimited as exc:
+                print(f"\nStopped: {exc} Progress is saved; re-run later.", file=sys.stderr)
+                return 2
+            except (SteamError, requests.RequestException) as exc:
+                print(f"\nStopped: {exc} Progress is saved; re-run to resume.", file=sys.stderr)
+                return 1
+            except KeyboardInterrupt:
+                print("\nInterrupted. Progress is saved; re-run to resume.")
+                return 130
+        print(f"\nRead the text of {done} games.")
+        return 0
 
     if args.fill_tags:
         init_db()

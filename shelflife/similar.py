@@ -11,6 +11,7 @@ from collections.abc import Iterable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from shelflife.learned import TEXT_WEIGHT, Vector, likeness, unit
 from shelflife.models import Game
 from shelflife.quality import quality_factor
 from shelflife.recommend import Recommendation
@@ -42,17 +43,25 @@ def similarity(reference: dict[str, float], tags: dict[str, int] | None, idf: di
 
 
 def similar_to(
-    reference_game: Game, candidates: Iterable[Game], idf: dict[str, float]
+    reference_game: Game,
+    candidates: Iterable[Game],
+    idf: dict[str, float],
+    texts: dict[int, Vector] | None = None,
 ) -> list[Recommendation]:
     """The candidates ranked by how like `reference_game` they are (similarity x review
-    quality, best first). Each carries the tags it shares with it."""
+    quality, best first). Each carries the tags it shares with it. With `texts` (the word
+    vectors of the games' store text, from learned.text_index) the likeness is half tags, half
+    words, as in the recommendations; a game without text is judged on its tags alone."""
     ref = reference_vector(reference_game, idf)
+    ref_unit = unit(ref)
+    ref_text = (texts or {}).get(reference_game.steam_app_id)
+    beta = TEXT_WEIGHT if ref_text else 0.0
     out = []
     for g in candidates:
         if g.steam_app_id == reference_game.steam_app_id or not g.tags:
             continue
         vec = tag_vector(g.tags, idf)
-        sim = cosine(ref, vec)
+        sim = likeness(ref_unit, ref_text, unit(vec), (texts or {}).get(g.steam_app_id), beta)
         shared = sorted(ref.keys() & vec.keys(), key=lambda t: ref[t] * vec[t], reverse=True)
         quality = quality_factor(g.reviews_positive, g.reviews_negative)
         out.append(

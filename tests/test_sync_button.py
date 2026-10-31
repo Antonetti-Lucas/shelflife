@@ -58,7 +58,7 @@ def steam(monkeypatch):
         state.details.append(game.steam_app_id)
         if "details" in state.fail:
             raise state.fail["details"]
-        game.type, game.tags, game.details_fetched_at = "game", {"Stealth": 10}, datetime.now()  # fetched just now
+        game.type, game.tags, game.details_fetched_at, game.about_text = "game", {"Stealth": 10}, datetime.now(), ""  # fetched just now
 
     def fetch_review_counts(app_id):
         state.order.append("reviews")
@@ -85,7 +85,7 @@ def test_a_sync_runs_all_the_steps_in_order_and_saves_everything(session, steam)
     assert (result.games, result.new_games) == (2, 2)
     assert (result.achievements, result.details, result.reviews) == (1, 2, 2)  # every game gets review counts
     assert result.aborted is None and not result.stopped
-    assert sorted(dict.fromkeys(steps)) == [1, 2, 3, 4, 5] and steps == sorted(steps)  # never goes back a step
+    assert sorted(dict.fromkeys(steps)) == [1, 2, 3, 4, 6] and steps == sorted(steps)  # never goes back; step 5 (descriptions) says nothing when none are due
     assert session.get(LibraryEntry, 1).playtime_total_min == 600
 
 
@@ -351,6 +351,7 @@ def test_a_network_error_is_reported_not_raised(session, steam):
     "result, state, fragments",
     [
         (SyncResult(games=300, new_games=4, achievements=4, details=4, reviews=2), "done", ["300 owned games (4 new)", "achievements for 4 games", "store details for 4 games", "review counts for 2 games"]),
+        (SyncResult(games=300, about=7), "done", ["descriptions for 7 games"]),
         (SyncResult(games=300), "done", ["300 owned games."]),
         (SyncResult(games=300, details=2, stopped=True), "stopped", ["Stopped.", "Sync again to carry on"]),
         (SyncResult(games=300, aborted="Steam is rate limiting us."), "error", ["Stopped early: Steam is rate limiting us.", "Progress is saved"]),
@@ -413,7 +414,7 @@ def test_progress_updates_the_step_and_the_text(session, steam):
     original = job._set
     job._set = lambda **kw: (seen.append(kw), original(**kw))[1]
     job.start("k", "i")
-    assert {kw["step"] for kw in seen} == {1, 2, 3, 4, 5}
+    assert {kw["step"] for kw in seen} == {1, 2, 3, 4, 6}
     assert any("Store details for Game 1" in kw["text"] for kw in seen)
 
 
@@ -510,7 +511,7 @@ def test_while_syncing_the_page_shows_the_step_and_a_stop_button(client, configu
     assert len(client.held) == 1  # handed to the background
     html = client.get("/sync").text
     assert '<meta http-equiv="refresh"' in html and "<progress" in html
-    assert "Step 1 of 5: Reading your library" in html
+    assert "Step 1 of 6: Reading your library" in html
     assert 'action="/sync/stop"' in html and 'action="/sync/start"' not in html
     post(client, "/sync/stop")
     assert web_app.sync_job._stop.is_set()
@@ -550,6 +551,7 @@ def test_a_page_with_everything_up_to_date_says_so(client, session):
     add_game(session, 1, minutes=0)
     game = session.get(Game, 1)
     game.details_fetched_at = game.reviews_fetched_at = datetime.now()
+    game.about_text = ""
     session.commit()
     assert "Nothing is due: you are up to date" in client.get("/sync").text
 
@@ -595,3 +597,49 @@ def test_games_steam_cannot_give_achievements_for_are_described_honestly(client,
     html = client.get("/sync").text
     assert "Steam sometimes cannot give a few games' achievements" in html
     assert "have no achievements read yet" not in html
+
+
+# ---- the descriptions step ----
+
+
+def test_a_sync_reads_the_text_of_games_that_have_details_but_no_text(session, steam, monkeypatch):
+    steam.library = [owned(1, minutes=600)]
+    add_game(session, 1, minutes=600)  # fetched earlier, before the text was kept
+    add_game(session, 2, "Pool game", owned=False)
+    for app_id in (1, 2):
+        game = session.get(Game, app_id)
+        game.details_fetched_at, game.reviews_fetched_at = datetime.now(), datetime.now()
+    session.commit()
+    asked = []
+
+    def details(app_id, timeout=15):
+        asked.append(app_id)
+        return sync.store.StoreDetails(type="game", short_description="d", about_text=f"text of {app_id}")
+
+    monkeypatch.setattr(sync.store, "fetch_store_details", details)
+    steps = []
+    result = run_sync(session, "key", "id", on_progress=lambda step, *a: steps.append(step))
+    assert result.about == 2 and sorted(asked) == [1, 2]
+    assert 5 in steps and steps == sorted(steps)
+    assert session.get(Game, 1).about_text == "text of 1" and session.get(Game, 2).about_text == "text of 2"
+    assert "descriptions for 2 games" in summarize_sync(result).message
+
+
+def test_stopping_before_the_descriptions_step_skips_it_and_the_ones_after(session, steam, monkeypatch):
+    steam.library = [owned(1, minutes=600)]
+    add_game(session, 1, minutes=600)
+    session.get(Game, 1).details_fetched_at = datetime.now()
+    session.commit()
+    monkeypatch.setattr(sync.store, "fetch_store_details", lambda *a, **k: pytest.fail("asked the store"))
+    stops = iter([False, False, False, True])  # after the library, wishlist, achievements: stop before the details
+    result = run_sync(session, "key", "id", should_stop=lambda: next(stops, True))
+    assert result.stopped and result.about == 0 and result.reviews == 0
+
+
+def test_the_page_counts_the_descriptions_that_are_due(session):
+    add_game(session, 1, minutes=60)
+    session.get(Game, 1).details_fetched_at = session.get(Game, 1).reviews_fetched_at = datetime.now()
+    session.commit()
+    due = what_is_due(session)
+    assert due["about"] == 1 and due["minutes"] >= 1
+    assert what_is_due(session, with_due=False)["about"] is None

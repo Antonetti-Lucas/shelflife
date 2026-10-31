@@ -194,6 +194,8 @@ def enrich_one(game: Game, spy: store.SpyDetails | None = None) -> None:
     if details is None:
         if not game.type:  # a game that was fine before keeps what it had: the store may just have hiccuped
             game.type = "unavailable"
+        if game.about_text is None:
+            game.about_text = ""  # no store page: nothing to read, so do not ask again
     else:
         if details.name and (not game.name or game.name.startswith("App ")):
             game.name = details.name  # family imports start with a placeholder name
@@ -202,6 +204,7 @@ def enrich_one(game: Game, spy: store.SpyDetails | None = None) -> None:
         game.genres = details.genres
         game.release_date = details.release_date
         game.cover_url = details.cover_url
+        game.about_text = details.about_text
     game.details_fetched_at = _now()
     _fill_tags(game, spy)
 
@@ -282,6 +285,55 @@ def sync_all_reviews(
 ) -> int:
     """Fetch review counts for the games `reviews_due` lists. Returns the number fetched."""
     return _fetch_reviews(session, reviews_due(session, everything=everything), on_progress, should_stop)
+
+
+def about_due(session: Session) -> list[Game]:
+    """Games that have their store details but whose "About this game" text was never read
+    (they were fetched before it was kept): yours first, most played first, then your
+    wishlist, then the rest of the pool."""
+    return list(
+        session.scalars(
+            select(Game)
+            .outerjoin(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
+            .outerjoin(WishlistItem, WishlistItem.steam_app_id == Game.steam_app_id)
+            .where(Game.type == "game", Game.about_text.is_(None), Game.details_fetched_at.is_not(None))
+            .order_by(
+                LibraryEntry.steam_app_id.is_(None),
+                WishlistItem.steam_app_id.is_(None),
+                LibraryEntry.playtime_total_min.desc().nulls_last(),
+            )
+        )
+    )
+
+
+def sync_about(
+    session: Session,
+    on_progress: Callable[[int, int, Game], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> int:
+    """Read the "About this game" text for the games `about_due` lists (one store call each,
+    nothing else is touched). Saves game by game. Returns the number read."""
+    pending = about_due(session)
+    done = failures = 0
+    for i, game in enumerate(pending, start=1):
+        if should_stop is not None and should_stop():
+            break
+        try:
+            details = store.fetch_store_details(game.steam_app_id)
+            failures = 0
+        except RateLimited:
+            raise
+        except requests.RequestException as exc:
+            failures += 1
+            if failures >= MAX_CONSECUTIVE_FAILURES:
+                raise SteamError(f"{exc} ({failures} failures in a row, stopping.)") from exc
+            continue
+        game.about_text = details.about_text if details is not None else ""
+        session.commit()
+        done += 1
+        if on_progress:
+            on_progress(i, len(pending), game)
+    return done
 
 
 def backfill_empty_tags(

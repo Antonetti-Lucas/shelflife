@@ -28,6 +28,7 @@ from shelflife.discovery import MIN_REVIEWS
 from shelflife.recommend import explain, recommend, score_all, taste_profile, top_taste_tags
 from shelflife.score import engagement_score
 from shelflife.settings import TASTE_MODE_HELP, TASTE_MODES, get_taste_mode, set_taste_mode
+from shelflife.learned import text_index
 from shelflife.similar import search_tags, similar_to, tag_idf
 from shelflife.stats import compute_stats
 from shelflife.sync_job import STEPS as SYNC_STEPS
@@ -360,7 +361,7 @@ def explore(
     like_tags = []
     if ref is not None:
         idf = tag_idf(session)
-        recs = similar_to(ref, [r.game for r in recs], idf)  # same games, ranked by likeness to ref
+        recs = similar_to(ref, [r.game for r in recs], idf, text_index(session))  # same games, ranked by likeness to ref
         like_tags = search_tags(ref, idf)
 
     keys = {
