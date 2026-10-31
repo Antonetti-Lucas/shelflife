@@ -2,24 +2,79 @@
 {% from "_card.html" import card %}
 {% from "_tagbox.html" import tag_input, tag_note %}
 {% block title %}Explore · ShelfLife{% endblock %}
+{% block head %}{% if job.running %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
 {% block content %}
+{% if ref %}
+<h2>Games like {{ ref.name }} <small>{{ total }} games you don't own, closest first</small></h2>
+<p class="lede">
+  Ranked by how close their tags are to <a href="/game/{{ ref.steam_app_id }}">{{ ref.name }}</a>'s.
+  <a href="/explore">← Back to all of Explore</a>. To bring in more, use <a href="#find">Find more games</a> below.
+</p>
+{% else %}
 <h2>Explore Steam <small>{{ total }} games you don't own</small></h2>
 <p class="lede">
   Well-reviewed games from the tags you like, ranked by how well they fit your taste.
   Rate a game you've played elsewhere, or dismiss what doesn't interest you. To grow this
-  list, run <code>python -m scripts.discover</code>.
+  list, use <a href="#find">Find more games</a> below.
 </p>
+{% endif %}
+
+<section class="find" id="find">
+  <h3>Find more games</h3>
+  {% if job.running %}
+    <p>
+      {% if job.phase == "lists" %}Step 1 of 3: looking up tags ({{ job.done }} of {{ job.total }})
+      {% elif job.phase == "check" %}Step 2 of 3: reading games' tags, kept {{ job.done }} of {{ job.total }}
+      {% else %}Step 3 of 3: fetching game details ({{ job.done }} of {{ job.total }}){% endif %}
+    </p>
+    <progress value="{{ job.done }}" max="{{ job.total or 1 }}"></progress>
+    <p class="meta">{{ job.text }}</p>
+    <form method="post" action="/explore/find/stop" class="inline">
+      <button class="ghost" type="submit">Stop</button>
+    </form>
+    <p class="meta">You can keep browsing; this page refreshes by itself. Games appear in the list below as their details arrive.</p>
+  {% else %}
+    {% if job.message %}
+      <p class="{{ 'warn' if job.failed else '' }}">{{ job.message }}
+        {% if job.like_id and (not ref or ref.steam_app_id != job.like_id) %}<a href="/explore?like={{ job.like_id }}">See games like {{ job.like_name }}</a>{% endif %}</p>
+    {% endif %}
+    <form method="post" action="/explore/find" class="filters">
+      {% if ref %}
+        <input type="hidden" name="like" value="{{ ref.steam_app_id }}">
+        <span class="inline-field like-note">New games like <strong>{{ ref.name }}</strong>, searching {{ like_tags|join(", ") }}</span>
+      {% else %}
+      {{ tag_input("", find_tag_options, none, "tags", "find-tag-options",
+                   "Genres or tags, e.g. Roguelike, Co-op" ~ ((" (empty: your taste, " ~ taste_tags|join(", ") ~ ")") if taste_tags else "")) }}
+      {% endif %}
+      <label class="inline-field">Games
+        <select name="count">{% for n in find_counts %}<option value="{{ n }}" {{ "selected" if n == 25 }}>{{ n }}</option>{% endfor %}</select>
+      </label>
+      <label class="inline-field">With at least
+        <select name="min_reviews">{% for n in find_min_reviews %}<option value="{{ n }}" {{ "selected" if n == min_reviews_default }}>{{ "{:,}".format(n) }} reviews</option>{% endfor %}</select>
+      </label>
+      <button type="submit">Find games</button>
+    </form>
+    <p class="meta">
+      Looks up each tag on SteamSpy, goes down its best-reviewed games and keeps the ones that are really about the tag
+      (it must be one of the game's 10 most voted tags), taking turns between tags. Games already here are skipped, so
+      pressing it again finds new ones. It takes about {{ seconds_per_game }} seconds per game, longer for narrow tags
+      (25 games is a few minutes), and only runs when you press the button. Genres are tags too: try RPG, Strategy or Roguelike.
+      {% if ref %}Here it also keeps only games whose tags are close to {{ ref.name }}'s.{% endif %}
+    </p>
+  {% endif %}
+</section>
 
 <form class="filters" method="get" action="/explore">
+  {% if ref %}<input type="hidden" name="like" value="{{ ref.steam_app_id }}">{% endif %}
   <input type="search" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
-  {{ tag_input(tag, tag_options) }}
+  {{ tag_input(tag, tag_options, match) }}
   <select name="rec" aria-label="Recommended">
     {% for value, label in [("all", "All games"), ("50", "Recommended: top 50%"), ("25", "Recommended: top 25%"), ("10", "Recommended: top 10%")] %}
       <option value="{{ value }}" {{ "selected" if rec == value }}>{{ label }}</option>
     {% endfor %}
   </select>
   <select name="sort" aria-label="Sort by">
-    {% for value, label in [("fit", "Best fit"), ("reviews", "Most reviews"), ("name", "Name")] %}
+    {% for value, label in [("similar", "Most similar"), ("fit", "Best fit for you"), ("reviews", "Most reviews"), ("name", "Name")] if value in sorts %}
       <option value="{{ value }}" {{ "selected" if sort == value }}>{{ label }}</option>
     {% endfor %}
   </select>
@@ -29,14 +84,14 @@
 
 {% if recs %}
   <div class="grid">
-    {% for r in recs %}{{ card(r, here, ratings.get(r.game.steam_app_id)) }}{% endfor %}
+    {% for r in recs %}{{ card(r, here, ratings.get(r.game.steam_app_id), ref.name if ref else none) }}{% endfor %}
   </div>
 {% else %}
   <p class="empty">No games match. Try a different search or filter.</p>
 {% endif %}
 
 {% if pages > 1 %}
-{% set base = "/explore?q=" ~ (q|urlencode) ~ "&tag=" ~ (tag|urlencode) ~ "&rec=" ~ rec ~ "&sort=" ~ sort %}
+{% set base = "/explore?q=" ~ (q|urlencode) ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&rec=" ~ rec ~ "&sort=" ~ sort ~ ("&like=" ~ ref.steam_app_id if ref else "") %}
 <p class="pager">
   {% if page > 1 %}<a href="{{ base }}&page={{ page - 1 }}">← Previous</a>{% endif %}
   Page {{ page }} of {{ pages }}

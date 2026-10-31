@@ -11,6 +11,12 @@ import math
 from typing import Iterable
 
 TOP_N = 15
+# How much a tag's relevance to its game matters. A tag's weight is its vote share
+# (relative to the game's top tag) raised to this power: 1 is a straight line, higher
+# makes minor tags count much less (at 2, a tag with half the top tag's votes counts
+# a quarter as much). 2 because, on the 18 ratings the owner gave, it ranked games
+# better than 1 (leave-one-out rank correlation +0.29 vs +0.22; a small sample).
+RELEVANCE_POWER = 2.0
 
 STOPLIST = frozenset(
     {
@@ -35,7 +41,7 @@ def tag_weights(tags: dict[str, int]) -> dict[str, float]:
     if not ranked or ranked[0][1] <= 0:
         return {}
     top = ranked[0][1]
-    return {t: v / top for t, v in ranked}
+    return {t: (v / top) ** RELEVANCE_POWER for t, v in ranked}
 
 
 def compute_idf(all_tags: Iterable[dict[str, int]]) -> dict[str, float]:

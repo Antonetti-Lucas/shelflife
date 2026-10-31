@@ -15,7 +15,7 @@ Steam knows what you own and how long you've played, but not what you *thought* 
 - **Family Sharing import** (optional): games you can play through a Steam Family.
 - **Diary:** 0.5–5 star ratings, reviews, "not interested" marks, a status (playing, played, dropped) with dates, and favorites, stored locally.
 - **Recommendations:** three lists (backlog, family, games you don't own), each with a reason.
-- **Web app:** recommendations, a library you can rate and edit in place, an Explore page, a diary, stats, game pages, and your taste profile.
+- **Web app:** recommendations, a library you can rate and edit in place, an Explore page with a button to find more games, similar games for any game, a diary, stats, game pages, and your taste profile.
 
 ## Screenshots
 
@@ -93,7 +93,7 @@ The fetching scripts are deliberately slow to respect the services' limits (abou
 | `python -m scripts.sync [--limit N] [--fill-tags]` | Import the library; fetch details and tags |
 | `python -m scripts.scores [N]` | Rank your played games by engagement score |
 | `python -m scripts.recommend [N]` | Print recommendations in the terminal |
-| `python -m scripts.discover [--per-tag N]` | Grow the pool of games you don't own |
+| `python -m scripts.discover [--per-tag N] [--tags "A,B"]` | Find new games you don't own (the same as Explore's button) |
 | `python -m scripts.feedback not-interested "Name"` | Dismiss a game (also `undo`, `list`) |
 | `python -m scripts.import_family [file]` | Import a Family Sharing export (below) |
 | `python -m scripts.hours [--template]` | Enter family-game hours from a file |
@@ -105,9 +105,9 @@ The fetching scripts are deliberately slow to respect the services' limits (abou
 
 - **Recommendations:** your backlog, family and discovery lists, paged, each pick with the games and tags behind it. Rate or dismiss from the card.
 - **Library:** your owned and family games with covers. Set a rating or a status, or type hours for family games, right in the row. Search by name, filter by tags or status, sort by most played or **recently played**, or use the **Recommended** filter to keep the unplayed games that fit you best (top 50%, 25% or 10%).
-- **Explore:** games you don't own, ranked by fit, with the same filter, search, tags and sorting.
+- **Explore:** games you don't own, ranked by fit, with the same filter, search, tags and sorting. **Find more games** adds new ones for the genres or tags you pick (or the tags you like most) and a number of games, and shows its progress. Every game page has **Games like this** (Explore ranked by how close games are to that one) and a button to search Steam for new games like it.
 - **Diary:** one tab each for playing, played, dropped and your favorites, newest first, paged, with search and a tag filter. Set a status, optional dates and a favorite on a game's page; dates are never filled in for you. "Played" means finished or played as much as you wanted, so it fits endless multiplayer games too.
-- **Tags:** type one or more tags, separated by commas, in the Library, Explore or Diary (a game must have all of them). Tags match whole and ignore case, and the box suggests the tags that exist.
+- **Tags:** pick several tags in the Library, Explore or Diary, and choose whether a game needs all of them or any of them. Tags match whole and ignore case, a game "has" a tag if it is among its 20 most voted, and the box suggests the tags that exist.
 - **Stats:** games and hours in your library, your diary by status, games finished per year, how you rate, and your most played games.
 - **Game page, My ratings, My taste:** why a game fits you and how you played it; your ratings and reviews (edit or delete in place); and the tag profile behind it all.
 
@@ -143,9 +143,11 @@ Personal data lives in `shelflife.db`, `.env` and the `data/` folder, all git-ig
 
 *Recency:* Steam gives only lifetime hours and a last-played date, and one minute today resets that date. So the unlock dates of your achievements show *when* you really played: each unlock counts less the older it is (halving every 3 years). A game you play right now counts as fully current.
 
-**2. Taste profile.** Each played game gets a weight from −1 to +1: a rating gives `(rating − 3) / 2` (and is never faded), and "not interested" counts as 2 stars. A favorite counts as 5 stars until you rate the game. A status (playing, played, dropped) is a record only: it takes the game out of the recommendations but does not change your taste, because "dropped" can mean a story game quit halfway or an endless multiplayer game you left after hundreds of hours. An unrated game gets up to +0.5 from its engagement score. The profile sums each game's tags (vote share of the top 15 tags, scaled down for tags common in your library) times its weight.
+**2. Taste profile.** Each played game gets a weight from −1 to +1: a rating gives `(rating − 3) / 2` (and is never faded), and "not interested" counts as 2 stars. A favorite counts as 5 stars until you rate the game. A status (playing, played, dropped) is a record only: it takes the game out of the recommendations but does not change your taste, because "dropped" can mean a story game quit halfway or an endless multiplayer game you left after hundreds of hours. An unrated game gets up to +0.5 from its engagement score. The profile sums each game's tags times its weight. A tag counts by how relevant it is to the game: its votes relative to the game's top tag, squared (a tag with half the top tag's votes counts a quarter as much), for the top 15 tags, scaled down for tags common in your library. The squaring is one setting, `RELEVANCE_POWER` in `shelflife/tags.py`.
 
-**3. Scoring.**
+**3. Finding new games.** Explore's **Find more games** button (and `python -m scripts.discover`) works like this: SteamSpy lists every game under a tag, with its review counts. That list is loose (any game with even a few votes for the tag is in it), so games you already have and games with under 300 reviews are dropped, the rest are ranked by the lower bound of their positive-review share (more reviews rank higher at equal praise), and then, going down the ranking with the tags taking turns, each game's own tag votes are read and the game is kept only if the searched tag is among its 10 most voted. The others are remembered, with their tags, so they are not fetched again. Kept games get their store details fetched, about 5 seconds a game in all, and then take part in the rankings. For "games like this one", the tags searched are that game's most distinctive ones and a game must also be at least 15% similar to it. SteamSpy matches tag names in a particular letter case (and a few under older names), so several spellings are tried.
+
+**4. Scoring.**
 
 ```
 score = cosine_similarity(game_tags, taste_profile) × quality

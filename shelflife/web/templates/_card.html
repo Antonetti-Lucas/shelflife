@@ -1,6 +1,6 @@
 {# One recommendation. `next_url` is where to return after rating or dismissing;
    `rating` is your current rating of the game, if any. #}
-{% macro card(r, next_url, rating=none) %}
+{% macro card(r, next_url, rating=none, similar_to=none) %}
 {% set g = r.game %}
 <article class="card">
   <a class="cover" href="/game/{{ g.steam_app_id }}">
@@ -9,12 +9,12 @@
   <div class="card-body">
     <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a></h3>
     <p class="meta">
-      <strong>{{ "%.0f"|format(r.similarity * 100) }}% match</strong>
+      {% if similar_to %}<strong>{{ "%.0f"|format(r.similarity * 100) }}% similar</strong> to {{ similar_to }}{% else %}<strong>{{ "%.0f"|format(r.similarity * 100) }}% match</strong>{% endif %}
       · quality ×{{ "%.2f"|format(r.quality) }}
       · {{ reviews_text(g) }}
     </p>
     {% if r.because %}<p class="why">Because you played {{ r.because|join(", ") }}</p>{% endif %}
-    {% if r.tags %}<p class="tags">{% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}</p>{% endif %}
+    {% if r.tags %}<p class="tags">{% if similar_to %}<span class="meta">Shares</span>{% endif %}{% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}</p>{% endif %}
     {% if r.watch %}<p class="watch">Heads-up: {{ r.watch|join(", ") }} tends to score lower for you.</p>{% endif %}
     <div class="actions">
       <form method="post" action="/game/{{ g.steam_app_id }}/rate">

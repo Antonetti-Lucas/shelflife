@@ -132,6 +132,22 @@
   </section>
 </div>
 
+{% if like_tags %}
+<section class="similar">
+  <h3>Similar games</h3>
+  <p><a class="button" href="/explore?like={{ game.steam_app_id }}">Games like this in Explore</a>
+     <span class="meta">the games here that are closest to {{ game.name }} by tag</span></p>
+  <form method="post" action="/explore/find" class="filters">
+    <input type="hidden" name="like" value="{{ game.steam_app_id }}">
+    <label class="inline-field">Find new games like this on Steam
+      <select name="count">{% for n in find_counts %}<option value="{{ n }}" {{ "selected" if n == 25 }}>{{ n }} games</option>{% endfor %}</select>
+    </label>
+    <button type="submit">Search</button>
+  </form>
+  <p class="meta">Searches SteamSpy for games tagged {{ like_tags|join(", ") }} and keeps the ones whose tags are close to this game's. It takes a few minutes and runs only when you press Search; the results appear in "Games like this".</p>
+</section>
+{% endif %}
+
 {% if tags %}
 <section>
   <h3>Community tags</h3>

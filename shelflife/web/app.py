@@ -22,10 +22,13 @@ from shelflife.hours import set_hours
 from shelflife.models import DiaryEntry, Game, LibraryEntry
 from shelflife.quality import quality_factor
 from shelflife.recency import recency
-from shelflife.recommend import explain, recommend, score_all, taste_profile
+from shelflife.discover_job import SECONDS_PER_GAME, job as discover_job
+from shelflife.discovery import MIN_REVIEWS
+from shelflife.recommend import explain, recommend, score_all, taste_profile, top_taste_tags
 from shelflife.score import engagement_score
+from shelflife.similar import search_tags, similar_to, tag_idf
 from shelflife.stats import compute_stats
-from shelflife.tagfilter import TagIndex, has_all, parse_tags
+from shelflife.tagfilter import TagIndex, matches, parse_match, parse_tags
 
 BASE = Path(__file__).parent
 PAGE_SIZE = 40
@@ -187,12 +190,14 @@ def library(
     rec: str = "all",
     status: str = "all",
     tag: str = "",
+    match: str = "all",
     page: int = 1,
     session: Session = Depends(get_session),
 ):
     ratings = diary.load_ratings(session)
     entries = diary.load_entries(session)
     wanted = parse_tags(tag)
+    match = parse_match(match)
     status = status if status in (*diary.STATUSES, "none") else "all"
     scores = score_all(session, ratings, diary.load_not_interested(session))
     scope = scores.backlog | scores.family  # what "recommended" means in the library
@@ -216,7 +221,7 @@ def library(
     for game in games:
         if keep is not None and game.steam_app_id not in keep:
             continue
-        if (needle and needle not in game.name.lower()) or not has_all(game.tags, wanted):
+        if (needle and needle not in game.name.lower()) or not matches(game.tags, wanted, match):
             continue
         mark = entries.get(game.steam_app_id)
         game_status = mark.status if mark else None
@@ -263,6 +268,7 @@ def library(
             "rec": rec if rec in REC_FILTERS else "all",
             "status": status,
             "tag": tag,
+            "match": match,
             "tag_options": tag_index.popular(),
             "unknown_tags": tag_index.unknown(wanted),
             "page": page,
@@ -276,14 +282,18 @@ def library(
 def explore(
     request: Request,
     q: str = "",
-    sort: str = "fit",
+    sort: str = "",
     rec: str = "all",
     tag: str = "",
+    match: str = "all",
+    like: str = "",
     page: int = 1,
     session: Session = Depends(get_session),
 ):
-    """Games you don't own: the discovery pool, ranked by how well they fit you."""
+    """Games you don't own: the discovery pool, ranked by how well they fit you, or by
+    how like one game (`like`) they are."""
     wanted = parse_tags(tag)
+    match = parse_match(match)
     ratings = diary.load_ratings(session)
     not_interested = diary.load_not_interested(session)
     scores = score_all(session, ratings, not_interested)
@@ -305,17 +315,30 @@ def explore(
             or game.steam_app_id in not_interested
             or (needle and needle not in game.name.lower())
             or (keep is not None and game.steam_app_id not in keep)
-            or not has_all(game.tags, wanted)
+            or not matches(game.tags, wanted, match)
         ):
             continue
         recs.append(rec_item)
 
+    ref = None  # the game "like this" is about
+    if like.strip().isdigit():
+        found = session.get(Game, int(like.strip()))
+        ref = found if found is not None and found.tags else None
+    like_tags = []
+    if ref is not None:
+        idf = tag_idf(session)
+        recs = similar_to(ref, [r.game for r in recs], idf)  # same games, ranked by likeness to ref
+        like_tags = search_tags(ref, idf)
+
     keys = {
         "fit": lambda r: -r.score,
+        "similar": lambda r: -r.score,
         "reviews": lambda r: -((r.game.reviews_positive or 0) + (r.game.reviews_negative or 0)),
         "name": lambda r: r.game.name.lower(),
     }
-    recs.sort(key=keys.get(sort, keys["fit"]))
+    sorts = ("similar", "reviews", "name") if ref is not None else ("fit", "reviews", "name")
+    sort = sort if sort in sorts else sorts[0]
+    recs.sort(key=keys[sort])
 
     pages = max(1, -(-len(recs) // EXPLORE_PAGE_SIZE))
     page = max(1, min(page, pages))
@@ -326,17 +349,87 @@ def explore(
             "recs": recs[(page - 1) * EXPLORE_PAGE_SIZE : page * EXPLORE_PAGE_SIZE],
             "total": len(recs),
             "q": q,
-            "sort": sort if sort in keys else "fit",
+            "sort": sort,
+            "sorts": sorts,
+            "ref": ref,
+            "like_tags": like_tags,
             "rec": rec if rec in REC_FILTERS else "all",
             "tag": tag,
+            "match": match,
             "tag_options": tag_index.popular(),
             "unknown_tags": tag_index.unknown(wanted),
             "page": page,
             "pages": pages,
             "here": current_url(request),
             "ratings": ratings,
+            "job": discover_job.snapshot(),
+            "taste_tags": top_taste_tags(session, ratings, not_interested),
+            "find_tag_options": TagIndex(session.scalars(select(Game.tags))).popular(),
+            "find_counts": FIND_COUNTS,
+            "find_min_reviews": FIND_MIN_REVIEWS,
+            "min_reviews_default": MIN_REVIEWS,
+            "seconds_per_game": SECONDS_PER_GAME,
         },
     )
+
+
+FIND_COUNTS = (10, 25, 50, 100)
+FIND_MIN_REVIEWS = (100, 300, 1000)
+MAX_FIND_TAGS = 6
+
+
+def choice(raw: str, allowed: tuple[int, ...], default: int) -> int:
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value in allowed else default
+
+
+@app.post("/explore/find")
+def find_more_games(
+    tags: str = Form(""),
+    count: str = Form("25"),
+    min_reviews: str = Form(str(MIN_REVIEWS)),
+    like: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    """Look for new games to explore: starts a background search and returns at once.
+    With `like` (a game's app id) it looks for close matches to that game instead."""
+    if like.strip():
+        ref = session.get(Game, int(like)) if like.strip().isdigit() else None
+        if ref is None or not ref.tags:
+            discover_job.fail("That game has no tags yet, so there is nothing to compare.")
+            return RedirectResponse("/explore#find", status_code=303)
+        discover_job.start(
+            search_tags(ref, tag_idf(session)),
+            choice(count, FIND_COUNTS, 25),
+            choice(min_reviews, FIND_MIN_REVIEWS, MIN_REVIEWS),
+            like=(ref.steam_app_id, ref.name),
+        )
+        return RedirectResponse(f"/explore?like={ref.steam_app_id}#find", status_code=303)
+
+    wanted = parse_tags(tags)
+    if wanted:
+        index = TagIndex(session.scalars(select(Game.tags)))
+        wanted = [index.spelling(t) for t in wanted][:MAX_FIND_TAGS]
+    else:  # no tags typed: search for the tags you like most
+        wanted = top_taste_tags(session, diary.load_ratings(session), diary.load_not_interested(session))
+    if not wanted:
+        discover_job.fail("Rate a few games first so there are taste tags to search for, or type some tags.")
+    else:
+        discover_job.start(
+            wanted,
+            choice(count, FIND_COUNTS, 25),
+            choice(min_reviews, FIND_MIN_REVIEWS, MIN_REVIEWS),
+        )
+    return RedirectResponse("/explore#find", status_code=303)
+
+
+@app.post("/explore/find/stop")
+def stop_finding_games():
+    discover_job.cancel()
+    return RedirectResponse("/explore#find", status_code=303)
 
 
 @app.get("/game/{app_id}")
@@ -361,6 +454,8 @@ def game_page(request: Request, app_id: int, session: Session = Depends(get_sess
             "quality": quality_factor(game.reviews_positive, game.reviews_negative),
             "diary": diary.get_entry(session, app_id),
             "match": explain(session, ratings, not_interested, app_id),
+            "like_tags": search_tags(game, tag_idf(session)) if game.tags else [],
+            "find_counts": FIND_COUNTS,
         },
     )
 
@@ -393,6 +488,7 @@ def diary_page(
     show: str = "",
     q: str = "",
     tag: str = "",
+    match: str = "all",
     page: int = 1,
     session: Session = Depends(get_session),
 ):
@@ -417,19 +513,26 @@ def diary_page(
         show = next((key for key in DIARY_TABS if counts[key]), "playing")
 
     wanted = parse_tags(tag)
+    match = parse_match(match)
     needle = q.strip().lower()
     tag_index = TagIndex(g.tags for _, g in groups[show])
     items = [
         (e, g)
         for e, g in groups[show]
-        if (not needle or needle in g.name.lower()) and has_all(g.tags, wanted)
+        if (not needle or needle in g.name.lower()) and matches(g.tags, wanted, match)
     ]
     pages = max(1, -(-len(items) // DIARY_PAGE_SIZE))
     page = max(1, min(page, pages))
 
     def url(**changes) -> str:
         """This page with some settings changed (a new tab starts on page 1)."""
-        params = {"show": show, "q": q.strip(), "tag": tag.strip(), "page": page} | changes
+        params = {
+            "show": show,
+            "q": q.strip(),
+            "tag": tag.strip(),
+            "match": "any" if (wanted and match == "any") else "",  # "all" is the default
+            "page": page,
+        } | changes
         return "/diary?" + urlencode({k: v for k, v in params.items() if v not in ("", None)})
 
     return templates.TemplateResponse(
@@ -444,6 +547,7 @@ def diary_page(
             "filtered": bool(needle or wanted),
             "q": q,
             "tag": tag,
+            "match": match,
             "tag_options": tag_index.popular(),
             "unknown_tags": tag_index.unknown(wanted),
             "page": page,

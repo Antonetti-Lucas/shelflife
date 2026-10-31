@@ -164,3 +164,55 @@ def test_explore_can_be_filtered_by_tag(client, scenario):
     html = client.get("/explore?tag=Sports").text
     assert "Pool Stealth Good" not in html and "No games match" in html
     assert '<option value="Stealth">' in client.get("/explore").text
+
+
+# ---- several tags: all of them or any of them ----
+
+
+def test_the_library_can_match_any_of_the_tags(client, scenario):
+    assert library_ids(client.get("/library?tag=Sports,Stealth&match=all").text) == []
+    assert set(library_ids(client.get("/library?tag=Sports,Stealth&match=any").text)) == {"1", "2", "20", "21", "30"}
+    assert library_ids(client.get("/library?tag=Sports,Stealth").text) == []  # all is the default
+
+
+def test_explore_can_match_any_of_the_tags(client, scenario):
+    assert "Pool Stealth Good" in client.get("/explore?tag=Sports,Stealth&match=any").text
+    assert "Pool Stealth Good" not in client.get("/explore?tag=Sports,Stealth").text
+
+
+def test_the_diary_can_match_any_of_the_tags(client, scenario):
+    tracked_scenario(client)
+    assert names_on(client.get("/diary?show=played&tag=Sports,Action&match=any").text) == [
+        "Backlog Sports", "Backlog Stealth", "Stealth Hero",
+    ]  # fmt: skip
+    assert names_on(client.get("/diary?show=played&tag=Sports,Action").text) == []
+
+
+def test_an_odd_match_value_means_all(client, scenario):
+    assert library_ids(client.get("/library?tag=Sports,Stealth&match=banana").text) == []
+
+
+@pytest.mark.parametrize("path", ["/library", "/explore", "/diary"])
+def test_every_tag_search_is_a_picker_with_the_all_or_any_choice(client, scenario, path):
+    html = client.get(path).text
+    assert "data-tagpicker" in html and 'name="tag"' in html
+    assert 'value="all" selected' in html and 'value="any"' in html
+    assert 'src="/static/tags.js"' in html
+    assert 'value="any" selected' in client.get(f"{path}?tag=Stealth&match=any").text
+
+
+def test_the_find_games_box_is_a_picker_too(client, scenario):
+    html = client.get("/explore").text
+    assert 'name="tags"' in html and html.count("data-tagpicker") == 2  # the filter and the search for new games
+
+
+def test_the_pagers_keep_the_all_or_any_choice(client, session):
+    for i in range(100, 150):
+        add_game(session, i, f"Game {i}", tags={"Stealth": 100}, minutes=600)
+    html = client.get("/library?tag=Stealth,Racing&match=any").text
+    assert "match=any" in re.search(r'class="pager".*?</p>', html, re.S).group(0)
+
+
+def test_the_picker_script_is_served(client):
+    response = client.get("/static/tags.js")
+    assert response.status_code == 200 and "data-tagpicker" in response.text

@@ -121,18 +121,20 @@ def sync_achievements(
     return done
 
 
-def _fill_tags(game: Game) -> None:
+def _fill_tags(game: Game, spy: store.SpyDetails | None = None) -> None:
     """SteamSpy first; if it has no tags, fall back to the store page's tag votes.
 
     Tags are best effort: a failure here shouldn't lose the store data. SteamSpy
-    also supplies review counts when we don't have any yet.
+    also supplies review counts when we don't have any yet. Pass `spy` when its
+    details were already fetched, to avoid asking twice.
     """
-    try:
-        spy = store.fetch_spy_details(game.steam_app_id)
-    except RateLimited:
-        raise
-    except (requests.RequestException, ValueError):
-        spy = None
+    if spy is None:
+        try:
+            spy = store.fetch_spy_details(game.steam_app_id)
+        except RateLimited:
+            raise
+        except (requests.RequestException, ValueError):
+            spy = None
 
     if spy is not None:
         if spy.tags:
@@ -152,8 +154,9 @@ def _fill_tags(game: Game) -> None:
     game.tags_fetched_at = _now()
 
 
-def enrich_one(game: Game) -> None:
-    """Fetch store details and tags for one game (no commit)."""
+def enrich_one(game: Game, spy: store.SpyDetails | None = None) -> None:
+    """Fetch store details and tags for one game (no commit). `spy`: SteamSpy details
+    already in hand."""
     details = store.fetch_store_details(game.steam_app_id)
     if details is None:
         game.type = "unavailable"
@@ -166,7 +169,7 @@ def enrich_one(game: Game) -> None:
         game.release_date = details.release_date
         game.cover_url = details.cover_url
     game.details_fetched_at = _now()
-    _fill_tags(game)
+    _fill_tags(game, spy)
 
 
 def sync_backlog_reviews(

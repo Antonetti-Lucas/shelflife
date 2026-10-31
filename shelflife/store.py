@@ -116,6 +116,33 @@ def fetch_tags(app_id: int, timeout: float = 15) -> dict[str, int]:
     return fetch_spy_details(app_id, timeout).tags
 
 
+# SteamSpy's tag lists answer to a tag's name only in the letter case it keeps it under
+# ("metroidvania" works, "Metroidvania" returns nothing; "Souls-Like" works, "Souls-like"
+# does not), a few tags only under their old name, and a tag it does not know gets the
+# same fixed list of 70 games instead of an error.
+UNKNOWN_TAG_LIST_SIZE = 70
+SPY_TAG_ALIASES = {"roguelike": "rogue-like"}  # Steam's current name -> the one SteamSpy lists
+_spy_spellings: dict[str, str] = {}  # the spelling that worked for a tag, remembered for the session
+
+
+def spy_tag_spellings(tag: str) -> list[str]:
+    """The spellings to try for a tag, most likely first, without repeats."""
+    candidates = [tag, tag.lower(), tag.title(), SPY_TAG_ALIASES.get(tag.lower())]
+    return [c for i, c in enumerate(candidates) if c and c not in candidates[:i]]
+
+
+def fetch_spy_tag_games(tag: str, timeout: float = 90) -> list[SpyListing]:
+    """The games SteamSpy lists under a tag, trying the spellings it might know it by.
+    Empty when none of them is a tag it recognises."""
+    spellings = [_spy_spellings[tag]] if tag in _spy_spellings else spy_tag_spellings(tag)
+    for spelling in spellings:
+        listings = fetch_spy_tag_list(spelling, timeout)
+        if listings and len(listings) != UNKNOWN_TAG_LIST_SIZE:
+            _spy_spellings[tag] = spelling
+            return listings
+    return []
+
+
 def fetch_spy_tag_list(tag: str, timeout: float = 90) -> list[SpyListing]:
     """Games SteamSpy lists under a tag, with review counts (can be thousands)."""
     data = _spy_get({"request": "tag", "tag": tag}, timeout)

@@ -1,8 +1,19 @@
-{# The tag filter: a box with suggestions, and a note when a tag matches nothing. #}
-{% macro tag_input(tag, options) %}
-<input type="search" name="tag" value="{{ tag }}" list="tag-options" class="tagbox"
-       placeholder="Tags, e.g. Roguelike, Co-op" aria-label="Filter by tags, comma separated; a game must have all of them">
-<datalist id="tag-options">{% for t in options %}<option value="{{ t }}">{% endfor %}</datalist>
+{# The tag filter: a box that collects several tags, with suggestions, and a note when
+   a tag matches nothing. Without JavaScript it is a plain text box (comma separated);
+   static/tags.js turns it into removable chips. `match` adds the "all of / any of"
+   choice (leave it out for the search box that finds new games). #}
+{% macro tag_input(tag, options, match=none, name="tag", list_id="tag-options", placeholder="Add tags, e.g. Roguelike, Co-op") %}
+<div class="tagpicker" data-tagpicker>
+  <input type="search" name="{{ name }}" value="{{ tag }}" list="{{ list_id }}" class="tagbox"
+         placeholder="{{ placeholder }}" aria-label="Tags: pick several, or separate them with commas">
+  <datalist id="{{ list_id }}">{% for t in options %}<option value="{{ t }}">{% endfor %}</datalist>
+</div>
+{% if match is not none %}
+<select name="match" aria-label="Whether a game needs all of the tags or any of them">
+  <option value="all" {{ "selected" if match == "all" }}>All of these tags</option>
+  <option value="any" {{ "selected" if match == "any" }}>Any of these tags</option>
+</select>
+{% endif %}
 {% endmacro %}
 
 {% macro tag_note(unknown) %}

@@ -51,8 +51,24 @@ def test_tags_that_are_not_about_gameplay_are_ignored():
     assert tag_weights({"Early Access": 1000, "Stealth": 100}) == {"Stealth": 1.0}
 
 
-def test_tag_weight_is_the_vote_share_of_the_top_tag():
+def test_tag_weight_is_the_vote_share_of_the_top_tag_squared():
+    # Half the top tag's votes counts a quarter as much: relevance matters more than a straight line.
+    assert tag_weights({"A": 200, "B": 100}) == {"A": 1.0, "B": 0.25}
+
+
+def test_the_relevance_power_is_the_one_setting_behind_this(monkeypatch):
+    monkeypatch.setattr("shelflife.tags.RELEVANCE_POWER", 1.0)
     assert tag_weights({"A": 200, "B": 100}) == {"A": 1.0, "B": 0.5}
+    monkeypatch.setattr("shelflife.tags.RELEVANCE_POWER", 3.0)
+    assert tag_weights({"A": 200, "B": 100}) == {"A": 1.0, "B": 0.125}
+
+
+def test_a_minor_tag_barely_moves_the_similarity_but_a_main_tag_does():
+    idf = {"Main": 1.0, "Minor": 1.0, "Other": 1.0}
+    taste = {"Minor": 1.0}
+    about_minor = tag_vector({"Other": 1000, "Minor": 1000}, idf)  # Minor is as relevant as its top tag
+    mentions_minor = tag_vector({"Other": 1000, "Minor": 200}, idf)  # a fifth of the votes
+    assert cosine(taste, about_minor) > 8 * cosine(taste, mentions_minor)
 
 
 def test_only_the_top_tags_count():
@@ -83,8 +99,8 @@ def test_unknown_tags_get_zero_weight_in_a_vector():
     assert tag_vector({"Mystery": 10}, {}) == {"Mystery": 0.0}
 
 
-def test_vector_scales_vote_share_by_rarity():
-    assert tag_vector({"A": 100, "B": 50}, {"A": 2.0, "B": 4.0}) == {"A": 2.0, "B": 2.0}
+def test_vector_scales_relevance_by_rarity():
+    assert tag_vector({"A": 100, "B": 50}, {"A": 2.0, "B": 4.0}) == {"A": 2.0, "B": 1.0}
 
 
 def test_identical_vectors_have_similarity_one():

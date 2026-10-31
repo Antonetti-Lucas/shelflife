@@ -22,18 +22,37 @@ def parse_tags(raw: str | None) -> list[str]:
     return out
 
 
-def top_tag_names(tags: dict[str, int] | None) -> dict[str, str]:
+def top_tag_names(tags: dict[str, int] | None, limit: int = TOP_TAGS) -> dict[str, str]:
     """lower-case name -> name as written, for a game's most voted tags."""
-    ranked = sorted((tags or {}).items(), key=lambda kv: kv[1], reverse=True)[:TOP_TAGS]
+    ranked = sorted((tags or {}).items(), key=lambda kv: kv[1], reverse=True)[:limit]
     return {name.lower(): name for name, _ in ranked}
 
 
-def has_all(tags: dict[str, int] | None, wanted: list[str]) -> bool:
-    """Whether a game has every wanted tag (trivially true for no tags)."""
+def has_all(tags: dict[str, int] | None, wanted: list[str], limit: int = TOP_TAGS) -> bool:
+    """Whether a game has every wanted tag among its `limit` most voted (trivially
+    true for no wanted tags)."""
     if not wanted:
         return True
-    have = top_tag_names(tags)
+    have = top_tag_names(tags, limit)
     return all(w.lower() in have for w in wanted)
+
+
+def has_any(tags: dict[str, int] | None, wanted: list[str], limit: int = TOP_TAGS) -> bool:
+    """Whether a game has at least one of the wanted tags (true for no wanted tags)."""
+    if not wanted:
+        return True
+    have = top_tag_names(tags, limit)
+    return any(w.lower() in have for w in wanted)
+
+
+def parse_match(raw: str | None) -> str:
+    """"any" or "all" (the default) for how several tags combine."""
+    return "any" if (raw or "").strip().lower() == "any" else "all"
+
+
+def matches(tags: dict[str, int] | None, wanted: list[str], match: str = "all") -> bool:
+    """A game passes the tag filter: has every wanted tag, or any of them."""
+    return has_any(tags, wanted) if match == "any" else has_all(tags, wanted)
 
 
 class TagIndex:
@@ -52,6 +71,10 @@ class TagIndex:
         """Tag names, the ones on the most games first (ties alphabetical)."""
         ranked = sorted(self._counts, key=lambda k: (-self._counts[k], k))
         return [self._spelling[k] for k in ranked[:limit]]
+
+    def spelling(self, name: str) -> str:
+        """The tag as the games write it ("roguelike" -> "Roguelike"); unknown names unchanged."""
+        return self._spelling.get(name.lower(), name)
 
     def unknown(self, wanted: list[str]) -> list[str]:
         """Wanted tags that no game in the set has."""

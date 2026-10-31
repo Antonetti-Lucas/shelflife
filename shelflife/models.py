@@ -14,7 +14,9 @@ class Game(Base):
     steam_app_id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str]
     # Steam store type: "game", "dlc", "demo", "software", ... or "unavailable"
-    # when the store has no page for the app (delisted, region-locked).
+    # when the store has no page for the app (delisted, region-locked), or
+    # "off-topic" for a game a search looked at and found not really about the
+    # tag it was listed under (kept, with its tags, so it is not looked up again).
     type: Mapped[str | None]
     short_description: Mapped[str | None]
     genres: Mapped[list[str]] = mapped_column(JSON, default=list)

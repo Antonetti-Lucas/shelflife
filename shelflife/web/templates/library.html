@@ -10,7 +10,7 @@
 
 <form class="filters" method="get" action="/library">
   <input type="search" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
-  {{ tag_input(tag, tag_options) }}
+  {{ tag_input(tag, tag_options, match) }}
   <select name="source" aria-label="Source">
     {% for value, label in [("all", "Owned and family"), ("owned", "Owned"), ("family", "Family")] %}
       <option value="{{ value }}" {{ "selected" if source == value }}>{{ label }}</option>
@@ -100,7 +100,7 @@
 </div>
 
 {% if pages > 1 %}
-{% set base = "/library?q=" ~ (q|urlencode) ~ "&source=" ~ source ~ "&tag=" ~ (tag|urlencode) ~ "&status=" ~ status ~ "&rec=" ~ rec ~ "&sort=" ~ sort %}
+{% set base = "/library?q=" ~ (q|urlencode) ~ "&source=" ~ source ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&status=" ~ status ~ "&rec=" ~ rec ~ "&sort=" ~ sort %}
 <p class="pager">
   {% if page > 1 %}<a href="{{ base }}&page={{ page - 1 }}">← Previous</a>{% endif %}
   Page {{ page }} of {{ pages }}
