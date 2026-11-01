@@ -446,7 +446,7 @@ def test_a_sort_the_library_does_not_know_falls_back(client, scenario):
 # ---- my ratings ----
 
 
-def test_my_ratings_shows_posters_and_filters_by_rating_decade_and_genre(client, session, scenario):
+def test_my_ratings_shows_posters_and_filters_by_rating_decade_and_tag(client, session, scenario):
     post(client, "/game/20/rate", rating="4", review="good")
     post(client, "/game/21/rate", rating="2")
     html = client.get("/ratings").text
@@ -454,4 +454,7 @@ def test_my_ratings_shows_posters_and_filters_by_rating_decade_and_genre(client,
     assert "\u2605\u2605\u2605\u2605" in html or "★★★★" in html
     four = client.get("/ratings?rating=4").text
     assert "Backlog Stealth" in four and "Backlog Sports" not in four and "Clear filters" in four
-    assert client.get("/ratings?rating=9&decade=abc&genre=nonsense").status_code == 200
+    assert client.get("/ratings?rating=9&decade=abc&tag=nonsense").status_code == 200
+    stealth = client.get("/ratings?tag=Stealth").text
+    assert "Backlog Stealth" in stealth and "Backlog Sports" not in stealth
+    assert "Backlog Stealth" not in client.get("/ratings?tag=-Stealth").text  # a minus leaves it out

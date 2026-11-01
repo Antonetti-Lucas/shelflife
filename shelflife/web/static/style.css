@@ -338,7 +338,7 @@ tr.undo-note td { text-align: center; color: var(--muted); }
 
 /* ---- My ratings: poster wall ---- */
 .bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 0 0 10px; margin: 0 0 18px; border-bottom: 1px solid var(--line); }
-.bar select { border: none; background: transparent; color: var(--muted); font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; padding: 6px 8px; cursor: pointer; }
+.bar select { border: none; background: var(--bg); color: var(--muted); font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; padding: 6px 8px; cursor: pointer; }
 .bar select:hover, .bar select:focus { color: var(--text); outline: none; }
 .bar-gap { flex: 1; }
 .viewswitch { display: flex; gap: 2px; }
@@ -378,3 +378,8 @@ th.sortable .arrow { font-size: 0.7rem; opacity: 0.35; }
 th.sortable a:hover .arrow { opacity: 0.7; }
 th.sortable.on { color: var(--accent-strong); }
 th.sortable.on .arrow { opacity: 1; }
+
+/* Dropdown lists take these colours, not the menu's own (a transparent menu left them white on white). */
+select option, select optgroup { background: var(--surface); color: var(--text); text-transform: none; letter-spacing: normal; font-weight: 400; }
+.bar .tagpicker { flex: 0 1 300px; min-width: 200px; display: flex; }
+.bar .tagpicker .tagbox, .bar .tagpicker.enhanced { font-size: 0.85rem; }

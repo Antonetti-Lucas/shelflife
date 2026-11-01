@@ -709,7 +709,7 @@ def ratings_page(
     view: str = "grid",
     rating: str = "",
     decade: str = "",
-    genre: str = "",
+    tag: str = "",
     sort: str = "rating",
     page: str = "1",
     session: Session = Depends(get_session),
@@ -721,7 +721,8 @@ def ratings_page(
     # A game can have just a review and no rating, so list those too.
     rated = [(e, g) for e, g in entries if e.rating is not None or e.review]
     decades = sorted({y // 10 * 10 for _, g in rated if (y := release_year(g))}, reverse=True)
-    genres = sorted({x for _, g in rated for x in (g.genres or [])}, key=str.lower)
+    tags = ListFilter.read("", tag, "all")  # a minus leaves a tag out, as on the other pages
+    tag_index = TagIndex(g.tags for _, g in rated)
 
     shown = rated
     if rating in {f"{o:g}" for o in RATING_OPTIONS}:
@@ -734,10 +735,7 @@ def ratings_page(
         shown = [(e, g) for e, g in shown if (y := release_year(g)) and y // 10 * 10 == wanted_decade]
     else:
         decade = ""
-    if genre in genres:
-        shown = [(e, g) for e, g in shown if genre in (g.genres or [])]
-    else:
-        genre = ""
+    shown = [(e, g) for e, g in shown if tags.keeps(g)]
 
     shown.sort(key=lambda p: p[1].name.lower())
     if sort == "rating":
@@ -748,7 +746,7 @@ def ratings_page(
         shown.sort(key=lambda p: (release_year(p[1]) is None, -(release_year(p[1]) or 0)))
     part = paginate(shown, page, RATINGS_PAGE_SIZE if view == "list" else POSTERS_PAGE_SIZE)
 
-    settings = {"view": view, "rating": rating, "decade": decade, "genre": genre, "sort": sort}
+    settings = {"view": view, "rating": rating, "decade": decade, "tag": tag.strip(), "sort": sort}
 
     def url(**changes) -> str:
         """This page with some settings changed; defaults are left out of the link."""
@@ -763,13 +761,14 @@ def ratings_page(
             "rated": part.shown,
             "rated_total": len(rated),
             "total": part.total,
-            "filtered": bool(rating or decade or genre),
+            "filtered": bool(rating or decade or tags.wanted),
             "page": part.page,
             "pages": part.pages,
             "here": current_url(request),
             "url": url,
             "decades": decades,
-            "genres": genres,
+            "tag_options": tag_index.popular(),
+            "unknown_tags": tag_index.unknown(tags.wanted),
             "sorts": RATINGS_SORTS,
             "poster_url": poster_url,
             "favorites": favorite_ids(session),

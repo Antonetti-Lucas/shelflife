@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_pager.html" import link_pager %}
+{% from "_tagbox.html" import tag_input, tag_note %}
 {% block title %}My ratings · ShelfLife{% endblock %}
 {% block content %}
 {% macro thumb(g) %}
@@ -30,17 +31,15 @@
     <option value="">Any decade</option>
     {% for d in decades %}<option value="{{ d }}" {{ "selected" if decade == d|string }}>{{ d }}s</option>{% endfor %}
   </select>
-  <select name="genre" aria-label="Genre" onchange="this.form.submit()">
-    <option value="">Any genre</option>
-    {% for x in genres %}<option value="{{ x }}" {{ "selected" if genre == x }}>{{ x }}</option>{% endfor %}
-  </select>
+  {{ tag_input(tag, tag_options, placeholder="Tags, e.g. Roguelike, -Horror") }}
+  <button type="submit" class="ghost small">Apply</button>
   <span class="bar-gap"></span>
   <select name="sort" aria-label="Sort by" onchange="this.form.submit()">
     {% for value, label in sorts.items() %}<option value="{{ value }}" {{ "selected" if sort == value }}>{{ label }}</option>{% endfor %}
   </select>
-  <noscript><button type="submit">Apply</button></noscript>
 </form>
-{% if filtered %}<p class="meta">{{ total }} of {{ rated_total }} games · <a href="{{ url(rating='', decade='', genre='', page=1) }}">Clear filters</a></p>{% endif %}
+{{ tag_note(unknown_tags) }}
+{% if filtered %}<p class="meta">{{ total }} of {{ rated_total }} games · <a href="{{ url(rating='', decade='', tag='', page=1) }}">Clear filters</a></p>{% endif %}
 {% endif %}
 
 {% if rated and view == "grid" %}
@@ -88,7 +87,7 @@
   {% endfor %}
 </div>
 {% elif filtered %}
-  <p class="empty">No rated game matches. <a href="{{ url(rating='', decade='', genre='', page=1) }}">Clear filters</a></p>
+  <p class="empty">No rated game matches. <a href="{{ url(rating='', decade='', tag='', page=1) }}">Clear filters</a></p>
 {% else %}
   <p class="empty">Nothing rated yet. Rate games from the recommendations or a game's page.</p>
 {% endif %}
