@@ -143,7 +143,9 @@ def test_a_short_game_you_finished_counts_as_well_played(session):
     short = entry_for(session, 10, 3 * 60, player_hours=[0.5, 1, 2, 3, 4], sample=400)
     score = PlayScale(library + [short]).score(short)
     assert score.players == pytest.approx(0.75)  # three hours is a lot for a game most finish in two
-    assert score.parts["hours"] > 0.6  # while against your other games it ranks bottom
+    library_rank = PlayScale(library + [short])._percentile("hours", 180)
+    assert library_rank < 0.2  # against your other games it ranks bottom...
+    assert library_rank + 0.25 < score.parts["hours"] < 0.75  # ...so its players lift it, by up to half the way
 
 
 def test_without_the_games_players_your_library_decides(session):

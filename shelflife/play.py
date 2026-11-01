@@ -36,9 +36,14 @@ RARITY_WEIGHT = 0.5
 RECENCY_SHIFT = 0.1  # all play current: +0.1; all play long ago: -0.1 (about the 0.5 recency points of the engagement score)
 PLAY_DISLIKE_MAX = 0.5  # the least-played game counts as at most this much "not for me" (-1 would be a 1-star rating)
 BACKLOG_MAX_MIN = 60  # owned and played under an hour: not played yet, so no verdict
-# How far the game's own players are trusted over your library: a game whose hours come from this
-# many reviewers counts half and half; from 500 (a full sample), the game's players count five sixths.
-PLAYER_SAMPLE_TRUST = 100
+# How far the game's own players are trusted over your library: sample / (sample + this), so a full
+# sample of 500 reviewers counts half and a thin one less. Not more than half: reviewers' hours are not
+# a game's length. People who love a game keep playing it (Half-Life 2's reviewers: median 27 hours,
+# well past its ending), so judged by them alone, a story game you finished once and loved looks
+# barely played. Checked on the owner's games: at up to half, play agrees with ratings as before
+# (+0.340 against +0.341) and both play-only and the mix predict better; at up to five sixths, play
+# agreed less (+0.309). It still pulls down endless and idle games you over-played (TBH: Task Bar Hero).
+PLAYER_SAMPLE_TRUST = 500
 
 
 def players_percentile(hours: float, percentiles: list[float]) -> float:

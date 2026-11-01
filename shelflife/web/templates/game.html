@@ -125,7 +125,7 @@
       {% if play.players is not none %}
       <p class="meta">Against this game's own players: you played more than <strong>{{ "%.0f"|format(play.players * 100) }}%</strong> of the {{ game.player_hours_sample }} reviewers whose hours are known
         (half of them played under {{ "%.0f"|format(game.player_hours[2]) }} hours, a quarter over {{ "%.0f"|format(game.player_hours[3]) }}).
-        Your hours count mostly against them, a little against your other games.</p>
+        Your hours count up to half against them, the rest against your other games: people who love a game often keep playing it long after the end.</p>
       {% endif %}
       {% endif %}
       {% if recency %}
