@@ -28,7 +28,7 @@ from shelflife.quality import quality_factor
 from shelflife.recency import recency
 from shelflife.discover_job import SECONDS_PER_GAME, job as discover_job
 from shelflife.discovery import MIN_REVIEWS
-from shelflife.recommend import explain, interest_mix, play_score_of, recommend, score_all, taste_profile, top_taste_tags
+from shelflife.recommend import explain, in_your_mix, interest_mix, play_score_of, recommend, score_all, taste_profile, top_taste_tags
 from shelflife.score import engagement_score
 from shelflife.settings import LEARN_FROM_PLAY_HELP, get_hide_adult, get_learn_from_play, set_hide_adult, set_learn_from_play
 from shelflife.learned import text_index
@@ -305,6 +305,10 @@ def library(
         "recent": lambda r: (r["last_played"] is None, -(r["last_played"].timestamp() if r["last_played"] else 0)),
     }
     rows.sort(key=keys.get(sort, keys["hours"]))
+    if sort == "fit":  # games with a fit follow your mix, like the recommendation lists; the rest after
+        fitted = {r["game"].steam_app_id: r for r in rows if r["fit"] is not None}
+        order = in_your_mix(session, ratings, diary.load_not_interested(session), [scores.by_id[i] for i in fitted])
+        rows = [fitted[r.game.steam_app_id] for r in order] + [r for r in rows if r["fit"] is None]
 
     pages = max(1, -(-len(rows) // PAGE_SIZE))
     page = max(1, min(whole(page, 1), pages))
@@ -397,6 +401,8 @@ def explore(
     sorts = ("similar", "reviews", "name") if ref is not None else ("fit", "reviews", "name")
     sort = sort if sort in sorts else sorts[0]
     recs.sort(key=keys[sort])
+    if sort == "fit":
+        recs = in_your_mix(session, ratings, not_interested, recs)
 
     pages = max(1, -(-len(recs) // EXPLORE_PAGE_SIZE))
     page = max(1, min(whole(page, 1), pages))
@@ -571,6 +577,8 @@ def wishlist_page(
         "name": lambda r: r.game.name.lower(),
     }
     recs.sort(key=keys[sort])
+    if sort == "fit":
+        recs = in_your_mix(session, ratings, not_interested, recs)
 
     pages = max(1, -(-len(recs) // EXPLORE_PAGE_SIZE))
     page = max(1, min(whole(page, 1), pages))

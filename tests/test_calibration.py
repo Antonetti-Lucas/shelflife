@@ -91,3 +91,64 @@ def test_the_recommendations_page_shows_your_mix(session, two_loves):
     with TestClient(app) as client:
         html = client.get("/").text
     assert "follows the mix of games you like" in html and "Stealth" in html
+
+
+# ---- every list ranked by fit follows your mix, not only the home page ----
+
+
+def first_names(html, n):
+    import re
+
+    return re.findall(r'<h3><a href="/game/\d+">([^<]+)</a></h3>', html)[:n]
+
+
+@pytest.fixture
+def rated(session, two_loves):
+    from shelflife import diary
+
+    for app_id, rating in two_loves.items():
+        diary.save_rating(session, app_id, rating)
+    return two_loves
+
+
+def test_explore_best_fit_follows_your_mix(session, rated, monkeypatch):
+    with TestClient(app) as client:
+        varied = first_names(client.get("/explore").text, 8)
+        assert any(name.startswith("New platformer") for name in varied)
+        assert len(varied) == 8
+        monkeypatch.setattr(recommend, "CALIBRATION", 0.0)
+        recommend.clear_cache()
+        plain = first_names(client.get("/explore").text, 8)
+        assert not any(name.startswith("New platformer") for name in plain)
+
+
+def test_explore_other_sorts_are_left_alone(session, rated):
+    with TestClient(app) as client:
+        names = first_names(client.get("/explore?sort=name").text, 30)
+    assert names == sorted(names, key=str.lower)
+
+
+def test_the_wishlist_best_fit_follows_your_mix(session, rated):
+    from datetime import datetime
+
+    from shelflife.models import WishlistItem
+
+    for app_id in list(range(10, 22)) + list(range(30, 34)):
+        session.add(WishlistItem(steam_app_id=app_id, priority=0, seen_at=datetime(2026, 6, 1)))
+    session.commit()
+    with TestClient(app) as client:
+        top = first_names(client.get("/wishlist").text, 8)
+    assert any(name.startswith("New platformer") for name in top)
+
+
+def test_the_library_best_recommendation_follows_your_mix(session, rated):
+    for i in range(60, 72):  # owned, not played yet: the library's recommended games
+        add_game(session, i, f"Owned stealth {i}", tags={"Stealth": 100, "Action": 40, f"Spy{i % 3 + 1}": 30}, reviews=(900, 100))
+    for i in range(80, 84):
+        add_game(session, i, f"Owned platformer {i}", tags={"Platformer": 100, "Pixel Graphics": 40, "Jump": 25}, reviews=(900, 100))
+    import re
+
+    with TestClient(app) as client:
+        html = client.get("/library?sort=fit").text
+    names = re.findall(r'<a href="/game/\d+">(Owned [^<]+)</a>', html)[:8]
+    assert any(name.startswith("Owned platformer") for name in names)

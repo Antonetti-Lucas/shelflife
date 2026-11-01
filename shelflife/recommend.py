@@ -82,6 +82,7 @@ CALIBRATION = 0.6
 CALIBRATED_PLACES = 60  # the first places are calibrated; the rest stay in score order
 CALIBRATION_POOL = 300  # the best-scoring games those places are chosen from
 CALIBRATION_FLOOR = 0.5  # ...as long as they score at least half of the best one
+CALIBRATED_KEPT = 64  # filtered lists (a search, a tag) put in order and kept, until the data changes
 KINDS_PER_GAME = 3
 KINDS_IN_MIX = 30  # your mix keeps your main kinds; a list may hold others, they just don't count toward it
 MIX_SMOOTHING = 0.01  # keeps the measure finite while a kind is still missing from the list (Steck)
@@ -590,6 +591,8 @@ def calibrate(recs: list[Recommendation], model: _Model, places: int = CALIBRATE
         return list(recs)
     key = tuple(r.game.steam_app_id for r in recs)
     if key not in model.calibrated:
+        if len(model.calibrated) >= CALIBRATED_KEPT:
+            model.calibrated.clear()
         best = max((r.score for r in recs[:CALIBRATION_POOL]), default=0.0)
         scale = best if best > 0 else 1.0
         # Variety only among good fits: a kind you like is never filled with a game you'd barely like.
@@ -614,6 +617,15 @@ def calibrate(recs: list[Recommendation], model: _Model, places: int = CALIBRATE
         model.calibrated[key] = order + [r.game.steam_app_id for r in recs if r.game.steam_app_id not in chosen]
     by_id = {r.game.steam_app_id: r for r in recs}
     return [by_id[i] for i in model.calibrated[key]]
+
+
+def in_your_mix(
+    session: Session, ratings: dict[int, float], not_interested: dict[int, str], recs: list[Recommendation]
+) -> list[Recommendation]:
+    """Any list ranked by fit (Explore, the wishlist, the library), best score first, with its top
+    calibrated to your mix like the recommendation lists."""
+    model, _ = _cached(session, ratings, not_interested)
+    return calibrate(sorted(recs, key=lambda r: -r.score), model)
 
 
 def interest_mix(session: Session, ratings: dict[int, float], not_interested: dict[int, str]) -> dict[str, float]:
