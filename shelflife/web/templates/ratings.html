@@ -7,7 +7,7 @@
 </a>
 {% endmacro %}
 
-<h2>My ratings <small>{{ rated|length }} games</small></h2>
+<h2>My ratings <small>{{ rated_total }} games</small></h2>
 {% if rated %}
 <div class="rows">
   {% for e, g in rated %}
@@ -17,7 +17,7 @@
     <div class="row-body">
       <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a> <small>updated {{ e.updated_at.strftime("%Y-%m-%d") }}</small></h3>
       <form method="post" action="/game/{{ g.steam_app_id }}/rate" class="edit">
-        <input type="hidden" name="next" value="/ratings#g{{ g.steam_app_id }}">
+        <input type="hidden" name="next" value="{{ here }}#g{{ g.steam_app_id }}">
         <select name="rating" aria-label="Rating for {{ g.name }}">
           <option value="">Not rated</option>
           {% for o in RATING_OPTIONS %}<option value="{{ o }}" {{ "selected" if e.rating == o }}>{{ o }}</option>{% endfor %}
@@ -28,13 +28,20 @@
       <form method="post" action="/game/{{ g.steam_app_id }}/rate" class="inline" onsubmit='return confirm({{ msg|tojson }})'>
         <input type="hidden" name="rating" value="">
         <input type="hidden" name="review" value="">
-        <input type="hidden" name="next" value="/ratings">
+        <input type="hidden" name="next" value="{{ here }}">
         <button class="ghost danger" type="submit">Delete rating and review</button>
       </form>
     </div>
   </article>
   {% endfor %}
 </div>
+{% if pages > 1 %}
+<p class="pager">
+  {% if page > 1 %}<a href="/ratings?page={{ page - 1 }}">← Previous</a>{% else %}<span class="off">← Previous</span>{% endif %}
+  <span>Page {{ page }} of {{ pages }}</span>
+  {% if page < pages %}<a href="/ratings?page={{ page + 1 }}">Next →</a>{% else %}<span class="off">Next →</span>{% endif %}
+</p>
+{% endif %}
 {% else %}
   <p class="empty">Nothing rated yet. Rate games from the recommendations or a game's page.</p>
 {% endif %}
@@ -57,6 +64,6 @@
   {% endfor %}
 </div>
 {% else %}
-  <p class="empty">Nothing marked. Games you mark are hidden from recommendations and nudge your taste away from their tags.</p>
+  <p class="empty">Nothing marked. Games you mark are hidden from recommendations; in the mix of ratings and play they also count as a 2-star rating.</p>
 {% endif %}
 {% endblock %}

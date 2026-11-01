@@ -4,6 +4,9 @@ Run from the project root:  python -m scripts.web [--port 8000]
 Then open http://127.0.0.1:8000
 
 It only listens on 127.0.0.1 (this computer) and has no login, so don't expose it.
+
+Run it as one process (no --workers): the Sync and Find-more-games tasks, their Stop buttons and
+the model kept between pages live in that process, and a second one would not see them.
 """
 
 import argparse

@@ -110,6 +110,13 @@ templates.env.globals.update(
 )
 
 
+def whole(raw: str | int | None, default: int) -> int:
+    """A page number or size from a link; anything that isn't a plain whole number (a typo, an
+    old bookmark, "abc") gives the default instead of an error page."""
+    text = str(raw if raw is not None else "").strip()
+    return int(text) if text.isascii() and text.isdigit() and len(text) <= 6 else default
+
+
 def safe_next(url: str | None, default: str) -> str:
     """Only redirect to paths on this site."""
     if url and url.startswith("/") and not url.startswith("//"):
@@ -146,14 +153,16 @@ REC_PAGE_PARAMS = {"backlog": "bp", "family": "fp", "wishlist": "wp", "discover"
 @app.get("/")
 def home(
     request: Request,
-    size: int = 12,
-    bp: int = 1,
-    fp: int = 1,
-    dp: int = 1,
-    wp: int = 1,
+    size: str = "12",
+    bp: str = "1",
+    fp: str = "1",
+    dp: str = "1",
+    wp: str = "1",
     session: Session = Depends(get_session),
 ):
+    size = whole(size, 12)
     size = size if size in REC_PAGE_SIZES else 12
+    bp, fp, dp, wp = (whole(x, 1) for x in (bp, fp, dp, wp))
     ratings = diary.load_ratings(session)
     result = recommend(
         session,
@@ -233,7 +242,7 @@ def library(
     status: str = "all",
     tag: str = "",
     match: str = "all",
-    page: int = 1,
+    page: str = "1",
     session: Session = Depends(get_session),
 ):
     ratings = diary.load_ratings(session)
@@ -297,7 +306,7 @@ def library(
     rows.sort(key=keys.get(sort, keys["hours"]))
 
     pages = max(1, -(-len(rows) // PAGE_SIZE))
-    page = max(1, min(page, pages))
+    page = max(1, min(whole(page, 1), pages))
     return templates.TemplateResponse(
         request,
         "library.html",
@@ -330,7 +339,7 @@ def explore(
     match: str = "all",
     like: str = "",
     wishlist: str = "all",
-    page: int = 1,
+    page: str = "1",
     session: Session = Depends(get_session),
 ):
     """Games you don't own: the discovery pool, ranked by how well they fit you, or by
@@ -389,7 +398,7 @@ def explore(
     recs.sort(key=keys[sort])
 
     pages = max(1, -(-len(recs) // EXPLORE_PAGE_SIZE))
-    page = max(1, min(page, pages))
+    page = max(1, min(whole(page, 1), pages))
     return templates.TemplateResponse(
         request,
         "explore.html",
@@ -516,7 +525,7 @@ def wishlist_page(
     rec: str = "all",
     tag: str = "",
     match: str = "all",
-    page: int = 1,
+    page: str = "1",
     session: Session = Depends(get_session),
 ):
     """Your Steam wishlist, ranked by how well each game fits your taste."""
@@ -560,7 +569,7 @@ def wishlist_page(
     recs.sort(key=keys[sort])
 
     pages = max(1, -(-len(recs) // EXPLORE_PAGE_SIZE))
-    page = max(1, min(page, pages))
+    page = max(1, min(whole(page, 1), pages))
     shown = recs[(page - 1) * EXPLORE_PAGE_SIZE : page * EXPLORE_PAGE_SIZE]
     return templates.TemplateResponse(
         request,
@@ -665,19 +674,29 @@ def game_page(request: Request, app_id: int, session: Session = Depends(get_sess
     )
 
 
+RATINGS_PAGE_SIZE = 30
+
+
 @app.get("/ratings")
-def ratings_page(request: Request, session: Session = Depends(get_session)):
+def ratings_page(request: Request, page: str = "1", session: Session = Depends(get_session)):
     entries = session.execute(
         select(DiaryEntry, Game)
         .join(Game, Game.steam_app_id == DiaryEntry.steam_app_id)
         .order_by(DiaryEntry.rating.desc().nulls_last(), Game.name)
     ).all()
+    # A game can have just a review and no rating, so list those too.
+    rated = [(e, g) for e, g in entries if e.rating is not None or e.review]
+    pages = max(1, -(-len(rated) // RATINGS_PAGE_SIZE))
+    page = max(1, min(whole(page, 1), pages))
     return templates.TemplateResponse(
         request,
         "ratings.html",
         {
-            # A game can have just a review and no rating, so list those too.
-            "rated": [(e, g) for e, g in entries if e.rating is not None or e.review],
+            "rated": rated[(page - 1) * RATINGS_PAGE_SIZE : page * RATINGS_PAGE_SIZE],
+            "rated_total": len(rated),
+            "page": page,
+            "pages": pages,
+            "here": current_url(request),
             "marked": [(e, g) for e, g in entries if e.not_interested],
         },
     )
@@ -694,7 +713,7 @@ def diary_page(
     q: str = "",
     tag: str = "",
     match: str = "all",
-    page: int = 1,
+    page: str = "1",
     session: Session = Depends(get_session),
 ):
     """Your games, one status at a time, newest first, with your favorites in a tab."""
@@ -727,7 +746,7 @@ def diary_page(
         if (not needle or needle in g.name.lower()) and matches(g.tags, wanted, match)
     ]
     pages = max(1, -(-len(items) // DIARY_PAGE_SIZE))
-    page = max(1, min(page, pages))
+    page = max(1, min(whole(page, 1), pages))
 
     def url(**changes) -> str:
         """This page with some settings changed (a new tab starts on page 1)."""
