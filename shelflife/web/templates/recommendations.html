@@ -21,10 +21,6 @@
   <a href="/taste">See your taste profile</a>.
   {% if taste.explicit_count + taste.implicit_count == 0 %}<span class="warn">Nothing to learn from yet, so these picks are not based on your taste.</span>{% endif %}
 </p>
-{% if mix %}
-<p class="meta">Each list's top follows the mix of games you like, so one interest can't fill it:
-  {% for kind, share in mix %}{{ kind }} {{ "%.0f"|format(share * 100) }}%{{ ", " if not loop.last }}{% endfor %}, and more.</p>
-{% endif %}
 <p class="sizes">
   Per page:
   {% for s in sizes %}{% if s == size %}<strong>{{ s }}</strong>{% else %}<a href="/?size={{ s }}">{{ s }}</a>{% endif %}{% endfor %}

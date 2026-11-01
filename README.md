@@ -216,8 +216,6 @@ quality = (Wilson lower bound of the positive-review share) ^ 2
 
 The predicted liking, stretched so that a close match reads as one, is shown as the "match" on every pick; it is 0 for a game unlike anything you have a verdict on, and below 0 for one very like a game you rated low (its card names that game). The Wilson bound is cautious with few reviews: about 0.9 at 95% positive, 0.5 at 70%, 0.36 with no review data. Candidates are backlog games (owned, under an hour played), family games you haven't played, and games you don't own (300+ reviews); other editions of games you already have are skipped, and so are games for adults while that switch is on.
 
-**6. Lists that follow your mix.** Sorted by score alone, one big interest can fill a whole list (on the owner's data, 10 of the first 12 games to discover were stealth games). So the top of each list is calibrated (after Steck, "Calibrated Recommendations", RecSys 2018): your mix is the kinds of game you like in their proportions (your liked games' most distinctive tags, each game counting by how much you liked it, shown on the Recommendations page), and each of the first 60 places goes to the game that best trades its score against keeping the list's mix close to yours. Only games scoring at least half of the best one are considered, so variety never comes from a poor fit. The same goes for every list ranked by fit: Explore's and the Wishlist's **Best fit** and the Library's **Best recommendation**. Other sorts (reviews, name, hours) and **Games like this** keep their plain order.
-
 ## Development
 
 ```bash
