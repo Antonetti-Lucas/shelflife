@@ -16,7 +16,7 @@
     {% if note %}<p class="wish">★ {{ note }}</p>{% endif %}
     {% if r.because %}<p class="why">Because you played {{ r.because|join(", ") }}</p>{% endif %}
     {% if r.tags %}<p class="tags">{% if similar_to %}<span class="meta">Shares</span>{% endif %}{% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}</p>{% endif %}
-    {% if r.watch %}<p class="watch">Heads-up: {{ r.watch|join(", ") }} tends to score lower for you.</p>{% endif %}
+    {% if r.watch %}<p class="watch">Heads-up: very like {{ r.watch|join(", ") }}.</p>{% endif %}
     <div class="actions">
       <form method="post" action="/game/{{ g.steam_app_id }}/rate">
         <input type="hidden" name="next" value="{{ next_url }}">

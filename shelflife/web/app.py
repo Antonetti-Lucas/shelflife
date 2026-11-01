@@ -30,7 +30,7 @@ from shelflife.discover_job import SECONDS_PER_GAME, job as discover_job
 from shelflife.discovery import MIN_REVIEWS
 from shelflife.recommend import explain, play_score_of, recommend, score_all, taste_profile, top_taste_tags
 from shelflife.score import engagement_score
-from shelflife.settings import TASTE_MODE_HELP, TASTE_MODES, get_hide_adult, get_taste_mode, set_hide_adult, set_taste_mode
+from shelflife.settings import LEARN_FROM_PLAY_HELP, get_hide_adult, get_learn_from_play, set_hide_adult, set_learn_from_play
 from shelflife.learned import text_index
 from shelflife.similar import search_tags, similar_to, tag_idf
 from shelflife.stats import compute_stats
@@ -208,7 +208,7 @@ def home(
             "size": size,
             "sizes": REC_PAGE_SIZES,
             "ratings": ratings,
-            "taste_mode": TASTE_MODES[get_taste_mode(session)],
+            "learn_from_play": get_learn_from_play(session),
         },
     )
 
@@ -672,7 +672,7 @@ def game_page(request: Request, app_id: int, session: Session = Depends(get_sess
             "find_counts": FIND_COUNTS,
             "wish_note": wishlist_note(session.get(WishlistItem, app_id), game),
             "play": play_score_of(session, app_id),
-            "taste_mode": get_taste_mode(session),
+            "learn_from_play": get_learn_from_play(session),
         },
     )
 
@@ -804,19 +804,16 @@ def taste_page(request: Request, session: Session = Depends(get_session)):
     taste = taste_profile(session, diary.load_ratings(session), diary.load_not_interested(session))
     ranked = sorted(taste.profile.items(), key=lambda kv: kv[1], reverse=True)
     toward = [(t, v) for t, v in ranked[:20] if v > 0]
-    away = [(t, v) for t, v in ranked[::-1][:12] if v < 0]
-    biggest = max([v for _, v in toward] + [-v for _, v in away] + [1e-9])
+    biggest = max([v for _, v in toward] + [1e-9])
     return templates.TemplateResponse(
         request,
         "taste.html",
         {
             "taste": taste,
             "toward": toward,
-            "away": away,
             "biggest": biggest,
-            "mode": get_taste_mode(session),
-            "modes": TASTE_MODES,
-            "mode_help": TASTE_MODE_HELP,
+            "learn_from_play": get_learn_from_play(session),
+            "learn_help": LEARN_FROM_PLAY_HELP,
             "hide_adult": get_hide_adult(session),
         },
     )
@@ -829,14 +826,11 @@ def change_hide_adult(hide: str = Form("0"), session: Session = Depends(get_sess
     return RedirectResponse("/taste#content", status_code=303)
 
 
-@app.post("/taste/mode")
-def change_taste_mode(mode: str = Form(""), session: Session = Depends(get_session)):
-    """Choose what your taste learns from: ratings, how you play, or both."""
-    try:
-        set_taste_mode(session, mode)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
-    return RedirectResponse("/taste#mode", status_code=303)
+@app.post("/taste/learn-from-play")
+def change_learn_from_play(learn: str = Form("0"), session: Session = Depends(get_session)):
+    """Also learn from games you played but didn't rate, or from your ratings only."""
+    set_learn_from_play(session, learn == "1")
+    return RedirectResponse("/taste#learn", status_code=303)
 
 
 # ---- actions ----------------------------------------------------------------

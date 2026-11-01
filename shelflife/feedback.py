@@ -7,9 +7,6 @@ FEEDBACK_PATH = Path("data/feedback.csv")
 FIELDS = ["steam_app_id", "name", "verdict"]
 NOT_INTERESTED = "not_interested"
 
-# In the taste profile a "not interested" game counts like a 2-star rating.
-NOT_INTERESTED_RATING = 2.0
-
 
 def _read(path: Path) -> list[dict[str, str]]:
     if not path.exists():

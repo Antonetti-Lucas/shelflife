@@ -16,10 +16,10 @@
 {% endmacro %}
 
 <p class="lede">
-  Built from {{ taste.explicit_count }} games you rated and {{ taste.implicit_count }}
-  more judged by how you played them. Taste mode: <strong>{{ taste_mode }}</strong>
-  (<a href="/taste#mode">change</a>). <a href="/taste">See your taste profile</a>.
-  {% if taste.explicit_count + taste.implicit_count == 0 %}<span class="warn">This mode has nothing to learn from yet, so these picks are not based on your taste.</span>{% endif %}
+  Built from {{ taste.explicit_count }} games you rated{% if learn_from_play %} and {{ taste.implicit_count }}
+  you played without rating{% else %} (games you only played are not used: <a href="/taste#learn">change</a>){% endif %}.
+  <a href="/taste">See your taste profile</a>.
+  {% if taste.explicit_count + taste.implicit_count == 0 %}<span class="warn">Nothing to learn from yet, so these picks are not based on your taste.</span>{% endif %}
 </p>
 <p class="sizes">
   Per page:

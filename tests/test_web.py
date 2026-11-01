@@ -200,7 +200,7 @@ def test_the_ratings_page_lists_ratings_reviews_and_dismissed_games(client, scen
     assert "Delete rating and review" in html and "Undo" in html
 
 
-def test_not_interested_teaches_the_taste_and_can_be_undone(client, scenario):
+def test_not_interested_hides_a_game_without_changing_the_taste_and_can_be_undone(client, scenario):
     before = client.get("/taste").text
     post(client, "/game/40/not-interested", value="1")
     assert "Pool Stealth Good" not in client.get("/").text
@@ -239,16 +239,7 @@ def test_the_game_page_explains_the_score_and_recency(client, scenario):
     html = client.get("/game/1").text
     assert "Engagement score" in html and "recency" in html
     assert "How much your play says you liked it" in html and "50% is your typical played game" in html
-    assert "through your rating and through how you played it" in html  # rated and played, in the mix
-
-
-def test_the_game_page_says_what_teaches_the_taste_in_each_mode(client, scenario, session):
-    from shelflife.settings import set_taste_mode
-
-    set_taste_mode(session, "ratings")
-    assert "play does not teach it" in client.get("/game/1").text
-    set_taste_mode(session, "engagement")
-    assert "your rating is not used" in client.get("/game/1").text
+    assert "Your rating is what this game teaches your taste" in html
 
 
 def test_a_missing_game_is_a_404(client):

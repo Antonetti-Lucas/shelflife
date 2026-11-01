@@ -15,11 +15,10 @@ from shelflife.models import DiaryEntry, Game
 STATUSES = ("playing", "played", "dropped")
 STATUS_LABELS = {"playing": "Playing", "played": "Played", "dropped": "Dropped"}
 
-# A favorite counts as this star rating when the game has no rating of its own (a
-# rating always wins). A status says nothing about taste: "dropped" would mean a
-# story game quit halfway as much as an endless multiplayer game you left after 600
-# hours, so only what you say outright (rating, favorite, not interested) counts.
-FAVORITE_RATING = 5.0
+# Only star ratings (and, if you choose, your play) teach your taste. A favorite is a diary list,
+# "not interested" only hides a game, and a status says nothing about taste either: "dropped"
+# would mean a story game quit halfway as much as an endless multiplayer game you left after
+# 600 hours.
 
 KEEP = object()  # "leave this field as it is" for set_status
 
@@ -46,15 +45,9 @@ def load_not_interested(session: Session) -> dict[int, str]:
     return {app_id: name for app_id, name in rows}
 
 
-def favorite_ratings(session: Session) -> dict[int, float]:
-    """steam_app_id -> the rating a favorite stands in for, for favorites without a
-    rating of their own."""
-    return {
-        e.steam_app_id: FAVORITE_RATING
-        for e in session.scalars(
-            select(DiaryEntry).where(DiaryEntry.rating.is_(None), DiaryEntry.favorite.is_(True))
-        )
-    }
+def favorite_ids(session: Session) -> set[int]:
+    """Your favorites (a diary list: they are in your diary, so they are not recommended)."""
+    return set(session.scalars(select(DiaryEntry.steam_app_id).where(DiaryEntry.favorite.is_(True))))
 
 
 def tracked_ids(session: Session) -> set[int]:

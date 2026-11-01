@@ -1,31 +1,29 @@
 """Recommendations from how well a game fits what you liked, scaled by review quality.
 
-Two things say how much you liked a game, and the taste mode (My taste page) picks which count:
-- your **ratings**: `(rating - 3) / 2`, from -1 (1 star) to +1 (5 stars). In "Mix of both" a
-  favorite you did not rate counts as 5 stars and "not interested" as 2; in "Your ratings only"
-  only real star ratings count.
-- your **play** (shelflife/play.py): how much you played a game compared with the other games
-  you played, from -0.5 (far less than usual) to +1 (far more); 0 is your typical game.
+What teaches your taste, and nothing else:
+- **Your star ratings.** A rating of 3 stars or more says how much you liked a game, `(rating - 3) / 2`
+  (0 to +1), and teaches the broad taste: games like it rise. A rating under 3 says "not this
+  game": it pushes down only games very like it (a sequel, a near-clone), through a narrow
+  likeness (`LOOK_ALIKE_POWER`), never the whole genre. Disliking one horror game says nothing
+  about horror.
+- **Games you played but didn't rate**, when "also learn from games I played but didn't rate" is
+  on (the default, My taste page). Playing a game says you probably liked it; how much you played
+  it (shelflife/play.py: against your other games and the game's own players) says how sure that
+  is. So such a game counts as the rating your played games usually get, with a confidence that
+  grows with your play. Little play means "not sure", never "didn't like it".
 
-shelflife/learned.py learns a taste from each: it predicts, from a game's tags and the words of
-its store text, how much you would like it. "Your ratings only" uses the taste learned from
-ratings, "How you play only" the one learned from play, and "Mix of both" adds the two, each
-weighted by how well it predicts your own ratings (worked out with every rated game left out
-in turn, see `blend`). So in the mix every game teaches through everything known about it: a
-game you rated and played teaches through both.
+Favorites, statuses and the wishlist are diary records and never change your taste; "not
+interested" only hides a game. (Research behind this: PLANS.md, section 8b.)
 
-A status (playing, played, dropped) is a record only: it takes a game out of the candidates
-but does not change what you like.
+shelflife/learned.py does the learning: it predicts, from a game's tags and the words of its store
+text, how much you would like it, fitted to your games one by one. The tag profile (your liked
+games' tags) is kept for the My taste page, for the tags a pick matches and for seeding searches.
 
-The tag profile (the sum of your games' tags times how much each counts) is kept for the My
-taste page, for the tags a pick matches, and for seeding the search for new games.
-
-Candidates come in four lists: games you own but have barely played (backlog), games you can
-play through Steam Family Sharing (family), your wishlist, and well-reviewed games you don't
-have yet (discover). Each is scored by the prediction times a quality factor from Steam reviews.
+Candidates come in four lists: games you own but have barely played (backlog), games you can play
+through Steam Family Sharing (family), your wishlist, and well-reviewed games you don't have yet
+(discover). Each is scored by the prediction times a quality factor from Steam reviews.
 """
 
-import math
 import re
 import threading
 from collections.abc import Callable, Collection, Sequence
@@ -36,37 +34,41 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session, selectinload
 
 from shelflife.db import SessionLocal
-from shelflife.diary import favorite_ratings, tracked_ids
+from shelflife.diary import favorite_ids, tracked_ids
 from shelflife.diary import load_not_interested as diary_not_interested
 from shelflife.diary import load_ratings as diary_ratings
-from shelflife.feedback import NOT_INTERESTED_RATING
 from shelflife.learned import (
     MATCH_SCALE,
+    RIDGE,
     TEXT_WEIGHT,
     LearnedTaste,
     Vector,
+    _solve,
     fit,
     fit_cached,
     likeness,
     text_index,
     unit_tag_vectors,
 )
-from shelflife.models import Game, LibraryEntry
+from shelflife.models import Game
 from shelflife.play import BACKLOG_MAX_MIN, PlayScale, PlayScore, is_played
 from shelflife.quality import quality_factor
-from shelflife.settings import get_hide_adult, get_taste_mode
+from shelflife.settings import get_hide_adult, get_learn_from_play
 from shelflife.tags import compute_idf, is_adult, tag_vector
 
 __all__ = ["BACKLOG_MAX_MIN", "is_played"]  # also imported from here by other modules
 
-NEUTRAL_RATING = 3.0  # a 3-star rating says "an ordinary game for you"; lower ratings push away
-# The mix's share for each taste before your ratings say otherwise (two thirds ratings, one third
-# play); that guess counts as BLEND_PRIOR rated games, so a few ratings move it only a little.
-BLEND_START = (2 / 3, 1 / 3)
-BLEND_PRIOR = 5.0
-SPREAD_FLOOR = 0.05  # a tenth of a star: predictions that vary less than this are treated as saying nothing
-CORRELATION_FLOOR = 0.1  # a taste is never scaled away entirely, even when it predicts poorly
-MIN_GAMES_TO_LEARN = 5  # fewer rated (or played) games than this say nothing about how to weigh the tastes
+NEUTRAL_RATING = 3.0  # 3 stars: an ordinary game for you; under it, a dislike
+# A dislike reaches only games very like the disliked one: likeness (0 to 1) to this power, so a
+# sequel at 0.7 feels half of it (0.34) and a game of the same genre at 0.3 almost nothing (0.03).
+# Measured on the owner's games: ratings +0.438 -> +0.452, rankings +0.317 -> +0.387 (PLANS.md 8).
+LOOK_ALIKE_POWER = 3
+# How sure a game you only played makes the taste: its ridge is RIDGE / (PLAY_CONFIDENCE x play
+# score), so a game you played far more than usual (score near 1) counts about like a rating and
+# one you barely played (score 0.1) about a tenth. Tried 0.1 to 1 on the owner's games; 1 did best.
+PLAY_CONFIDENCE = 1.0
+PLAY_SCORE_FLOOR = 0.05  # the least a played game counts, so it is never infinitely unsure
+WATCH_LIKENESS = 0.6  # a pick this alike to a game you rated low (sequel-close) gets a heads-up naming it
 
 
 def rating_weight(rating: float) -> float:
@@ -106,18 +108,19 @@ class _Lazy(Sequence):
 class Recommendation:
     game: Game
     score: float  # predicted liking x quality
-    similarity: float  # predicted liking, 0 to 1: how well the game fits you
+    similarity: float  # predicted liking, stretched for display: how well the game fits you
     quality: float
-    because: Sequence[str]  # played games that pulled this one up
+    because: Sequence[str]  # games you liked that pulled this one up
     tags: list[str]  # tags of this game that match your taste
-    watch: list[str]  # tags of this game you tend to rate lower
+    watch: list[str]  # games you rated low that this one closely resembles
 
 
 @dataclass(frozen=True)
 class Taste:
     profile: dict[str, float]
-    explicit_count: int
-    implicit_count: int
+    explicit_count: int  # games learned from your ratings
+    implicit_count: int  # games learned from your play alone
+    disliked: list[tuple[Game, float]] = field(default_factory=list)  # (game, your rating), under 3 stars
 
 
 @dataclass(frozen=True)
@@ -133,21 +136,20 @@ class Recommendations:
 class _Model:
     vectors: dict[int, dict[str, float]]
     games: list[Game]
-    mode: str
     session: Session | None = None
+    learn_from_play: bool = True
     hide_adult: bool = False  # leave games for adults out of the lists
     candidates: list[Game] = field(default_factory=list)
     played_titles: set[str] = field(default_factory=set)
     owned_titles: set[str] = field(default_factory=set)
     family_titles: set[str] = field(default_factory=set)
-    # What each taste learns from: (game id, how much you liked it). From your ratings (-1 to +1;
-    # a 3-star rating is a 0 that still counts) and from your play (-0.5 to +1).
-    rating_training: list[tuple[int, float]] = field(default_factory=list)
-    play_training: list[tuple[int, float]] = field(default_factory=list)
-    play_scores: dict[int, PlayScore] = field(default_factory=dict)
-    shown_ratings: dict[int, float] = field(default_factory=dict)  # real ratings, for the reasons on a card
     games_by_id: dict[int, Game] = field(default_factory=dict)
+    shown_ratings: dict[int, float] = field(default_factory=dict)  # your ratings, for the reasons on a card
     scale: PlayScale | None = None  # percentiles of your play, for a game page
+    likes: dict[int, float] = field(default_factory=dict)  # rated 3 stars or more: (rating - 3) / 2
+    dislikes: dict[int, float] = field(default_factory=dict)  # rated under 3 stars
+    played: dict[int, PlayScore] = field(default_factory=dict)  # played, not rated (learned from when the switch is on)
+    rated_and_played: dict[int, float] = field(default_factory=dict)  # what the games you played and rated got
 
     @cached_property
     def tag_units(self) -> dict[int, Vector]:
@@ -162,8 +164,36 @@ class _Model:
         """How much the store text counts: half, once any game has its text; nothing before."""
         return TEXT_WEIGHT if self.text_units else 0.0
 
-    def _learn(self, training: list[tuple[int, float]]) -> LearnedTaste:
-        training = sorted(training)
+    def kernel(self, a: int, b: int) -> float:
+        return likeness(self.tag_units[a], self.text_units.get(a), self.tag_units[b], self.text_units.get(b), self.beta)
+
+    def usual_rating(self, skip: int | None = None) -> float:
+        """What a game you played usually turns out to be, as a rating weight (never below 0: playing
+        a game is never taken as disliking it). One half until you have rated games you played."""
+        got = [r for i, r in self.rated_and_played.items() if i != skip]
+        return max(sum(got) / len(got), 0.0) if got else 0.5
+
+    def confidence(self, app_id: int) -> float:
+        """How sure a game you only played makes the taste, 0 to 1."""
+        return min(PLAY_CONFIDENCE * max(self.played[app_id].value, PLAY_SCORE_FLOOR), 1.0)
+
+    def broad_training(self, skip: int | None = None) -> tuple[list[tuple[int, float]], dict[int, float]]:
+        """(game id, how much you liked it) for every game the broad taste learns from, and the
+        ridge of each game you only played (the less sure, the larger)."""
+        training = [(i, r) for i, r in self.likes.items() if i != skip]
+        ridges: dict[int, float] = {}
+        if self.learn_from_play:
+            usual = self.usual_rating(skip)
+            for i in self.played:
+                if i != skip:
+                    training.append((i, usual))
+                    ridges[i] = RIDGE / self.confidence(i)
+        return training, ridges
+
+    @cached_property
+    def broad(self) -> LearnedTaste:
+        training, ridges = self.broad_training()
+        training.sort()
         key = (
             tuple(training),
             tuple((i, tuple(sorted(self.tag_units[i].items()))) for i, _ in training),
@@ -171,68 +201,44 @@ class _Model:
             len(self.text_units),
             sum(len(v) for v in self.text_units.values()),
         )
-        return fit_cached(key, training, self.tag_units, self.text_units, self.beta, held_out=True)
+        return fit_cached(key, training, self.tag_units, self.text_units, self.beta, ridges=ridges)
+
+    def narrow_alphas(self, skip: int | None = None) -> list[tuple[int, float]]:
+        """The dislikes, as (game id, weight) on the narrow likeness."""
+        ids = [i for i in self.dislikes if i != skip]
+        if not ids:
+            return []
+        gram = [[self.kernel(a, b) ** LOOK_ALIKE_POWER + (RIDGE if x == y else 0.0) for y, b in enumerate(ids)] for x, a in enumerate(ids)]
+        return list(zip(ids, _solve(gram, [self.dislikes[i] for i in ids])))
 
     @cached_property
-    def from_ratings(self) -> LearnedTaste:
-        return self._learn(self.rating_training if self.mode != "engagement" else [])
+    def narrow(self) -> list[tuple[int, float]]:
+        return self.narrow_alphas()
 
-    @cached_property
-    def from_play(self) -> LearnedTaste:
-        return self._learn(self.play_training if self.mode != "ratings" else [])
-
-    def _predict(self, taste: LearnedTaste, app_id: int, left_out: bool = False) -> float:
-        """A taste's prediction for a game; with `left_out`, as if that game had not been learned from."""
-        if left_out and app_id in taste.held_out:
-            return taste.held_out[app_id][0]
-        return taste.predict(self.tag_units[app_id], self.text_units.get(app_id))
-
-    def rated_pairs(self, skip: int | None = None) -> list[tuple[float, float, float]]:
-        """For every rated game: (what the taste from ratings predicts for it, what the taste from
-        play predicts, your rating as it was learned), each prediction made without that game."""
-        return [
-            (predicted, self._predict(self.from_play, app_id, left_out=True), target)
-            for app_id, (predicted, target) in self.from_ratings.held_out.items()
-            if app_id != skip
-        ]
-
-    def played_pairs(self, skip: int | None = None) -> list[tuple[float, float]]:
-        """For every played game: (what the taste from play predicts for it without it, its play as learned)."""
-        return [pair for app_id, pair in self.from_play.held_out.items() if app_id != skip]
-
-    @cached_property
-    def blend(self) -> tuple[float, float]:
-        """How much each taste counts: (from ratings, from play)."""
-        return blend(self.mode, self.rated_pairs(), self.played_pairs())
+    def push_down(self, app_id: int, narrow: list[tuple[int, float]]) -> float:
+        return sum(a * self.kernel(app_id, i) ** LOOK_ALIKE_POWER for i, a in narrow if i != app_id)
 
     def liking(self, app_id: int) -> float:
-        """How much more (or less) than your usual game you would like this one, on the scale it was
-        learned on (+1 = two stars above your usual); 0 when it has no tags or nothing is known."""
+        """How much more (or less) than your usual game you would like this one, on the scale of a
+        rating (+1 = two stars above your usual); 0 when it has no tags or nothing is known."""
         if not self.vectors.get(app_id):
             return 0.0
-        by_ratings, by_play = self.blend
-        value = 0.0
-        if by_ratings:
-            value += by_ratings * self._predict(self.from_ratings, app_id)
-        if by_play:
-            value += by_play * self._predict(self.from_play, app_id)
-        return value
+        value = self.broad.predict(self.tag_units[app_id], self.text_units.get(app_id))
+        return value + self.push_down(app_id, self.narrow)
 
     @cached_property
     def weights(self) -> dict[int, float]:
-        """How much each game shapes the tag profile: its rating and its play, weighted as the tastes are."""
-        by_ratings, by_play = self.blend
-        out: dict[int, float] = {}
-        for app_id, w in self.rating_training if by_ratings else ():
-            out[app_id] = out.get(app_id, 0.0) + by_ratings * w
-        for app_id, w in self.play_training if by_play else ():
-            out[app_id] = out.get(app_id, 0.0) + by_play * w
+        """How much each liked game shapes the tag profile: its rating, or for a game you only
+        played, the usual rating times how sure its play makes us."""
+        out = {i: r for i, r in self.likes.items()}
+        if self.learn_from_play:
+            usual = self.usual_rating()
+            out.update({i: usual * self.confidence(i) for i in self.played})
         return out
 
     @cached_property
     def contributors(self) -> list[tuple[float, Game, float | None]]:
-        shown = self.shown_ratings if self.mode != "engagement" else {}
-        return [(w, self.games_by_id[i], shown.get(i)) for i, w in self.weights.items() if w != 0]
+        return [(w, self.games_by_id[i], self.shown_ratings.get(i)) for i, w in self.weights.items() if w > 0]
 
     @cached_property
     def profile(self) -> dict[str, float]:
@@ -244,82 +250,15 @@ class _Model:
 
     @property
     def explicit(self) -> int:
-        """Games learned from your ratings."""
-        return len(self.rating_training) if self.blend[0] else 0
+        return len(self.likes) + len(self.dislikes)
 
     @property
     def implicit(self) -> int:
-        """Games learned from your play alone (not also rated)."""
-        if not self.blend[1]:
-            return 0
-        rated = {i for i, _ in self.rating_training} if self.blend[0] else set()
-        return sum(1 for i, _ in self.play_training if i not in rated)
+        return len(self.played) if self.learn_from_play else 0
 
-
-def _spread(values: list[float]) -> float:
-    if len(values) < 2:
-        return 0.0
-    mean = sum(values) / len(values)
-    return math.sqrt(sum((v - mean) ** 2 for v in values) / len(values))
-
-
-def _correlation(xs: list[float], ys: list[float]) -> float:
-    sx, sy = _spread(xs), _spread(ys)
-    if not sx or not sy:
-        return 0.0
-    mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
-    return sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / (len(xs) * sx * sy)
-
-
-def _scaled(predicted: list[float], targets: list[float]) -> float:
-    """The number that turns predictions into the scale of their targets: as spread out as the
-    targets, times how well they follow them (a weak predictor is held toward your usual liking)."""
-    if len(targets) < MIN_GAMES_TO_LEARN or not _spread(targets):
-        return 1.0  # too few games to tell: as learned
-    correlation = max(_correlation(predicted, targets), CORRELATION_FLOOR)
-    return correlation * _spread(targets) / max(_spread(predicted), SPREAD_FLOOR)
-
-
-def blend(
-    mode: str,
-    rated: list[tuple[float, float, float]],
-    played: list[tuple[float, float]],
-) -> tuple[float, float]:
-    """How much the taste from ratings and the taste from play count: (from ratings, from play).
-
-    `rated` is (taste from ratings, taste from play, your rating) for each rated game and `played`
-    (taste from play, your play) for each played game, every prediction made without that game.
-
-    "Your ratings only" and "How you play only" use one taste, put on the scale of what it learned
-    from. "Mix of both" puts both on the scale of your ratings and shares between them by how much of
-    your ratings each explains: its squared correlation with them (never from a negative one). A
-    plain correlation would overrate a weak taste: play correlating 0.12 explains about 1.5% of your
-    ratings, not a third as much as ratings correlating 0.33 (11%). On the owner's games that is
-    about 13% play, and it predicted ratings better than the 26% that plain correlations gave
-    (+0.426 against +0.409, rankings +0.309 against +0.321, within noise). The share starts from
-    BLEND_START and moves toward what your ratings show as they come in, as if BLEND_PRIOR rated
-    games had said the start. With no ratings, the mix is play alone; with no play, ratings alone.
-    """
-    ratings_only = (_scaled([r for r, _, _ in rated], [y for _, _, y in rated]), 0.0)
-    play_only = (0.0, _scaled([p for p, _ in played], [y for _, y in played]))
-    if mode == "ratings" or (mode == "mix" and not played):
-        return ratings_only if rated else (1.0, 0.0)
-    if mode == "engagement" or not rated:
-        return play_only if played else (0.0, 1.0)
-
-    from_r = [r for r, _, _ in rated]
-    from_p = [p for _, p, _ in rated]
-    yours = [y for _, _, y in rated]
-    n = len(rated) if len(rated) >= MIN_GAMES_TO_LEARN else 0  # too few games to tell: the starting shares
-    explained_r = max(_correlation(from_r, yours), 0.0) ** 2
-    explained_p = max(_correlation(from_p, yours), 0.0) ** 2
-    shown = explained_r / (explained_r + explained_p) if explained_r + explained_p else BLEND_START[0]
-    share = (n * shown + BLEND_PRIOR * BLEND_START[0]) / (n + BLEND_PRIOR)
-    # Each taste as spread out as the other, then shared, then put on the scale of your ratings.
-    spread_r, spread_p = max(_spread(from_r), SPREAD_FLOOR), max(_spread(from_p), SPREAD_FLOOR)
-    combined = [share * r / spread_r + (1 - share) * p / spread_p for r, p in zip(from_r, from_p)]
-    scale = _scaled(combined, yours)
-    return (scale * share / spread_r, scale * (1 - share) / spread_p)
+    @cached_property
+    def disliked(self) -> list[tuple[Game, float]]:
+        return sorted(((self.games_by_id[i], self.shown_ratings[i]) for i in self.dislikes), key=lambda gr: (gr[1], gr[0].name))
 
 
 @dataclass(frozen=True)
@@ -367,6 +306,49 @@ def play_scale(games: list[Game]) -> PlayScale:
     return PlayScale(g.library_entry for g in games if is_played(g.library_entry, bool(g.family_shared)))
 
 
+def _build_model(
+    session: Session, ratings: dict[int, float], not_interested: dict[int, str], learn_from_play: bool | None = None
+) -> _Model:
+    learn = get_learn_from_play(session) if learn_from_play is None else learn_from_play
+    # In your diary, so not recommended; none of these teach your taste.
+    in_diary = set(not_interested) | favorite_ids(session) | tracked_ids(session)
+
+    games = list(session.scalars(select(Game).where(Game.type == "game").options(selectinload(Game.library_entry))))
+    # Rarity is measured on your own library, not on the pool picked by tag.
+    idf = compute_idf(g.tags for g in games if g.library_entry is not None)
+    vectors = {g.steam_app_id: tag_vector(g.tags, idf) for g in games}
+    scale = play_scale(games)
+
+    model = _Model(
+        vectors, games, session=session, learn_from_play=learn, hide_adult=get_hide_adult(session),
+        shown_ratings=dict(ratings), scale=scale,
+    )
+    for g in games:
+        app_id, entry, family = g.steam_app_id, g.library_entry, bool(g.family_shared)
+        model.games_by_id[app_id] = g
+        if entry is not None:
+            (model.family_titles if family else model.owned_titles).add(_base_name(g.name))
+        rating = ratings.get(app_id)
+        played = is_played(entry, family)
+        if rating is None and not played and app_id not in in_diary:
+            if vectors[app_id]:
+                model.candidates.append(g)
+            continue
+        model.played_titles.add(_base_name(g.name))
+        if not vectors[app_id]:
+            continue
+        if rating is not None:
+            weight = rating_weight(rating)
+            (model.likes if weight >= 0 else model.dislikes)[app_id] = weight
+            if played:
+                model.rated_and_played[app_id] = weight
+        elif played:
+            score = scale.score(entry)
+            if score is not None:
+                model.played[app_id] = score
+    return model
+
+
 # ---- kept between pages until your data changes ----
 #
 # Building the model reads every game and scoring reads it again; with a few thousand games that
@@ -411,7 +393,7 @@ def _cached(session: Session, ratings: dict[int, float], not_interested: dict[in
         if _cache["key"] != key:
             with SessionLocal() as own:
                 model = _build_model(own, ratings, not_interested)
-                model.blend, model.profile, model.text_units  # noqa: B018  (worked out now, while the session is open)
+                model.broad, model.narrow, model.profile, model.disliked  # noqa: B018  (worked out while the session is open)
                 scores = _score_everything(model)
                 model.session = None
             _cache.update(key=key, model=model, scores=scores)
@@ -442,48 +424,6 @@ def play_score_of(session: Session, app_id: int) -> PlayScore | None:
     return model.scale.score(game.library_entry)
 
 
-def _build_model(
-    session: Session, ratings: dict[int, float], not_interested: dict[int, str], mode: str | None = None
-) -> _Model:
-    mode = mode or get_taste_mode(session)
-    # Favorites and "not interested" stand in for ratings in the mix; in every mode they keep a
-    # game out of the candidates.
-    stand_ins = {app_id: NOT_INTERESTED_RATING for app_id in not_interested}
-    stand_ins.update(favorite_ratings(session))
-    tracked = tracked_ids(session)
-
-    games = list(session.scalars(select(Game).where(Game.type == "game").options(selectinload(Game.library_entry))))
-    # Rarity is measured on your own library, not on the pool picked by tag.
-    idf = compute_idf(g.tags for g in games if g.library_entry is not None)
-    vectors = {g.steam_app_id: tag_vector(g.tags, idf) for g in games}
-    scale = play_scale(games)
-
-    model = _Model(vectors, games, mode, session=session, shown_ratings=dict(ratings), hide_adult=get_hide_adult(session), scale=scale)
-    for g in games:
-        app_id, entry, family = g.steam_app_id, g.library_entry, bool(g.family_shared)
-        model.games_by_id[app_id] = g
-        if entry is not None:
-            (model.family_titles if family else model.owned_titles).add(_base_name(g.name))
-        rating = ratings.get(app_id)
-        played = is_played(entry, family)
-        if rating is None and app_id not in stand_ins and not played and app_id not in tracked:
-            if vectors[app_id]:
-                model.candidates.append(g)
-            continue
-        model.played_titles.add(_base_name(g.name))
-        if not vectors[app_id]:
-            continue
-        counted = rating if (rating is not None or mode == "ratings") else stand_ins.get(app_id)
-        if counted is not None:
-            model.rating_training.append((app_id, rating_weight(counted)))
-        if played:
-            score = scale.score(entry)
-            if score is not None:
-                model.play_scores[app_id] = score
-                model.play_training.append((app_id, score.weight))
-    return model
-
-
 def top_taste_tags(
     session: Session,
     ratings: dict[int, float],
@@ -500,7 +440,7 @@ def taste_profile(
     session: Session, ratings: dict[int, float], not_interested: dict[int, str]
 ) -> Taste:
     model, _ = _cached(session, ratings, not_interested)
-    return Taste(model.profile, model.explicit, model.implicit)
+    return Taste(model.profile, model.explicit, model.implicit, model.disliked)
 
 
 def explain(
@@ -523,53 +463,42 @@ def held_out_liking(
     ratings: dict[int, float],
     not_interested: dict[int, str],
     app_ids: Collection[int],
-    mode: str | None = None,
+    learn_from_play: bool | None = None,
 ) -> dict[int, float]:
-    """For checking the model (tools/evaluate.py): how much you would like each game in
-    `app_ids`, predicted with everything known about that game left out of both tastes (its
-    rating, favorite and play) and out of how the mix weighs them. Games without tags are skipped.
-    (Each game's play is still among the percentiles the others are ranked by; that is minor.)"""
-    model = _build_model(session, ratings, not_interested, mode)
+    """For checking the model (tools/evaluate.py): how much you would like each game in `app_ids`,
+    predicted with everything known about that game left out (its rating and its play, also from
+    "what a game you played usually gets"). Games without tags are skipped. (Each game's play is
+    still among the percentiles the others are ranked by; that is minor.)"""
+    model = _build_model(session, ratings, not_interested, learn_from_play)
     known: dict[tuple[int, int], float] = {}
+    worked_out = model.kernel
 
     def kernel(a: int, b: int) -> float:
         key = (a, b) if a <= b else (b, a)
         if key not in known:
-            known[key] = likeness(
-                model.tag_units[a], model.text_units.get(a), model.tag_units[b], model.text_units.get(b), model.beta
-            )
+            known[key] = worked_out(a, b)
         return known[key]
 
-    def without(training: list[tuple[int, float]], app_id: int) -> float:
-        rest = [(i, w) for i, w in training if i != app_id]
-        taste = fit(rest, model.tag_units, model.text_units, model.beta, kernel=kernel)
-        return taste.predict(model.tag_units[app_id], model.text_units.get(app_id))
-
+    model.kernel = kernel  # the same likeness, remembered across the many refits
     out = {}
     for app_id in app_ids:
         if not model.vectors.get(app_id):
             continue
-        by_ratings, by_play = blend(model.mode, model.rated_pairs(skip=app_id), model.played_pairs(skip=app_id))
-        value = 0.0
-        if by_ratings:
-            value += by_ratings * without(model.rating_training, app_id)
-        if by_play:
-            value += by_play * without(model.play_training, app_id)
-        out[app_id] = value
+        training, ridges = model.broad_training(skip=app_id)
+        taste = fit(training, model.tag_units, model.text_units, model.beta, kernel=kernel, ridges=ridges)
+        value = taste.predict(model.tag_units[app_id], model.text_units.get(app_id))
+        out[app_id] = value + model.push_down(app_id, model.narrow_alphas(skip=app_id))
     return out
 
 
 def _because(cand: Game, model: _Model) -> list[str]:
     """The two games you liked that this one is closest to."""
-    tags, text = model.tag_units[cand.steam_app_id], model.text_units.get(cand.steam_app_id)
     pulls = sorted(
         (
             (sim * w, sim, g, r)
             for w, g, r in model.contributors
-            if w > 0 and g.steam_app_id != cand.steam_app_id  # not compared with itself
-            for sim in [
-                likeness(tags, text, model.tag_units[g.steam_app_id], model.text_units.get(g.steam_app_id), model.beta)
-            ]
+            if g.steam_app_id != cand.steam_app_id  # not compared with itself
+            for sim in [model.kernel(cand.steam_app_id, g.steam_app_id)]
         ),
         key=lambda p: p[0],
         reverse=True,
@@ -578,13 +507,14 @@ def _because(cand: Game, model: _Model) -> list[str]:
 
 
 def _score(cand: Game, model: _Model) -> Recommendation:
-    vec = model.vectors[cand.steam_app_id]
-    # Below 0: it resembles games you did not like.
-    similarity = min(model.liking(cand.steam_app_id) * MATCH_SCALE, 1.0)
-
+    app_id = cand.steam_app_id
+    vec = model.vectors[app_id]
+    # Below 0: it closely resembles a game you rated low, or is unlike your usual games.
+    similarity = min(model.liking(app_id) * MATCH_SCALE, 1.0)
     by_tag = sorted(((model.profile.get(t, 0.0) * v, t) for t, v in vec.items()), reverse=True)
-    best = by_tag[0][0] if by_tag else 0.0
-
+    near_dislikes = sorted(
+        ((model.kernel(app_id, i), i) for i in model.dislikes if i != app_id), reverse=True
+    )[:1]
     quality = quality_factor(cand.reviews_positive, cand.reviews_negative)
     return Recommendation(
         game=cand,
@@ -593,7 +523,11 @@ def _score(cand: Game, model: _Model) -> Recommendation:
         quality=quality,
         because=_Lazy(lambda: _because(cand, model)),
         tags=[t for c, t in by_tag[:3] if c > 0],
-        watch=[t for c, t in by_tag[-1:] if c < 0 and -c > 0.1 * best],
+        watch=[
+            f"{model.games_by_id[i].name} (rated {model.shown_ratings[i]:g})"
+            for sim, i in near_dislikes
+            if sim >= WATCH_LIKENESS
+        ],
     )
 
 
@@ -660,6 +594,6 @@ def recommend(
         backlog=top(backlog),
         family=top(family),
         discover=top(discover),
-        taste=Taste(model.profile, model.explicit, model.implicit),
+        taste=Taste(model.profile, model.explicit, model.implicit, model.disliked),
         wishlist=top(wishlist),
     )

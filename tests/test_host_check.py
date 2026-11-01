@@ -29,5 +29,5 @@ def test_a_page_reached_under_another_name_is_refused(client, host):
 def test_a_rebound_page_cannot_change_your_diary_even_from_its_own_origin(client):
     # After DNS rebinding the attacker's page is "same site" to the browser: Origin and Host match.
     headers = {"Host": "evil.example:8000", "Origin": "http://evil.example:8000"}
-    response = client.post("/taste/mode", data={"mode": "ratings"}, headers=headers, follow_redirects=False)
+    response = client.post("/taste/learn-from-play", data={"learn": "0"}, headers=headers, follow_redirects=False)
     assert response.status_code == 400

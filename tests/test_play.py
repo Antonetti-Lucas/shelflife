@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from shelflife.models import LibraryEntry
-from shelflife.play import PLAY_DISLIKE_MAX, RECENCY_SHIFT, PlayScale, PlayScore, is_played
+from shelflife.play import RECENCY_SHIFT, PlayScale, is_played
 
 
 def entry(hours=0.0, achievements=None, rarest=None, recent_min=0, unlock_years_ago=None):
@@ -66,12 +66,6 @@ def test_recent_play_shifts_the_score_up_and_old_play_down_a_little():
 
 def test_nothing_known_about_your_play_means_no_score():
     assert PlayScale([entry(5)]).score(entry(0)) is None
-
-
-def test_play_can_say_not_for_me_but_never_hated():
-    assert PlayScore(1.0, {}, 0.0).weight == pytest.approx(1.0)
-    assert PlayScore(0.5, {}, 0.0).weight == 0
-    assert PlayScore(0.0, {}, 0.0).weight == pytest.approx(-PLAY_DISLIKE_MAX)
 
 
 def test_an_empty_library_ranks_everything_as_typical():

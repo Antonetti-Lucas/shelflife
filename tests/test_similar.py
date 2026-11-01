@@ -15,7 +15,7 @@ from shelflife.similar import MIN_SIMILARITY, SEARCH_TAGS, search_tags, similar_
 from shelflife.store import SpyDetails, SpyListing
 from shelflife.tags import tag_vector
 from shelflife.web import app as web_app
-from shelflife.settings import set_taste_mode
+from shelflife.settings import set_learn_from_play
 from tests.factories import add_game, build_scenario
 
 SAME_SITE = {"Origin": "http://testserver"}
@@ -112,7 +112,7 @@ def test_explore_like_a_game_lists_the_closest_first_and_says_so(client, session
 def test_like_mode_ranks_by_likeness_not_by_your_taste(client, session, world):
     # You love racing games, so plain Explore puts the racing ones first; "like Reference"
     # must still put the stealth game that resembles it first.
-    set_taste_mode(session, "ratings")  # only the rating counts, so plain Explore follows it
+    set_learn_from_play(session, False)  # only the rating counts, so plain Explore follows it
     diary.save_rating(session, 11, 5.0)  # Filler Racing
     plain = names_on(client.get("/explore").text)
     like = names_on(client.get("/explore?like=1").text)

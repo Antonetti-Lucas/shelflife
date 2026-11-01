@@ -147,19 +147,14 @@ def test_favoriting_an_unknown_game_is_an_error(session):
 # ---- what a status says about taste ----
 
 
-def test_only_a_favorite_stands_in_for_a_rating_a_status_never_does(session, game):
+def test_favorites_are_the_games_you_marked_whatever_their_status_or_rating(session, game):
     add_game(session, 8, "Other Game")
     add_game(session, 9, "Plain Game")
     diary.set_status(session, 7, "dropped")
     diary.set_favorite(session, 8, True)
+    diary.save_rating(session, 8, 2.0)
     diary.set_status(session, 9, "played")
-    assert diary.favorite_ratings(session) == {8: diary.FAVORITE_RATING}
-
-
-def test_a_rating_always_wins_over_a_favorite(session, game):
-    diary.save_rating(session, 7, 2.0)
-    diary.set_favorite(session, 7, True)
-    assert diary.favorite_ratings(session) == {}
+    assert diary.favorite_ids(session) == {8}
 
 
 def test_tracked_games_are_those_with_a_status(session, game):
@@ -171,10 +166,10 @@ def test_tracked_games_are_those_with_a_status(session, game):
     assert diary.tracked_ids(session) == {7, 8}
 
 
-def test_a_favorite_that_was_also_dropped_still_counts_as_a_favorite(session, game):
+def test_a_favorite_that_was_also_dropped_is_still_a_favorite(session, game):
     diary.set_status(session, 7, "dropped")
     diary.set_favorite(session, 7, True)
-    assert diary.favorite_ratings(session) == {7: diary.FAVORITE_RATING}
+    assert diary.favorite_ids(session) == {7}
 
 
 def test_load_entries_returns_every_entry_by_game(session, game):

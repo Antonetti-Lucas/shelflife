@@ -1,13 +1,12 @@
-"""The held-out predictions tools/evaluate.py checks the model with: a game's own verdict and
-play must never help predict it."""
+"""The held-out predictions tools/evaluate.py checks the model with: a game's own rating and play
+must never help predict it."""
 
 import pytest
 
-from shelflife.recommend import _build_model, blend, held_out_liking
-from shelflife.settings import get_taste_mode, set_taste_mode
+from shelflife.learned import fit
+from shelflife.recommend import _build_model, held_out_liking
+from shelflife.settings import get_learn_from_play, set_learn_from_play
 from tests.factories import add_game
-
-MODES = ("ratings", "engagement", "mix")
 
 
 @pytest.fixture
@@ -22,30 +21,31 @@ def library(session):
     return {1: 5.0, 2: 5.0, 3: 1.0, 4: 5.0}
 
 
-@pytest.mark.parametrize("mode", MODES)
-def test_a_game_unlike_all_others_is_predicted_from_nothing_however_much_you_loved_and_played_it(session, library, mode):
-    assert held_out_liking(session, library, {}, [4], mode=mode)[4] == pytest.approx(0.0)
+@pytest.mark.parametrize("learn", [True, False])
+def test_a_game_unlike_all_others_is_predicted_from_nothing_however_much_you_loved_and_played_it(session, library, learn):
+    assert held_out_liking(session, library, {}, [4], learn_from_play=learn)[4] == pytest.approx(0.0)
 
 
-@pytest.mark.parametrize("mode", MODES)
-def test_a_game_is_predicted_from_the_games_like_it(session, library, mode):
-    assert held_out_liking(session, library, {}, [1], mode=mode)[1] > 0
+@pytest.mark.parametrize("learn", [True, False])
+def test_a_game_is_predicted_from_the_games_like_it(session, library, learn):
+    assert held_out_liking(session, library, {}, [1], learn_from_play=learn)[1] > 0
 
 
 def test_holding_out_a_rated_game_is_the_same_as_never_having_rated_it(session, library):
-    held = held_out_liking(session, library, {}, [1], mode="ratings")[1]
-    without = _build_model(session, {k: v for k, v in library.items() if k != 1}, {}, mode="ratings")
-    raw = without.from_ratings.predict(without.tag_units[1], without.text_units.get(1))
-    full = _build_model(session, library, {}, mode="ratings")
-    assert held == pytest.approx(blend("ratings", full.rated_pairs(skip=1), [])[0] * raw)
+    held = held_out_liking(session, library, {}, [1], learn_from_play=False)[1]
+    without = _build_model(session, {k: v for k, v in library.items() if k != 1}, {}, learn_from_play=False)
+    training, ridges = without.broad_training()
+    taste = fit(training, without.tag_units, without.text_units, without.beta, ridges=ridges)
+    expected = taste.predict(without.tag_units[1], without.text_units.get(1)) + without.push_down(1, without.narrow_alphas())
+    assert held == pytest.approx(expected)
 
 
-def test_the_check_reads_the_mode_it_is_given_and_never_changes_your_choice(session, library):
-    set_taste_mode(session, "ratings")
-    held_out_liking(session, library, {}, [1, 2], mode="engagement")
-    assert get_taste_mode(session) == "ratings"
+def test_the_check_never_changes_your_choice(session, library):
+    set_learn_from_play(session, False)
+    held_out_liking(session, library, {}, [1, 2], learn_from_play=True)
+    assert get_learn_from_play(session) is False
 
 
 def test_games_without_tags_are_skipped(session, library):
     add_game(session, 5, "No tags", tags={}, minutes=600)
-    assert set(held_out_liking(session, library, {}, [1, 5], mode="mix")) == {1}
+    assert set(held_out_liking(session, library, {}, [1, 5])) == {1}

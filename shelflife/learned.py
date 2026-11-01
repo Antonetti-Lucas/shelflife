@@ -219,12 +219,15 @@ def fit(
     ridge: float = RIDGE,
     kernel: Callable[[int, int], float] | None = None,
     held_out: bool = False,
+    ridges: dict[int, float] | None = None,
 ) -> LearnedTaste:
     """Learn from `training`: (game id, how much you liked it, -1 to 1). `kernel(a, b)` gives
     the likeness of two games when it is already known (the evaluation fits many times over the
     same games); by default it is worked out here. With `held_out`, also work out what each
     training game would have been predicted without it (the standard shortcut for ridge
-    regression, exact apart from your usual liking, which is kept as it is)."""
+    regression, exact apart from your usual liking, which is kept as it is). `ridges` gives a game its
+    own ridge instead of `ridge`: a larger one for a game the model should be less sure about (a game
+    you only played, not rated), so it pulls less."""
     n = len(training)
     if not n:
         return LearnedTaste(beta=beta)
@@ -238,7 +241,7 @@ def fit(
     gram = [[0.0] * n for _ in range(n)]
     for a in range(n):
         for b in range(a, n):
-            gram[a][b] = gram[b][a] = kernel(ids[a], ids[b]) + (ridge if a == b else 0.0)
+            gram[a][b] = gram[b][a] = kernel(ids[a], ids[b]) + ((ridges or {}).get(ids[a], ridge) if a == b else 0.0)
     low = _cholesky(gram)
     alpha = _solve_factored(low, centered)
     left_out = {}
@@ -269,12 +272,13 @@ def fit_cached(
     text_units: dict[int, Vector],
     beta: float,
     held_out: bool = False,
+    ridges: dict[int, float] | None = None,
 ) -> LearnedTaste:
     """`fit`, kept until `key` (your verdicts and the games they were learned from) changes."""
-    key = (key, held_out)
+    key = (key, held_out, tuple(sorted((ridges or {}).items())))
     with _fit_lock:
         if key not in _fit_cache:
             if len(_fit_cache) >= FIT_CACHE_SIZE:
                 del _fit_cache[next(iter(_fit_cache))]  # the oldest
-            _fit_cache[key] = fit(training, tag_units, text_units, beta, held_out=held_out)
+            _fit_cache[key] = fit(training, tag_units, text_units, beta, held_out=held_out, ridges=ridges)
         return _fit_cache[key]

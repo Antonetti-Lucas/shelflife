@@ -68,12 +68,12 @@
       </div>
       <button type="submit">Save status</button>
     </form>
-    <p class="meta">Dates are optional and are never filled in for you; add them if you want the Stats page to count games by year. <strong>Played</strong> is for a game you finished or played as much as you wanted (an endless multiplayer game fits here); <strong>Dropped</strong> is a game you stopped before the end. A status is a record only and does not change your recommendations: rate the game, make it a favorite or mark it not interested to teach them.</p>
+    <p class="meta">Dates are optional and are never filled in for you; add them if you want the Stats page to count games by year. <strong>Played</strong> is for a game you finished or played as much as you wanted (an endless multiplayer game fits here); <strong>Dropped</strong> is a game you stopped before the end. A status is a record only and does not change your recommendations: rate the game to teach them.</p>
 
     <form method="post" action="/game/{{ game.steam_app_id }}/favorite" class="inline">
       {% if diary and diary.favorite %}
         <input type="hidden" name="value" value="0">
-        <p>★ One of your <strong>favorites</strong>. In the mix of ratings and play, it counts like a 5-star rating until you rate it. <button class="ghost" type="submit">Remove</button></p>
+        <p>★ One of your <strong>favorites</strong>. A favorite is a diary list; it doesn't change your recommendations. <button class="ghost" type="submit">Remove</button></p>
       {% else %}
         <input type="hidden" name="value" value="1">
         <button class="ghost" type="submit">☆ Add to favorites</button>
@@ -88,7 +88,7 @@
          → score {{ "%.2f"|format(match.score) }}</p>
       {% if match.because %}<p class="why">Closest games you played: {{ match.because|join(", ") }}</p>{% endif %}
       {% if match.tags %}<p class="tags">Matching tags: {% for t in match.tags %}<span class="tag">{{ t }}</span>{% endfor %}</p>{% endif %}
-      {% if match.watch %}<p class="watch">Heads-up: {{ match.watch|join(", ") }} tends to score lower for you.</p>{% endif %}
+      {% if match.watch %}<p class="watch">Heads-up: very like {{ match.watch|join(", ") }}.</p>{% endif %}
     {% else %}
       <p class="empty">No tags for this game yet, so there is nothing to compare.</p>
     {% endif %}
@@ -131,14 +131,12 @@
       {% if recency %}
       <p class="meta">
         When you played: {{ recency.detail }}.
-        {% if taste_mode == "ratings" %}
-          Your taste learns from ratings only, so play does not teach it.
-        {% elif taste_mode == "engagement" %}
-          Your taste learns from play only{% if diary and diary.rating is not none %}; your rating is not used{% endif %}.
-        {% elif diary and diary.rating is not none %}
-          In the mix this game teaches your taste through your rating and through how you played it.
+        {% if diary and diary.rating is not none %}
+          Your rating is what this game teaches your taste{% if diary.rating < 3 %}: it pushes down only games very like it{% endif %}.
+        {% elif play and learn_from_play %}
+          Not rated, so it counts as a game you probably liked, as surely as your play says ({{ "%.0f"|format(play.value * 100) }}%); rate it to say for yourself.
         {% elif play %}
-          In the mix its play teaches your taste; rate it to add your own word.
+          Games you only played don't teach your taste (<a href="/taste#learn">change</a>); rate it to teach it.
         {% endif %}
       </p>
       {% endif %}

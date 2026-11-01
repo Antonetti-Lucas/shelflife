@@ -17,8 +17,9 @@ zero: a game without achievements is judged on its hours.
   recency      when you played (recency.py): a small shift up for current play, down for
                play that is long past
 
-0.5 is your typical played game. Below it, your play suggests you liked it less than usual;
-the taste learns that as a mild "not for me" (play can't say you hated a game: see PLAY_DISLIKE_MAX).
+0.5 is your typical played game. The taste (recommend.py) reads it as confidence: a game you
+played far more than usual surely says you liked it, one you barely played hardly says anything.
+It never says you disliked a game.
 """
 
 import math
@@ -34,7 +35,6 @@ HOURS_WEIGHT = 1.0
 COMPLETION_WEIGHT = 1.0
 RARITY_WEIGHT = 0.5
 RECENCY_SHIFT = 0.1  # all play current: +0.1; all play long ago: -0.1 (about the 0.5 recency points of the engagement score)
-PLAY_DISLIKE_MAX = 0.5  # the least-played game counts as at most this much "not for me" (-1 would be a 1-star rating)
 BACKLOG_MAX_MIN = 60  # owned and played under an hour: not played yet, so no verdict
 # How far the game's own players are trusted over your library: sample / (sample + this), so a full
 # sample of 500 reviewers counts half and a thin one less. Not more than half: reviewers' hours are not
@@ -95,12 +95,6 @@ class PlayScore:
     parts: dict[str, float]  # each signal's percentile (hours: against the game's players and your library)
     recency: float  # the shift applied for when you played
     players: float | None = None  # your hours against the game's own players alone, when known
-
-    @property
-    def weight(self) -> float:
-        """What it teaches the taste, -PLAY_DISLIKE_MAX to +1: 0 for your typical game."""
-        centred = 2 * self.value - 1
-        return centred if centred >= 0 else centred * PLAY_DISLIKE_MAX
 
 
 class PlayScale:

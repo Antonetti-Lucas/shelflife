@@ -15,7 +15,7 @@ Steam knows what you own and how long you've played, but not what you *thought* 
 - **Family Sharing import** (optional): games you can play through a Steam Family.
 - **Wishlist:** your Steam wishlist, read by Sync and ranked by how well each game fits you (it never teaches your taste).
 - **Diary:** 0.5–5 star ratings, reviews, "not interested" marks, a status (playing, played, dropped) with dates, and favorites, stored locally.
-- **Recommendations:** four lists (backlog, family, your wishlist, games you don't own), each pick with a reason. Learn from your ratings, from how you play, or from both.
+- **Recommendations:** four lists (backlog, family, your wishlist, games you don't own), each pick with a reason. Learns from your ratings and, if you like, from the games you played but didn't rate.
 - **Web app:** recommendations, a library you can rate and edit in place, an Explore page with a button to find more games, similar games for any game, a wishlist page, a diary, stats, game pages, your taste profile, a switch to hide games for adults, and a Sync button.
 
 ## Screenshots
@@ -50,7 +50,7 @@ Taken on demo data: popular Steam games with made-up playtime, ratings, diary en
 
 ![My ratings](docs/screenshots/my-ratings.jpg)
 
-**My taste**, the tag profile behind it all, what it learns from, and the switch for games for adults, and **Sync**, which brings everything up to date in the background:
+**My taste**, the tag profile behind it all, the games you rated low, whether to also learn from games you only played, and the switch for games for adults, and **Sync**, which brings everything up to date in the background:
 
 ![My taste](docs/screenshots/taste.jpg)
 
@@ -132,7 +132,7 @@ The same steps exist as command-line scripts (below), for example `python -m scr
 - **Stats:** games and hours in your library, your diary by status, games finished per year, how you rate, and your most played games.
 - **Game page:** why a game fits you, the closest games you liked, how you played it (and how much that play says you liked it, against your other games and the game's own players), your verdict, status and favorite.
 - **My ratings:** your ratings and reviews, paged, to edit or delete in place, and the games you marked "not interested".
-- **My taste:** the tags your taste leans toward and away from, what it learns from (your ratings, how you play, or both), and **Hide games for adults** (on by default): games whose community tags are mostly about sexual content are left out of recommendations and Explore, while games that merely have adult scenes (Cyberpunk 2077, Baldur's Gate 3) stay. Your library, diary and wishlist page always show every game.
+- **My taste:** the tags your taste leans toward, the games you rated low, the switch **Also learn from games I played but didn't rate** (on by default), and **Hide games for adults** (on by default): games whose community tags are mostly about sexual content are left out of recommendations and Explore, while games that merely have adult scenes (Cyberpunk 2077, Baldur's Gate 3) stay. Your library, diary and wishlist page always show every game.
 
 ## Family Sharing (optional)
 
@@ -194,17 +194,16 @@ A game's play score is the average of the signals it has (a missing one is left 
 
 The older **engagement score** (`shelflife/score.py`: points for hours, achievements, rare achievements, current play and recency) is still shown in the Library and on game pages.
 
-**2. What your taste learns from.** Your choice, on the My taste page:
+**2. What your taste learns from** (`shelflife/recommend.py`). Only two things, each with one meaning:
 
-- *Your ratings only*: star ratings, `(rating − 3) / 2`, from −1 to +1. Nothing else.
-- *How you play only*: the play score of every game you played, from −0.5 (far less than usual) to +1 (far more), 0 being your typical game. Ratings, favorites and "not interested" are ignored.
-- *Mix of both* (the default): a taste learned from your ratings and a taste learned from your play, added up. Each counts by how much of your ratings it explains, measured with every rated game left out in turn (its squared correlation with them), starting from two thirds ratings, one third play until there are enough ratings to tell. Here a favorite you didn't rate counts as 5 stars and "not interested" as 2.
+- **Your star ratings.** A rating of 3 stars or more says how much you liked a game, `(rating − 3) / 2` from 0 to +1, and games like it rise. A rating under 3 stars says "not this game": it pushes down only games very like it (a sequel, a near-clone), never its whole genre. Disliking one horror game says nothing about horror.
+- **Games you played but didn't rate**, while **Also learn from games I played but didn't rate** is on (the default). Playing a game says you probably liked it, so it counts as the rating your played games usually get; how much you played it (the play score above) says how sure that is. Little play means "not sure", never "didn't like it".
 
-A status (playing, played, dropped) is a record only: it takes the game out of the recommendations but never changes your taste. "Not interested" always hides the game.
+Favorites, statuses (playing, played, dropped) and your wishlist are diary records: they never change your taste, and a game in your diary isn't recommended. "Not interested" only hides a game.
 
 **3. Learning your taste** (`shelflife/learned.py`). Every game is described two ways: by its tags, each counting by how relevant it is to the game (its votes relative to the game's top tag, squared, for the top 15 tags) and how rare it is in your library; and by the words of the store's "About this game" text that tell games apart (store boilerplate dropped; words used by at least 3 games and at most 15% of them; a description left with fewer than 20 such words, such as one written in another script, counts as none). Two games are as alike as those descriptions are, half tags and half words, so two games with different tags but the same story still match, and a sequel matches its original by the names they share. A ridge regression then learns, from every game you have a verdict on, which kinds of games you like, and predicts that for every other game. Because it is fitted to your games one by one, a game very close to a favourite stays close to it. Nothing is sent anywhere: it is a few hundred games of arithmetic, kept between pages until your data changes.
 
-**How good is it?** `python tools/evaluate.py` predicts every game you rated (and every game you ranked, if you keep `data/rankings.csv`) with everything about that game left out, and compares the predictions with your own verdicts. On the owner's 144 ratings the rank correlation is about +0.43 for ratings only, +0.41 for the mix, and +0.12 for play alone: play is a weak guide to how you'd rate a game, which is why the mix gives it a small share. One person's games, so take the exact numbers lightly.
+**How good is it?** `python tools/evaluate.py` predicts every game you rated (and every game you ranked, if you keep `data/rankings.csv`) with everything about that game left out, and compares the predictions with your own verdicts. On the owner's 144 ratings and 52 ranked games the rank correlation is +0.455 and +0.41 learning from play too, and +0.452 and +0.38 from ratings alone (an earlier design, with three modes and dislikes spreading to whole genres, scored about +0.41 to +0.43 and +0.31). One person's games, so take the exact numbers lightly.
 
 **4. Finding new games.** Explore's **Find more games** button (and `python -m scripts.discover`) works like this: SteamSpy lists every game under a tag, with its review counts. That list is loose (any game with even a few votes for the tag is in it), so games you already have and games with under 300 reviews are dropped, the rest are ranked by the lower bound of their positive-review share (more reviews rank higher at equal praise), and then, going down the ranking with the tags taking turns, each game's own tag votes are read and the game is kept only if the searched tag is among its 10 most voted. The others are remembered, with their tags, so they are not fetched again. Kept games get their store details fetched, about 5 seconds a game in all, and then take part in the rankings. For "games like this one", the tags searched are that game's most distinctive ones and a game must also be at least 15% similar to it. SteamSpy matches tag names in a particular letter case (and a few under older names), so several spellings are tried. Without tags, the search reads SteamSpy's popularity-ordered list instead (up to 3 pages of 1,000 games, a minute apart as SteamSpy asks, and only as many as needed) and keeps the best-reviewed games you don't have, with no tag check.
 
@@ -215,7 +214,7 @@ score = predicted_liking(game) × quality
 quality = (Wilson lower bound of the positive-review share) ^ 2
 ```
 
-The predicted liking, stretched so that a close match reads as one, is shown as the "match" on every pick; it is 0 for a game unlike anything you have a verdict on, and below 0 for one that resembles games you did not like. The Wilson bound is cautious with few reviews: about 0.9 at 95% positive, 0.5 at 70%, 0.36 with no review data. Candidates are backlog games (owned, under an hour played), family games you haven't played, and games you don't own (300+ reviews); other editions of games you already have are skipped, and so are games for adults while that switch is on.
+The predicted liking, stretched so that a close match reads as one, is shown as the "match" on every pick; it is 0 for a game unlike anything you have a verdict on, and below 0 for one very like a game you rated low (its card names that game). The Wilson bound is cautious with few reviews: about 0.9 at 95% positive, 0.5 at 70%, 0.36 with no review data. Candidates are backlog games (owned, under an hour played), family games you haven't played, and games you don't own (300+ reviews); other editions of games you already have are skipped, and so are games for adults while that switch is on.
 
 ## Development
 
