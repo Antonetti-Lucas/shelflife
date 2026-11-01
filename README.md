@@ -58,7 +58,7 @@ Taken on demo data: popular Steam games with made-up playtime, ratings, diary en
 
 ## Setup
 
-You need Python 3.11 or newer, a Steam account, and a free Steam Web API key. (Developed on Python 3.15; the test workflow runs 3.11–3.13.)
+You need Python 3.11 or newer, a Steam account, and a free Steam Web API key. (Developed on Python 3.15; the test workflow runs 3.11–3.15.)
 
 **1. Install**
 
@@ -68,7 +68,7 @@ cd <the repository folder>
 python -m venv .venv
 # Windows:      .venv\Scripts\activate
 # macOS/Linux:  source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt     # or requirements.lock for the exact versions it was tested with
 ```
 
 **2. Get your Steam credentials**
@@ -94,7 +94,7 @@ python -m scripts.web            # then open http://127.0.0.1:8000
 
 Open the **Sync** page and press **Sync now**. It reads your library, wishlist, achievements, store details, game descriptions, review counts and how long other players play your games, in the background with a progress bar and a Stop button, and carries on where it left off if you stop it. It is deliberately slow to respect the services' limits, so the first sync of a few hundred games takes a while (the page says roughly how long); later syncs only re-read what could have changed. Then use **Find more games** on Explore to add games you don't own.
 
-The same steps exist as command-line scripts (below), for example `python -m scripts.top_games` as a quick check that your key works. Your database is `shelflife.db` in the project folder, wherever you start ShelfLife from.
+The same steps exist as command-line scripts (below), for example `python -m scripts.top_games` as a quick check that your key works. Your database is `shelflife.db` in the project folder, wherever you start ShelfLife from; when a new version of ShelfLife changes its tables, it updates the database itself at start-up (keeping everything in it).
 
 **If something goes wrong**
 
@@ -223,7 +223,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-The tests use a temporary database and folder (never your own data) and can't reach the network: any call that gets past the fakes fails the test. Stack: Python, FastAPI with Jinja templates, SQLite through SQLAlchemy, pytest, GitHub Actions. The data model is in `shelflife/models.py`. `python tools/evaluate.py` measures how well the taste predicts your own ratings (see above), so a change to the scoring can be judged by numbers.
+The tests use a temporary database and folder (never your own data) and can't reach the network: any call that gets past the fakes fails the test. Stack: Python, FastAPI with Jinja templates, SQLite through SQLAlchemy, pytest, GitHub Actions. The data model is in `shelflife/models.py`; after changing it, add a migration with `python -m alembic revision --autogenerate -m "what changed"` (read the file it writes), and a test checks that the migrations and the models agree. `requirements.lock` and `requirements-dev.lock` pin exact versions (regenerate with pip-tools' `pip-compile`); CI tests the newest allowed versions on Python 3.11–3.15 and the locked ones on 3.15. `python tools/evaluate.py` measures how well the taste predicts your own ratings (see above), so a change to the scoring can be judged by numbers.
 
 To regenerate the screenshots, `python tools/make_demo_db.py demo.db` builds the demo database (real games fetched from Steam; made-up play history, ratings, diary entries and wishlist), and `DATABASE_URL=sqlite:///demo.db python -m scripts.web --port 8001` runs the app on it. For the Sync page to show its buttons, also set any placeholder `STEAM_API_KEY` and `STEAM_ID` for that run; nothing is sent unless you press a button.
 

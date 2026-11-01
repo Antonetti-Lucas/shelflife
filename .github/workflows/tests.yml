@@ -6,20 +6,38 @@ on:
 
 jobs:
   test:
+    # The newest versions the requirements allow, on every Python ShelfLife supports.
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
           cache: pip
           cache-dependency-path: requirements-dev.txt
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
       - name: Run the tests
         # No secrets and no network: the tests use a temporary database and fake responses.
+        run: python -m pytest -q
+
+  locked:
+    # The exact versions in requirements-dev.lock, so the lock is known to install and pass.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.15"
+          allow-prereleases: true
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
+      - name: Install the locked versions
+        run: pip install -r requirements-dev.lock
+      - name: Run the tests
         run: python -m pytest -q
