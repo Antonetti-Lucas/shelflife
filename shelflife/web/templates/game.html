@@ -121,7 +121,7 @@
       {% endif %}
       {% if play %}
       <p class="meta">How much your play says you liked it: <strong>{{ "%.0f"|format(play.value * 100) }}%</strong>
-        (50% is your typical played game{% for name, label in [("hours", "hours"), ("completion", "achievements unlocked"), ("rarity", "rarest achievement")] %}{% if name in play.parts and not (name == "hours" and play.players is not none) %}; {{ label }}: more than {{ "%.0f"|format(play.parts[name] * 100) }}% of your played games{% endif %}{% endfor %}{% if play.recency %}; when you played: {{ "%+.0f"|format(play.recency * 100) }}{% endif %}).</p>
+        (50% is your typical played game{% for name, label in [("hours", "hours"), ("completion", "achievements unlocked"), ("rarity", "rarest achievement")] %}{% if name in play.parts and not (name == "hours" and play.players is not none) %}; {{ label }}: more than {{ "%.0f"|format(play.parts[name] * 100) }}% of your played games{% endif %}{% endfor %}{% if play.recency %}; {{ "recent play" if play.recency > 0 else "older play" }}: {{ "%+.0f"|format(play.recency * 100) }} points{% endif %}).</p>
       {% if play.players is not none %}
       <p class="meta">Against this game's own players: you played more than <strong>{{ "%.0f"|format(play.players * 100) }}%</strong> of the {{ game.player_hours_sample }} reviewers whose hours are known
         (half of them played under {{ "%.0f"|format(game.player_hours[2]) }} hours, a quarter over {{ "%.0f"|format(game.player_hours[3]) }}).
