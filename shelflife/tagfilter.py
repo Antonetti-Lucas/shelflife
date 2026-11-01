@@ -2,6 +2,7 @@
 
 A game "has" a tag when it is among its TOP_TAGS most voted ones, so a tag a
 single user added to a game does not count. Names match whole and ignore case.
+A tag written with a minus in front ("-Horror") leaves out the games that have it.
 """
 
 from collections import Counter
@@ -45,14 +46,27 @@ def has_any(tags: dict[str, int] | None, wanted: list[str], limit: int = TOP_TAG
     return any(w.lower() in have for w in wanted)
 
 
+def split_excluded(wanted: list[str]) -> tuple[list[str], list[str]]:
+    """(tags a game should have, tags it must not have): "-Horror" means without Horror."""
+    keep = [w for w in wanted if not w.startswith("-")]
+    leave_out = [w[1:].strip() for w in wanted if w.startswith("-") and w[1:].strip()]
+    return keep, leave_out
+
+
 def parse_match(raw: str | None) -> str:
     """"any" or "all" (the default) for how several tags combine."""
     return "any" if (raw or "").strip().lower() == "any" else "all"
 
 
 def matches(tags: dict[str, int] | None, wanted: list[str], match: str = "all") -> bool:
-    """A game passes the tag filter: has every wanted tag, or any of them."""
-    return has_any(tags, wanted) if match == "any" else has_all(tags, wanted)
+    """A game passes the tag filter: has every wanted tag, or any of them, and none of the
+    excluded ones ("-Horror")."""
+    keep, leave_out = split_excluded(wanted)
+    if leave_out:
+        have = top_tag_names(tags)
+        if any(t.lower() in have for t in leave_out):
+            return False
+    return has_any(tags, keep) if match == "any" else has_all(tags, keep)
 
 
 class TagIndex:
@@ -77,5 +91,6 @@ class TagIndex:
         return self._spelling.get(name.lower(), name)
 
     def unknown(self, wanted: list[str]) -> list[str]:
-        """Wanted tags that no game in the set has."""
-        return [w for w in wanted if w.lower() not in self._counts]
+        """Wanted (or excluded) tags that no game in the set has."""
+        keep, leave_out = split_excluded(wanted)
+        return [w for w in keep + leave_out if w.lower() not in self._counts]

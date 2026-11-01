@@ -307,7 +307,7 @@ def post(client, path, **data):
 def start_calls(monkeypatch):
     calls = []
 
-    def start(tags, count, min_reviews, like=None, popular=False):
+    def start(tags, count, min_reviews, like=None, popular=False, exclude=None):
         calls.append((tags, count, min_reviews, like, popular))
         return True
 

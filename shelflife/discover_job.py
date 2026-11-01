@@ -63,6 +63,7 @@ class DiscoverJob(BackgroundJob):
         min_reviews: int,
         like: tuple[int, str] | None = None,
         popular: bool = False,
+        exclude: list[str] | None = None,
     ) -> bool:
         """Start a search; False if one is already running. `like`: (app id, name) of a
         game to find close matches for. `popular`: search SteamSpy's popular games, not tags."""
@@ -79,7 +80,7 @@ class DiscoverJob(BackgroundJob):
         )
         if not started:
             return False
-        self._spawn(lambda: self._work(tags, count, min_reviews, like, popular))
+        self._spawn(lambda: self._work(tags, count, min_reviews, like, popular, exclude))
         return True
 
     def _work(
@@ -89,6 +90,7 @@ class DiscoverJob(BackgroundJob):
         min_reviews: int,
         like: tuple[int, str] | None = None,
         popular: bool = False,
+        exclude: list[str] | None = None,
     ) -> None:
         def progress(phase: str, done: int, total: int, text: str) -> None:
             self._set(phase=phase, done=done, total=total, text=text)
@@ -108,6 +110,7 @@ class DiscoverJob(BackgroundJob):
                     should_stop=self._stop.is_set,
                     like=reference,
                     popular=popular,
+                    exclude=exclude,
                 )
             snapshot = summarize(result, tags, like, popular)
         except Exception as exc:  # never leave the page stuck on "running"

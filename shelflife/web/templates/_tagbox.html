@@ -2,10 +2,10 @@
    a tag matches nothing. Without JavaScript it is a plain text box (comma separated);
    static/tags.js turns it into removable chips. `match` adds the "all of / any of"
    choice (leave it out for the search box that finds new games). #}
-{% macro tag_input(tag, options, match=none, name="tag", list_id="tag-options", placeholder="Add tags, e.g. Roguelike, Co-op") %}
+{% macro tag_input(tag, options, match=none, name="tag", list_id="tag-options", placeholder="Add tags, e.g. Roguelike, Co-op, -Horror") %}
 <div class="tagpicker" data-tagpicker>
   <input type="search" name="{{ name }}" value="{{ tag }}" list="{{ list_id }}" class="tagbox"
-         placeholder="{{ placeholder }}" aria-label="Tags: pick several, or separate them with commas">
+         placeholder="{{ placeholder }}" aria-label="Tags: pick several, or separate them with commas; a minus in front leaves a tag out">
   <datalist id="{{ list_id }}">{% for t in options %}<option value="{{ t }}">{% endfor %}</datalist>
 </div>
 {% if match is not none %}
@@ -14,6 +14,7 @@
   <option value="any" {{ "selected" if match == "any" }}>Any of these tags</option>
 </select>
 {% endif %}
+<p class="meta tagtip">Put a minus in front of a tag to leave out the games that have it (for example <code>-Horror</code>).</p>
 {% endmacro %}
 
 {% macro tag_note(unknown) %}

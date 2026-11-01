@@ -427,11 +427,18 @@ def client(monkeypatch):
         yield c
 
 
-def start_args(monkeypatch):
-    calls = []
+class Calls(list):
+    """The searches started, and the tags the last one left out."""
 
-    def start(tags, count, min_reviews):
+    excluded = None
+
+
+def start_args(monkeypatch):
+    calls = Calls()
+
+    def start(tags, count, min_reviews, exclude=None):
         calls.append((tags, count, min_reviews))
+        calls.excluded = exclude
         return True
 
     monkeypatch.setattr(web_app.discover_job, "start", start)

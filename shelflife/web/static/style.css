@@ -89,6 +89,8 @@ select { padding: 6px 8px; }
 .chip { display: inline-flex; align-items: center; gap: 2px; background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 1px 4px 1px 10px; font-size: 0.85rem; }
 .chipx { background: transparent; border: none; color: inherit; padding: 0 6px; font-size: 1rem; line-height: 1; cursor: pointer; }
 .chipx:hover { color: var(--bad); }
+.chip.not { background: transparent; color: var(--bad); border: 1px solid var(--bad); }
+.tagtip { flex-basis: 100%; margin: 0; font-size: 0.8rem; }
 .tagpicker .tagtext { flex: 1; min-width: 140px; border: none; outline: none; background: transparent; padding: 5px 4px; }
 
 a.button { display: inline-block; background: var(--accent); color: #fff; border-radius: 8px; padding: 6px 14px; }

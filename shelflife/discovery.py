@@ -29,7 +29,7 @@ from shelflife.quality import wilson_lower_bound
 from shelflife.store import SpyDetails, SpyListing
 from shelflife.sync import enrich_one
 from shelflife.similar import MIN_SIMILARITY, similarity
-from shelflife.tagfilter import has_all
+from shelflife.tagfilter import has_all, has_any
 from shelflife.throttle import RateLimited
 
 MIN_REVIEWS = 300  # skip games too obscure for their review score to mean anything
@@ -124,6 +124,7 @@ def _add_by_tags(
     result: FindResult,
     like: tuple[dict[str, float], dict[str, float]] | None,
     spies: dict[int, SpyDetails],
+    exclude: list[str] | None = None,
 ) -> bool:
     """Look through the tags' games and keep the ones really about them. False if it
     ended before choosing anything (stopped, or SteamSpy could not be reached)."""
@@ -180,7 +181,8 @@ def _add_by_tags(
         game.reviews_fetched_at = _now()
         game.tags = spy.tags
         close_enough = like is None or similarity(like[0], spy.tags, like[1]) >= MIN_SIMILARITY
-        if close_enough and has_all(spy.tags, [tag], RELEVANT_TOP):
+        unwanted = bool(exclude) and has_any(spy.tags, exclude)  # one of the tags you left out
+        if close_enough and not unwanted and has_all(spy.tags, [tag], RELEVANT_TOP):
             game.type = None  # not fetched yet; kept
             game.details_fetched_at = None
             spies[game.steam_app_id] = spy
@@ -250,6 +252,7 @@ def find_games(
     should_stop: Callable[[], bool] | None = None,
     like: tuple[dict[str, float], dict[str, float]] | None = None,
     popular: bool = False,
+    exclude: list[str] | None = None,
 ) -> FindResult:
     """Add up to `count` new games that are really about the given tags, and fetch
     their store details.
@@ -257,6 +260,7 @@ def find_games(
     `like`: (a game's tag vector, the tag rarity table) to also require each new game
     to be at least MIN_SIMILARITY similar to that game ("games like this one").
     `popular`: ignore tags and take the best-reviewed of SteamSpy's most popular games.
+    `exclude`: tags a kept game must not have among its top tags (set aside like an off-topic game).
 
     on_progress(phase, done, total, text) reports what it is doing: phase "lists"
     (looking up tags), "check" (reading a game's tags; done = games kept so far),
@@ -271,7 +275,7 @@ def find_games(
     spies: dict[int, SpyDetails] = {}
     if popular:
         _add_popular(session, count, min_reviews, report, stop, result)
-    elif not _add_by_tags(session, tags, count, min_reviews, report, stop, result, like, spies):
+    elif not _add_by_tags(session, tags, count, min_reviews, report, stop, result, like, spies, exclude):
         return result
 
     pending = pending_pool(session)

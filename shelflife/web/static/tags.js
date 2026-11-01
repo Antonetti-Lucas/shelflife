@@ -26,8 +26,10 @@
       chips.textContent = "";
       tags.forEach(function (name, i) {
         var chip = document.createElement("span");
-        chip.className = "chip";
-        chip.textContent = name;
+        var leaveOut = name.charAt(0) === "-";
+        chip.className = leaveOut ? "chip not" : "chip";
+        chip.textContent = leaveOut ? "not " + name.slice(1).trim() : name;
+        if (leaveOut) chip.title = "Leaves out games with this tag";
         var remove = document.createElement("button");
         remove.type = "button";
         remove.className = "chipx";

@@ -37,7 +37,7 @@ from shelflife.stats import compute_stats
 from shelflife.sync_job import STEPS as SYNC_STEPS
 from shelflife.sync_job import job as sync_job
 from shelflife.sync_job import what_is_due
-from shelflife.tagfilter import TagIndex, matches, parse_match, parse_tags
+from shelflife.tagfilter import TagIndex, matches, parse_match, parse_tags, split_excluded
 from shelflife.tags import is_adult
 from shelflife.wishlist import order_key, rank_label
 
@@ -491,12 +491,14 @@ def find_more_games(
         )
         return RedirectResponse("/explore#find", status_code=303)
 
-    wanted = parse_tags(tags)
+    wanted, leave_out = split_excluded(parse_tags(tags))  # "-Horror": search, but set aside games with it
+    index = TagIndex(session.scalars(select(Game.tags)))
+    leave_out = [index.spelling(t) for t in leave_out]
     if wanted:
-        index = TagIndex(session.scalars(select(Game.tags)))
         wanted = [index.spelling(t) for t in wanted][:MAX_FIND_TAGS]
-    else:  # no tags typed: search for the tags you like most
-        wanted = top_taste_tags(session, diary.load_ratings(session), diary.load_not_interested(session))
+    else:  # no tags to search for: the tags you like most, minus any you left out
+        taste = top_taste_tags(session, diary.load_ratings(session), diary.load_not_interested(session))
+        wanted = [t for t in taste if t.lower() not in {x.lower() for x in leave_out}]
     if not wanted:
         discover_job.fail("Rate a few games first so there are taste tags to search for, or type some tags.")
     else:
@@ -504,6 +506,7 @@ def find_more_games(
             wanted,
             choice(count, FIND_COUNTS, 25),
             choice(min_reviews, FIND_MIN_REVIEWS, MIN_REVIEWS),
+            exclude=leave_out,
         )
     return RedirectResponse("/explore#find", status_code=303)
 
