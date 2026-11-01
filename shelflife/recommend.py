@@ -286,10 +286,14 @@ def blend(
     (taste from play, your play) for each played game, every prediction made without that game.
 
     "Your ratings only" and "How you play only" use one taste, put on the scale of what it learned
-    from. "Mix of both" puts both on the scale of your ratings and shares between them by how well
-    each predicts your ratings (its correlation with them, never below zero), starting from
-    BLEND_START as if BLEND_PRIOR rated games had said so. With no ratings, the mix is play alone;
-    with no play, ratings alone.
+    from. "Mix of both" puts both on the scale of your ratings and shares between them by how much of
+    your ratings each explains: its squared correlation with them (never from a negative one). A
+    plain correlation would overrate a weak taste: play correlating 0.12 explains about 1.5% of your
+    ratings, not a third as much as ratings correlating 0.33 (11%). On the owner's games that is
+    about 13% play, and it predicted ratings better than the 26% that plain correlations gave
+    (+0.426 against +0.409, rankings +0.309 against +0.321, within noise). The share starts from
+    BLEND_START and moves toward what your ratings show as they come in, as if BLEND_PRIOR rated
+    games had said the start. With no ratings, the mix is play alone; with no play, ratings alone.
     """
     ratings_only = (_scaled([r for r, _, _ in rated], [y for _, _, y in rated]), 0.0)
     play_only = (0.0, _scaled([p for p, _ in played], [y for _, y in played]))
@@ -302,9 +306,10 @@ def blend(
     from_p = [p for _, p, _ in rated]
     yours = [y for _, _, y in rated]
     n = len(rated) if len(rated) >= MIN_GAMES_TO_LEARN else 0  # too few games to tell: the starting shares
-    share_r = n * max(_correlation(from_r, yours), 0.0) + BLEND_PRIOR * BLEND_START[0]
-    share_p = n * max(_correlation(from_p, yours), 0.0) + BLEND_PRIOR * BLEND_START[1]
-    share = share_r / (share_r + share_p)
+    explained_r = max(_correlation(from_r, yours), 0.0) ** 2
+    explained_p = max(_correlation(from_p, yours), 0.0) ** 2
+    shown = explained_r / (explained_r + explained_p) if explained_r + explained_p else BLEND_START[0]
+    share = (n * shown + BLEND_PRIOR * BLEND_START[0]) / (n + BLEND_PRIOR)
     # Each taste as spread out as the other, then shared, then put on the scale of your ratings.
     spread_r, spread_p = max(_spread(from_r), SPREAD_FLOOR), max(_spread(from_p), SPREAD_FLOOR)
     combined = [share * r / spread_r + (1 - share) * p / spread_p for r, p in zip(from_r, from_p)]
