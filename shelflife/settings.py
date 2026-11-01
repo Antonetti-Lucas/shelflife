@@ -44,3 +44,21 @@ def set_taste_mode(session: Session, mode: str) -> None:
     else:
         row.value = mode
     session.commit()
+
+
+# Games for adults (tags.is_adult) are left out of recommendations and Explore unless you say so.
+DEFAULT_HIDE_ADULT = True
+
+
+def get_hide_adult(session: Session) -> bool:
+    row = session.get(Setting, "hide_adult")
+    return DEFAULT_HIDE_ADULT if row is None else row.value == "1"
+
+
+def set_hide_adult(session: Session, hide: bool) -> None:
+    row = session.get(Setting, "hide_adult")
+    if row is None:
+        session.add(Setting(key="hide_adult", value="1" if hide else "0"))
+    else:
+        row.value = "1" if hide else "0"
+    session.commit()

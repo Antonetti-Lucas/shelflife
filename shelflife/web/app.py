@@ -27,7 +27,7 @@ from shelflife.discover_job import SECONDS_PER_GAME, job as discover_job
 from shelflife.discovery import MIN_REVIEWS
 from shelflife.recommend import explain, play_score_of, recommend, score_all, taste_profile, top_taste_tags
 from shelflife.score import engagement_score
-from shelflife.settings import TASTE_MODE_HELP, TASTE_MODES, get_taste_mode, set_taste_mode
+from shelflife.settings import TASTE_MODE_HELP, TASTE_MODES, get_hide_adult, get_taste_mode, set_hide_adult, set_taste_mode
 from shelflife.learned import text_index
 from shelflife.similar import search_tags, similar_to, tag_idf
 from shelflife.stats import compute_stats
@@ -35,6 +35,7 @@ from shelflife.sync_job import STEPS as SYNC_STEPS
 from shelflife.sync_job import job as sync_job
 from shelflife.sync_job import what_is_due
 from shelflife.tagfilter import TagIndex, matches, parse_match, parse_tags
+from shelflife.tags import is_adult
 from shelflife.wishlist import order_key, rank_label
 
 BASE = Path(__file__).parent
@@ -339,6 +340,8 @@ def explore(
     )
     needle = q.strip().lower()
     games = list(session.scalars(query))
+    if get_hide_adult(session):
+        games = [g for g in games if not is_adult(g.tags)]
     tag_index = TagIndex(g.tags for g in games)
     recs = []
     for game in games:
@@ -781,8 +784,16 @@ def taste_page(request: Request, session: Session = Depends(get_session)):
             "mode": get_taste_mode(session),
             "modes": TASTE_MODES,
             "mode_help": TASTE_MODE_HELP,
+            "hide_adult": get_hide_adult(session),
         },
     )
+
+
+@app.post("/taste/hide-adult")
+def change_hide_adult(hide: str = Form("0"), session: Session = Depends(get_session)):
+    """Leave games for adults out of recommendations and Explore, or show them."""
+    set_hide_adult(session, hide == "1")
+    return RedirectResponse("/taste#content", status_code=303)
 
 
 @app.post("/taste/mode")

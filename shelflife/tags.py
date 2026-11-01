@@ -68,3 +68,20 @@ def cosine(a: dict[str, float], b: dict[str, float]) -> float:
     na = math.sqrt(sum(x * x for x in a.values()))
     nb = math.sqrt(sum(x * x for x in b.values()))
     return dot / (na * nb) if na and nb else 0.0
+
+
+# Games for adults: the community tags say what a game is about. Steam's own content labels do
+# not tell them apart (Atomic Heart and Cyberpunk 2077 carry the same ones, and the Steam
+# version of NEKOPARA none), and one strong tag is not enough either (Cyberpunk's "Nudity" is
+# its third tag; Atomic Heart's first is a joke "Sexual Content"). So a game counts as adult
+# when an adult tag is among its top three AND a second sign is among its top five, or when
+# "Hentai" is among its top ten.
+ADULT_TAGS = frozenset({"Sexual Content", "Hentai", "NSFW"})
+ADULT_SIGNS = frozenset({"Sexual Content", "Hentai", "NSFW", "Nudity", "Visual Novel", "Dating Sim"})
+
+
+def is_adult(tags: dict[str, int] | None) -> bool:
+    ranked = sorted((tags or {}).items(), key=lambda kv: kv[1], reverse=True)
+    names = [t for t, _ in ranked]
+    core = ADULT_TAGS & set(names[:3])
+    return bool(core and (ADULT_SIGNS - core) & set(names[:5])) or "Hentai" in names[:10]

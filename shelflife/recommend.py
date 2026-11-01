@@ -50,8 +50,8 @@ from shelflife.learned import (
 from shelflife.models import Game, LibraryEntry
 from shelflife.play import BACKLOG_MAX_MIN, PlayScale, PlayScore, is_played
 from shelflife.quality import quality_factor
-from shelflife.settings import get_taste_mode
-from shelflife.tags import compute_idf, tag_vector
+from shelflife.settings import get_hide_adult, get_taste_mode
+from shelflife.tags import compute_idf, is_adult, tag_vector
 
 __all__ = ["BACKLOG_MAX_MIN", "is_played"]  # also imported from here by other modules
 
@@ -131,6 +131,7 @@ class _Model:
     games: list[Game]
     mode: str
     session: Session | None = None
+    hide_adult: bool = False  # leave games for adults out of the lists
     candidates: list[Game] = field(default_factory=list)
     played_titles: set[str] = field(default_factory=set)
     owned_titles: set[str] = field(default_factory=set)
@@ -381,7 +382,7 @@ def _build_model(
     vectors = {g.steam_app_id: tag_vector(g.tags, idf) for g in games}
     scale = play_scale(games)
 
-    model = _Model(vectors, games, mode, session=session, shown_ratings=dict(ratings))
+    model = _Model(vectors, games, mode, session=session, shown_ratings=dict(ratings), hide_adult=get_hide_adult(session))
     for g in games:
         app_id, entry, family = g.steam_app_id, g.library_entry, bool(g.family_shared)
         model.games_by_id[app_id] = g
@@ -531,7 +532,7 @@ def _classify(model: _Model) -> tuple[list[Game], list[Game], list[Game]]:
     discover: list[Game] = []
     for cand in model.candidates:
         base = _base_name(cand.name)
-        if base in model.played_titles:
+        if base in model.played_titles or (model.hide_adult and is_adult(cand.tags)):
             continue
         if cand.library_entry is None:
             # A remaster of something you already have access to isn't a discovery.

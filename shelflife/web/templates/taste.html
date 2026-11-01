@@ -29,6 +29,19 @@
   {% endif %}
 </section>
 
+<section id="content">
+  <h3>Games for adults</h3>
+  <form method="post" action="/taste/hide-adult" class="inline">
+    <label><input type="checkbox" name="hide" value="1" {{ "checked" if hide_adult }} onchange="this.form.submit()">
+      Hide games for adults from recommendations and Explore</label>
+    <noscript><button type="submit">Save</button></noscript>
+  </form>
+  <p class="meta">A game counts as one when its community tags are mostly about sexual content (for example
+    "Sexual Content" or "NSFW" among its top three tags together with "Nudity", "Visual Novel" or "Dating Sim").
+    Games with some adult scenes, such as Cyberpunk 2077 or Baldur's Gate 3, are not hidden. Your library,
+    diary and wishlist page always show every game.</p>
+</section>
+
 <div class="two">
   <section>
     <h3>Leans toward</h3>
