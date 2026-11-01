@@ -16,6 +16,8 @@ os.environ["DATABASE_URL"] = f"sqlite:///{(_TMP / 'test.db').as_posix()}"
 # Empty values keep python-dotenv from loading the real ones from a .env in the project folder.
 os.environ["STEAM_API_KEY"] = ""
 os.environ["STEAM_ID"] = ""
+# The test client calls the app "testserver"; the real app answers only to 127.0.0.1 and localhost.
+os.environ["SHELFLIFE_ALLOWED_HOSTS"] = "127.0.0.1,localhost,testserver"
 
 import pytest  # noqa: E402
 

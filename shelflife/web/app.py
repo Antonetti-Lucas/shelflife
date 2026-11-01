@@ -1,9 +1,11 @@
 """Local web app: recommendations, your library, exploring Steam, game pages and your diary.
 
 Runs on your own machine only (see scripts/web.py). There is no login: anyone who
-can reach the port can change your diary, so it binds to 127.0.0.1.
+can reach the port can change your diary, so it binds to 127.0.0.1, answers only requests
+addressed to this computer's own names, and refuses form posts from other sites.
 """
 
+import os
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
@@ -13,6 +15,7 @@ from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -50,6 +53,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ShelfLife", lifespan=lifespan)
+
+# The names this app answers to. Binding to 127.0.0.1 is not enough on its own: a web page can
+# point a name it controls at 127.0.0.1 ("DNS rebinding"), and your browser would then let that
+# page read and change your diary, because to the browser it is the page's own site. Such a
+# request still carries the page's name in its Host header, so anything not on this list is
+# refused. SHELFLIFE_ALLOWED_HOSTS (comma separated) adds names, e.g. a private network address.
+ALLOWED_HOSTS = [h.strip() for h in os.getenv("SHELFLIFE_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if h.strip()]
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 templates = Jinja2Templates(directory=BASE / "templates")
 
