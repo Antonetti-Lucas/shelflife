@@ -50,10 +50,10 @@ def test_a_short_page_is_not_taken_for_the_last(review_pages):
     assert fetch_player_hours(1).sample == 244
 
 
-def test_it_asks_for_ten_years_of_reviews_not_just_the_last(review_pages):
+def test_it_asks_for_a_years_reviews_not_just_the_last_month(review_pages):
     review_pages.pages = [[review(5)] * 30]
     fetch_player_hours(1)
-    assert review_pages.calls[0]["filter"] == "all" and review_pages.calls[0]["day_range"] == 3650
+    assert review_pages.calls[0]["filter"] == "all" and review_pages.calls[0]["day_range"] == 365
 
 
 def test_it_reads_at_most_five_pages(review_pages):

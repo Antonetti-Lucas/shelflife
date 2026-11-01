@@ -54,9 +54,12 @@ def fetch_review_counts(app_id: int, timeout: float = 15) -> ReviewCounts | None
 
 PLAYER_PERCENTILES = (0.10, 0.25, 0.50, 0.75, 0.90)
 PLAYER_PAGES = 5  # 100 reviews a page
-# Reviews from this many days back. Left out, Steam gives only the last year's, which for an older
-# game can be a handful (Zuma's Revenge: 19 of its 1,721); ten years fills the pages.
-PLAYER_DAY_RANGE = 3650
+# Reviews from this many days back, with the "all" filter. Without that filter Steam gives only about
+# the last month's reviews (Zuma's Revenge: 19 of its 1,721); with it, up to a year's, which is as far
+# back as this endpoint goes (asking for more returns the same year, checked on Braid and Zuma's
+# Revenge). So an older game is judged by the people who reviewed it in the last year, often fewer
+# than 500 (Braid: 99), and its own players then count for less against your library ranking.
+PLAYER_DAY_RANGE = 365
 MIN_PLAYER_SAMPLE = 20  # fewer reviewers with hours than this: not worth keeping
 
 
