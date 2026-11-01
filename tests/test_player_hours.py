@@ -41,8 +41,19 @@ def review_pages(monkeypatch):
 def test_it_reads_pages_until_the_reviews_run_out(review_pages):
     review_pages.pages = [[review(h) for h in range(1, 101)], [review(h) for h in range(101, 131)]]
     hours = fetch_player_hours(1)
-    assert len(review_pages.calls) == 2 and hours.sample == 130
+    assert len(review_pages.calls) == 3 and hours.sample == 130  # the third page came back empty
     assert hours.percentiles[2] == pytest.approx(65, abs=1)  # the median of 1..130 hours
+
+
+def test_a_short_page_is_not_taken_for_the_last(review_pages):
+    review_pages.pages = [[review(5)] * 100, [review(5)] * 44, [review(5)] * 100]
+    assert fetch_player_hours(1).sample == 244
+
+
+def test_it_asks_for_ten_years_of_reviews_not_just_the_last(review_pages):
+    review_pages.pages = [[review(5)] * 30]
+    fetch_player_hours(1)
+    assert review_pages.calls[0]["filter"] == "all" and review_pages.calls[0]["day_range"] == 3650
 
 
 def test_it_reads_at_most_five_pages(review_pages):

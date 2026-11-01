@@ -54,6 +54,9 @@ def fetch_review_counts(app_id: int, timeout: float = 15) -> ReviewCounts | None
 
 PLAYER_PERCENTILES = (0.10, 0.25, 0.50, 0.75, 0.90)
 PLAYER_PAGES = 5  # 100 reviews a page
+# Reviews from this many days back. Left out, Steam gives only the last year's, which for an older
+# game can be a handful (Zuma's Revenge: 19 of its 1,721); ten years fills the pages.
+PLAYER_DAY_RANGE = 3650
 MIN_PLAYER_SAMPLE = 20  # fewer reviewers with hours than this: not worth keeping
 
 
@@ -92,14 +95,14 @@ def fetch_player_hours(
     reviews: list[tuple[float, bool]] = []
     cursor = "*"
     for _ in range(pages):
-        data = _get(app_id, timeout, num_per_page=100, cursor=cursor)
+        data = _get(app_id, timeout, num_per_page=100, cursor=cursor, filter="all", day_range=PLAYER_DAY_RANGE)
         page = data.get("reviews") or []
         for r in page:
             hours = (r.get("author") or {}).get("playtime_forever", 0) / 60
             if hours > 0:  # no hours on record: says nothing about how long the game lasts
                 reviews.append((hours, bool(r.get("voted_up"))))
         new = data.get("cursor")
-        if len(page) < 100 or not new or new == cursor:
+        if not page or not new or new == cursor:  # a short page is not always the last one
             break
         cursor = new
     if len(reviews) < MIN_PLAYER_SAMPLE:
