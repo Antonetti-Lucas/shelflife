@@ -145,6 +145,13 @@ def test_explore_marks_wishlisted_games_and_can_show_only_those(client, session,
     assert client.get("/explore?wishlist=banana").text.count("Pool Stealth Bad") >= 1  # anything else means any game
 
 
+def test_explore_can_leave_out_your_wishlist(client, session, scenario):
+    wish(session, 40)  # Pool Stealth Good
+    html = client.get("/explore?wishlist=not").text
+    assert "Pool Stealth Good" not in titles(html) and "Pool Stealth Bad" in titles(html)
+    assert 'value="not" selected' in html
+
+
 def test_the_home_page_has_a_wishlist_list_and_each_game_is_listed_once(client, session, scenario):
     wish(session, 40)
     html = client.get("/").text

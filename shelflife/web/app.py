@@ -37,8 +37,9 @@ from shelflife.stats import compute_stats
 from shelflife.sync_job import STEPS as SYNC_STEPS
 from shelflife.sync_job import job as sync_job
 from shelflife.sync_job import what_is_due
-from shelflife.tagfilter import TagIndex, matches, parse_match, parse_tags, split_excluded
+from shelflife.tagfilter import TagIndex, parse_tags, split_excluded
 from shelflife.tags import is_adult
+from shelflife.web.lists import ListFilter, paginate, recommended, whole
 from shelflife.wishlist import order_key, rank_label
 
 BASE = Path(__file__).parent
@@ -110,13 +111,6 @@ templates.env.globals.update(
 )
 
 
-def whole(raw: str | int | None, default: int) -> int:
-    """A page number or size from a link; anything that isn't a plain whole number (a typo, an
-    old bookmark, "abc") gives the default instead of an error page."""
-    text = str(raw if raw is not None else "").strip()
-    return int(text) if text.isascii() and text.isdigit() and len(text) <= 6 else default
-
-
 def safe_next(url: str | None, default: str) -> str:
     """Only redirect to paths on this site."""
     if url and url.startswith("/") and not url.startswith("//"):
@@ -162,7 +156,6 @@ def home(
 ):
     size = whole(size, 12)
     size = size if size in REC_PAGE_SIZES else 12
-    bp, fp, dp, wp = (whole(x, 1) for x in (bp, fp, dp, wp))
     ratings = diary.load_ratings(session)
     result = recommend(
         session,
@@ -180,14 +173,9 @@ def home(
         ("wishlist", result.wishlist),
         ("discover", result.discover),
     ):
-        pages = max(1, -(-len(recs) // size))
-        page = max(1, min(wanted[key], pages))
-        sections[key] = {
-            "recs": recs[(page - 1) * size : page * size],  # not "items": clashes with dict.items in Jinja
-            "total": len(recs),
-            "page": page,
-            "pages": pages,
-        }
+        part = paginate(recs, wanted[key], size)
+        # "recs", not "items": that clashes with dict.items in Jinja
+        sections[key] = {"recs": part.shown, "total": part.total, "page": part.page, "pages": part.pages}
 
     def page_url(key: str, page: int | None = None) -> str:
         """Link to this page with one list moved to `page`, keeping the others."""
@@ -213,17 +201,8 @@ def home(
     )
 
 
-REC_FILTERS = {"all": None, "50": 50, "25": 25, "10": 10}  # "recommended": top N% by fit
 EXPLORE_PAGE_SIZE = 24
-
-
-def top_share(scores: dict[int, float], percent: int | None) -> set[int] | None:
-    """Ids in the top `percent`% by score; None means no filter."""
-    if percent is None:
-        return None
-    ranked = sorted(scores, key=scores.get, reverse=True)
-    keep = max(1, -(-len(ranked) * percent // 100)) if ranked else 0
-    return set(ranked[:keep])
+EXPLORE_WISHLIST = ("all", "only", "not")  # any game, only wishlisted ones, or none of them
 
 
 def current_url(request: Request) -> str:
@@ -247,12 +226,11 @@ def library(
 ):
     ratings = diary.load_ratings(session)
     entries = diary.load_entries(session)
-    wanted = parse_tags(tag)
-    match = parse_match(match)
+    filters = ListFilter.read(q, tag, match)
     status = status if status in (*diary.STATUSES, "none") else "all"
     scores = score_all(session, ratings, diary.load_not_interested(session))
     scope = scores.backlog | scores.family  # what "recommended" means in the library
-    keep = top_share({i: scores.by_id[i].score for i in scope}, REC_FILTERS.get(rec))
+    rec, keep = recommended(rec, {i: scores.by_id[i].score for i in scope})
     sort = sort or ("fit" if keep is not None else "hours")
 
     query = (
@@ -265,14 +243,11 @@ def library(
     elif source == "family":
         query = query.where(Game.family_shared.is_(True))
 
-    needle = q.strip().lower()
     games = list(session.scalars(query))
     tag_index = TagIndex(g.tags for g in games)  # the whole source, before search and tag filters
     rows = []
     for game in games:
-        if keep is not None and game.steam_app_id not in keep:
-            continue
-        if (needle and needle not in game.name.lower()) or not matches(game.tags, wanted, match):
+        if (keep is not None and game.steam_app_id not in keep) or not filters.keeps(game):
             continue
         mark = entries.get(game.steam_app_id)
         game_status = mark.status if mark else None
@@ -305,25 +280,20 @@ def library(
     }
     rows.sort(key=keys.get(sort, keys["hours"]))
 
-    pages = max(1, -(-len(rows) // PAGE_SIZE))
-    page = max(1, min(whole(page, 1), pages))
+    part = paginate(rows, page, PAGE_SIZE)
     return templates.TemplateResponse(
         request,
         "library.html",
         {
-            "rows": rows[(page - 1) * PAGE_SIZE : page * PAGE_SIZE],
-            "total": len(rows),
-            "q": q,
+            "rows": part.shown,
+            "total": part.total,
             "source": source,
             "sort": sort,
-            "rec": rec if rec in REC_FILTERS else "all",
+            "rec": rec,
             "status": status,
-            "tag": tag,
-            "match": match,
-            "tag_options": tag_index.popular(),
-            "unknown_tags": tag_index.unknown(wanted),
-            "page": page,
-            "pages": pages,
+            **filters.context(tag_index),
+            "page": part.page,
+            "pages": part.pages,
             "here": current_url(request),
         },
     )
@@ -344,21 +314,19 @@ def explore(
 ):
     """Games you don't own: the discovery pool, ranked by how well they fit you, or by
     how like one game (`like`) they are."""
-    wanted = parse_tags(tag)
-    match = parse_match(match)
-    wishlist = "only" if wishlist == "only" else "all"
+    filters = ListFilter.read(q, tag, match)
+    wishlist = wishlist if wishlist in EXPLORE_WISHLIST else "all"
     wished = wishlist_by_id(session)
     ratings = diary.load_ratings(session)
     not_interested = diary.load_not_interested(session)
     scores = score_all(session, ratings, not_interested)
-    keep = top_share({i: scores.by_id[i].score for i in scores.discover}, REC_FILTERS.get(rec))
+    rec, keep = recommended(rec, {i: scores.by_id[i].score for i in scores.discover})
 
     query = (
         select(Game)
         .outerjoin(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
         .where(LibraryEntry.steam_app_id.is_(None), Game.type == "game")
     )
-    needle = q.strip().lower()
     games = list(session.scalars(query))
     if get_hide_adult(session):
         games = [g for g in games if not is_adult(g.tags)]
@@ -366,13 +334,14 @@ def explore(
     recs = []
     for game in games:
         rec_item = scores.by_id.get(game.steam_app_id)  # None: no tags yet
+        on_wishlist = game.steam_app_id in wished
         if (
             rec_item is None
             or game.steam_app_id in not_interested
-            or (needle and needle not in game.name.lower())
             or (keep is not None and game.steam_app_id not in keep)
-            or (wishlist == "only" and game.steam_app_id not in wished)
-            or not matches(game.tags, wanted, match)
+            or (wishlist == "only" and not on_wishlist)
+            or (wishlist == "not" and on_wishlist)
+            or not filters.keeps(game)
         ):
             continue
         recs.append(rec_item)
@@ -397,28 +366,23 @@ def explore(
     sort = sort if sort in sorts else sorts[0]
     recs.sort(key=keys[sort])
 
-    pages = max(1, -(-len(recs) // EXPLORE_PAGE_SIZE))
-    page = max(1, min(whole(page, 1), pages))
+    part = paginate(recs, page, EXPLORE_PAGE_SIZE)
     return templates.TemplateResponse(
         request,
         "explore.html",
         {
-            "recs": recs[(page - 1) * EXPLORE_PAGE_SIZE : page * EXPLORE_PAGE_SIZE],
-            "total": len(recs),
-            "q": q,
+            "recs": part.shown,
+            "total": part.total,
             "sort": sort,
             "sorts": sorts,
             "ref": ref,
             "like_tags": like_tags,
-            "rec": rec if rec in REC_FILTERS else "all",
-            "tag": tag,
-            "match": match,
+            "rec": rec,
             "wishlist": wishlist,
             "notes": {i: wishlist_note(w, session.get(Game, i)) for i, w in wished.items()},
-            "tag_options": tag_index.popular(),
-            "unknown_tags": tag_index.unknown(wanted),
-            "page": page,
-            "pages": pages,
+            **filters.context(tag_index),
+            "page": part.page,
+            "pages": part.pages,
             "here": current_url(request),
             "ratings": ratings,
             "job": discover_job.snapshot(),
@@ -532,8 +496,7 @@ def wishlist_page(
     session: Session = Depends(get_session),
 ):
     """Your Steam wishlist, ranked by how well each game fits your taste."""
-    wanted = parse_tags(tag)
-    match = parse_match(match)
+    filters = ListFilter.read(q, tag, match)
     sort = sort if sort in WISHLIST_SORTS else "fit"
     items = wishlist_by_id(session)
     games = {g.steam_app_id: g for g in session.scalars(select(Game).where(Game.steam_app_id.in_(list(items))))} if items else {}
@@ -552,16 +515,9 @@ def wishlist_page(
         else:
             other += 1  # DLC or software, or no tags to rank it by
 
-    keep = top_share({r.game.steam_app_id: r.score for r in ranked}, REC_FILTERS.get(rec))
+    rec, keep = recommended(rec, {r.game.steam_app_id: r.score for r in ranked})
     tag_index = TagIndex(r.game.tags for r in ranked)
-    needle = q.strip().lower()
-    recs = [
-        r
-        for r in ranked
-        if (keep is None or r.game.steam_app_id in keep)
-        and (not needle or needle in r.game.name.lower())
-        and matches(r.game.tags, wanted, match)
-    ]
+    recs = [r for r in ranked if (keep is None or r.game.steam_app_id in keep) and filters.keeps(r.game)]
     keys = {
         "fit": lambda r: -r.score,
         "priority": lambda r: order_key(items[r.game.steam_app_id]),
@@ -571,30 +527,24 @@ def wishlist_page(
     }
     recs.sort(key=keys[sort])
 
-    pages = max(1, -(-len(recs) // EXPLORE_PAGE_SIZE))
-    page = max(1, min(whole(page, 1), pages))
-    shown = recs[(page - 1) * EXPLORE_PAGE_SIZE : page * EXPLORE_PAGE_SIZE]
+    part = paginate(recs, page, EXPLORE_PAGE_SIZE)
     return templates.TemplateResponse(
         request,
         "wishlist.html",
         {
-            "recs": shown,
-            "notes": {r.game.steam_app_id: wishlist_note(items[r.game.steam_app_id], r.game) for r in shown},
-            "total": len(recs),
+            "recs": part.shown,
+            "notes": {r.game.steam_app_id: wishlist_note(items[r.game.steam_app_id], r.game) for r in part.shown},
+            "total": part.total,
             "on_list": len(items),
             "waiting": waiting,
             "other": other,
             "dismissed": dismissed,
-            "q": q,
             "sort": sort,
             "sorts": WISHLIST_SORTS,
-            "rec": rec if rec in REC_FILTERS else "all",
-            "tag": tag,
-            "match": match,
-            "tag_options": tag_index.popular(),
-            "unknown_tags": tag_index.unknown(wanted),
-            "page": page,
-            "pages": pages,
+            "rec": rec,
+            **filters.context(tag_index),
+            "page": part.page,
+            "pages": part.pages,
             "here": current_url(request),
             "ratings": ratings,
         },
@@ -688,17 +638,15 @@ def ratings_page(request: Request, page: str = "1", session: Session = Depends(g
         .order_by(DiaryEntry.rating.desc().nulls_last(), Game.name)
     ).all()
     # A game can have just a review and no rating, so list those too.
-    rated = [(e, g) for e, g in entries if e.rating is not None or e.review]
-    pages = max(1, -(-len(rated) // RATINGS_PAGE_SIZE))
-    page = max(1, min(whole(page, 1), pages))
+    rated = paginate([(e, g) for e, g in entries if e.rating is not None or e.review], page, RATINGS_PAGE_SIZE)
     return templates.TemplateResponse(
         request,
         "ratings.html",
         {
-            "rated": rated[(page - 1) * RATINGS_PAGE_SIZE : page * RATINGS_PAGE_SIZE],
-            "rated_total": len(rated),
-            "page": page,
-            "pages": pages,
+            "rated": rated.shown,
+            "rated_total": rated.total,
+            "page": rated.page,
+            "pages": rated.pages,
             "here": current_url(request),
             "marked": [(e, g) for e, g in entries if e.not_interested],
         },
@@ -739,17 +687,9 @@ def diary_page(
     if show not in groups:  # no tab chosen: the first one with something in it
         show = next((key for key in DIARY_TABS if counts[key]), "playing")
 
-    wanted = parse_tags(tag)
-    match = parse_match(match)
-    needle = q.strip().lower()
+    filters = ListFilter.read(q, tag, match)
     tag_index = TagIndex(g.tags for _, g in groups[show])
-    items = [
-        (e, g)
-        for e, g in groups[show]
-        if (not needle or needle in g.name.lower()) and matches(g.tags, wanted, match)
-    ]
-    pages = max(1, -(-len(items) // DIARY_PAGE_SIZE))
-    page = max(1, min(whole(page, 1), pages))
+    part = paginate([(e, g) for e, g in groups[show] if filters.keeps(g)], page, DIARY_PAGE_SIZE)
 
     def url(**changes) -> str:
         """This page with some settings changed (a new tab starts on page 1)."""
@@ -757,8 +697,8 @@ def diary_page(
             "show": show,
             "q": q.strip(),
             "tag": tag.strip(),
-            "match": "any" if (wanted and match == "any") else "",  # "all" is the default
-            "page": page,
+            "match": "any" if (filters.wanted and filters.match == "any") else "",  # "all" is the default
+            "page": part.page,
         } | changes
         return "/diary?" + urlencode({k: v for k, v in params.items() if v not in ("", None)})
 
@@ -769,16 +709,12 @@ def diary_page(
             "tabs": DIARY_TABS,
             "counts": counts,
             "show": show,
-            "items": items[(page - 1) * DIARY_PAGE_SIZE : page * DIARY_PAGE_SIZE],
-            "total": len(items),
-            "filtered": bool(needle or wanted),
-            "q": q,
-            "tag": tag,
-            "match": match,
-            "tag_options": tag_index.popular(),
-            "unknown_tags": tag_index.unknown(wanted),
-            "page": page,
-            "pages": pages,
+            "items": part.shown,
+            "total": part.total,
+            "filtered": filters.active,
+            **filters.context(tag_index),
+            "page": part.page,
+            "pages": part.pages,
             "url": url,
         },
     )

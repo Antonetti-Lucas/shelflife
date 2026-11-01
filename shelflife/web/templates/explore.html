@@ -88,6 +88,7 @@
   <select name="wishlist" aria-label="Wishlist">
     <option value="all" {{ "selected" if wishlist == "all" }}>Any game</option>
     <option value="only" {{ "selected" if wishlist == "only" }}>Only my wishlist</option>
+    <option value="not" {{ "selected" if wishlist == "not" }}>Not on my wishlist</option>
   </select>
   <select name="rec" aria-label="Recommended">
     {% for value, label in [("all", "All games"), ("50", "Recommended: top 50%"), ("25", "Recommended: top 25%"), ("10", "Recommended: top 10%")] %}
