@@ -59,11 +59,11 @@
       <td>{{ source_label(g) }}</td>
       <td class="num">
         {% if g.family_shared %}
-          <form method="post" action="/game/{{ g.steam_app_id }}/hours" class="cell">
+          <form method="post" action="/game/{{ g.steam_app_id }}/hours" class="cell" data-inline>
             <input type="hidden" name="next" value="{{ here }}#g{{ g.steam_app_id }}">
             <input type="number" name="hours" min="0" max="100000" step="0.1" placeholder="hours"
                    value="{{ '%g'|format(r.hours) if r.hours else '' }}"
-                   onchange="this.form.submit()" aria-label="Hours played in {{ g.name }}">
+                   onchange="this.form.requestSubmit()" aria-label="Hours played in {{ g.name }}">
           </form>
         {% else %}
           {{ "%.1f"|format(r.hours) if r.hours else "—" }}
@@ -73,18 +73,18 @@
       <td class="num">{{ "%.1f"|format(r.score) }}</td>
       <td class="num">{{ "%.0f"|format(r.fit) if r.fit is not none else "—" }}</td>
       <td class="num">
-        <form method="post" action="/game/{{ g.steam_app_id }}/rate" class="cell">
+        <form method="post" action="/game/{{ g.steam_app_id }}/rate" class="cell" data-inline>
           <input type="hidden" name="next" value="{{ here }}#g{{ g.steam_app_id }}">
-          <select name="rating" class="stars {{ 'unrated' if r.rating is none }}" onchange="this.form.submit()" aria-label="Your rating of {{ g.name }}">
+          <select name="rating" class="stars {{ 'unrated' if r.rating is none }}" onchange="this.form.requestSubmit()" aria-label="Your rating of {{ g.name }}">
             <option value="">—</option>
             {% for o in RATING_OPTIONS %}<option value="{{ o }}" {{ "selected" if r.rating == o }}>{{ stars(o) }} {{ "%g"|format(o) }}</option>{% endfor %}
           </select>
         </form>
       </td>
       <td>
-        <form method="post" action="/game/{{ g.steam_app_id }}/status" class="cell">
+        <form method="post" action="/game/{{ g.steam_app_id }}/status" class="cell" data-inline>
           <input type="hidden" name="next" value="{{ here }}#g{{ g.steam_app_id }}">
-          <select name="status" onchange="this.form.submit()" aria-label="Status of {{ g.name }}">
+          <select name="status" onchange="this.form.requestSubmit()" aria-label="Status of {{ g.name }}">
             <option value="">—</option>
             {% for s in STATUSES %}<option value="{{ s }}" {{ "selected" if r.status == s }}>{{ STATUS_LABELS[s] }}</option>{% endfor %}
           </select>

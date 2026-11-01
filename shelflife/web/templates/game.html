@@ -24,7 +24,7 @@
   <div>
     <section class="panel">
       <h3>Your verdict</h3>
-      <form method="post" action="/game/{{ game.steam_app_id }}/rate" class="stack">
+      <form method="post" action="/game/{{ game.steam_app_id }}/rate" class="stack" data-inline>
         <label>Rating
           <select name="rating" class="stars {{ 'unrated' if not (diary and diary.rating is not none) }}">
             <option value="">Not rated</option>
@@ -62,7 +62,7 @@
 
     <section class="panel">
       <h3>Where you are with it</h3>
-      <form method="post" action="/game/{{ game.steam_app_id }}/status" class="stack">
+      <form method="post" action="/game/{{ game.steam_app_id }}/status" class="stack" data-inline>
         <label>Status
           <select name="status">
             <option value="">Not tracked</option>
@@ -114,7 +114,7 @@
         {% if play %}<div><strong>{{ "%.0f"|format(play.value * 100) }}%</strong><span>play score</span></div>{% endif %}
       </div>
       {% if game.family_shared %}
-      <form method="post" action="/game/{{ game.steam_app_id }}/hours" class="hours">
+      <form method="post" action="/game/{{ game.steam_app_id }}/hours" class="hours" data-inline>
         <label>Hours played
           <input type="number" name="hours" min="0" max="100000" step="0.1"
                  value="{{ '%g'|format(entry.playtime_total_hours) if entry.playtime_total_min else '' }}"

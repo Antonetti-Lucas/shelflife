@@ -326,3 +326,16 @@ button.ghost.danger:hover { color: var(--bad); border-color: var(--bad); }
   .bars li, .bars.wide li { grid-template-columns: 120px 1fr; }
 }
 .row-body h3 small.stars-text { color: var(--star); }
+
+/* ---- saving in place (static/inline.js) ---- */
+[hidden] { display: none !important; }
+.saved { margin-left: 8px; color: var(--accent); font-size: 0.82rem; font-weight: 600; transition: opacity 0.4s; white-space: nowrap; }
+.saved::before { content: "✓ "; }
+.saved.bad { color: var(--bad); }
+.saved.bad::before { content: "! "; }
+.saved.gone { opacity: 0; }
+[aria-busy="true"] { opacity: 0.6; }
+.undo-note { display: flex; align-items: center; gap: 8px; justify-content: center; flex-wrap: wrap; padding: 14px; border: 1px dashed var(--line); border-radius: var(--radius); color: var(--muted); font-size: 0.88rem; }
+tr.undo-note { display: table-row; }
+tr.undo-note td { text-align: center; color: var(--muted); }
+.actions form { display: inline-flex; align-items: center; }

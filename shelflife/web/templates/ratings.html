@@ -17,7 +17,7 @@
     {{ thumb(g) }}
     <div class="row-body">
       <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a> {% if e.rating is not none %}<small class="stars-text">{{ stars(e.rating) }}</small>{% endif %}<small>updated {{ e.updated_at.strftime("%Y-%m-%d") }}</small></h3>
-      <form method="post" action="/game/{{ g.steam_app_id }}/rate" class="edit">
+      <form method="post" action="/game/{{ g.steam_app_id }}/rate" class="edit" data-inline>
         <input type="hidden" name="next" value="{{ here }}#g{{ g.steam_app_id }}">
         <select name="rating" class="stars" aria-label="Rating for {{ g.name }}">
           <option value="">Not rated</option>
@@ -26,7 +26,7 @@
         <textarea name="review" rows="2" placeholder="Add a review" aria-label="Review of {{ g.name }}">{{ e.review or "" }}</textarea>
         <button type="submit">Save</button>
       </form>
-      <form method="post" action="/game/{{ g.steam_app_id }}/rate" class="inline" onsubmit='return confirm({{ msg|tojson }})'>
+      <form method="post" action="/game/{{ g.steam_app_id }}/rate" class="inline" data-inline="remove" onsubmit='return confirm({{ msg|tojson }})'>
         <input type="hidden" name="rating" value="">
         <input type="hidden" name="review" value="">
         <input type="hidden" name="next" value="{{ here }}">

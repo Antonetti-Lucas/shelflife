@@ -393,3 +393,21 @@ def test_the_stats_page_shows_your_numbers(client, scenario):
     assert "games in your library" in html and "10 owned, 1 family" in html
     assert "<li><span>2025 <small>2</small></span>" in html
     assert "average 3.00" in html  # the scenario's ratings are 5 and 1
+
+
+# ---- saving without a reload (static/inline.js) ----
+
+
+def test_small_edits_are_marked_to_save_in_place(client, scenario):
+    home = client.get("/").text
+    assert '<script src="/static/inline.js" defer>' in home
+    assert re.search(r'action="/game/\d+/rate" data-inline>', home)
+    assert re.search(r'action="/game/\d+/not-interested" data-inline="hide">', home)
+    library = client.get("/library").text
+    assert "this.form.submit()" not in library and library.count("data-inline") >= 3  # hours, rating, status
+    assert client.get("/static/inline.js").status_code == 200
+
+
+def test_a_marked_form_still_works_without_the_script(client, scenario):
+    response = post(client, "/game/20/rate", rating="4", next="/library#g20")
+    assert response.status_code == 303 and response.headers["location"] == "/library#g20"

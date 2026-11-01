@@ -38,7 +38,7 @@
         {% if show == "favorites" and e.status %}<small>{{ STATUS_LABELS[e.status] }}</small>{% endif %}
         {% if e.rating is not none %}<small class="stars-text" title="rated {{ rating_text(e.rating) }}">{{ stars(e.rating) }}</small>{% endif %}</h3>
       {% if show == "not-interested" %}
-      <form method="post" action="/game/{{ g.steam_app_id }}/not-interested" class="inline">
+      <form method="post" action="/game/{{ g.steam_app_id }}/not-interested" class="inline" data-inline="remove">
         <input type="hidden" name="value" value="0">
         <input type="hidden" name="next" value="{{ url() }}">
         <span class="meta">marked {{ e.updated_at.strftime("%Y-%m-%d") }}</span>

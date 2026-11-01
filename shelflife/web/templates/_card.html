@@ -1,9 +1,9 @@
 {# One recommendation. `next_url` is where to return after rating or dismissing;
    `rating` is your current rating of the game, if any. #}
 {% macro rating_select(g, next_url, rating) %}
-<form method="post" action="/game/{{ g.steam_app_id }}/rate">
+<form method="post" action="/game/{{ g.steam_app_id }}/rate" data-inline>
   <input type="hidden" name="next" value="{{ next_url }}">
-  <select name="rating" class="stars {{ 'unrated' if rating is none }}" onchange="this.form.submit()" aria-label="Rate {{ g.name }}">
+  <select name="rating" class="stars {{ 'unrated' if rating is none }}" onchange="this.form.requestSubmit()" aria-label="Rate {{ g.name }}">
     <option value="">{{ "☆ Rate" if rating is none else "Not rated" }}</option>
     {% for o in RATING_OPTIONS %}<option value="{{ o }}" {{ "selected" if rating == o }}>{{ stars(o) }} {{ "%g"|format(o) }}</option>{% endfor %}
   </select>
@@ -27,7 +27,7 @@
     {% if r.watch %}<p class="watch">Very like {{ r.watch|join(", ") }}</p>{% endif %}
     <div class="actions">
       {{ rating_select(g, next_url, rating) }}
-      <form method="post" action="/game/{{ g.steam_app_id }}/not-interested">
+      <form method="post" action="/game/{{ g.steam_app_id }}/not-interested" data-inline="hide">
         <input type="hidden" name="next" value="{{ next_url }}">
         <button class="ghost" type="submit" title="Hide it, and push down games very like it">Not interested</button>
       </form>
