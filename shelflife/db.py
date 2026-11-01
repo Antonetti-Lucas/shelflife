@@ -2,12 +2,23 @@
 
 import os
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Iterator
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///shelflife.db")
+PROJECT_FOLDER = Path(__file__).resolve().parents[1]
+
+
+def default_database_url() -> str:
+    """shelflife.db in the project folder, wherever you start ShelfLife from. A relative path
+    would be read from the folder you happen to be in, and starting there would quietly create
+    a new, empty database: your diary would seem to be gone."""
+    return f"sqlite:///{(PROJECT_FOLDER / 'shelflife.db').as_posix()}"
+
+
+DATABASE_URL = os.getenv("DATABASE_URL") or default_database_url()
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine)
