@@ -21,9 +21,13 @@ games' tags) is kept for the My taste page, for the tags a pick matches and for 
 
 Candidates come in four lists: games you own but have barely played (backlog), games you can play
 through Steam Family Sharing (family), your wishlist, and well-reviewed games you don't have yet
-(discover). Each is scored by the prediction times a quality factor from Steam reviews.
+(discover). Each is scored by the prediction times a quality factor from Steam reviews, and the
+top of each list is then calibrated: it follows the mix of kinds of game you like, in their
+proportions, so one big interest can't fill a whole list (`calibrate`, after Steck, "Calibrated
+Recommendations", RecSys 2018).
 """
 
+import math
 import re
 import threading
 from collections.abc import Callable, Collection, Sequence
@@ -68,6 +72,19 @@ LOOK_ALIKE_POWER = 3
 # one you barely played (score 0.1) about a tenth. Tried 0.1 to 1 on the owner's games; 1 did best.
 PLAY_CONFIDENCE = 1.0
 PLAY_SCORE_FLOOR = 0.05  # the least a played game counts, so it is never infinitely unsure
+# Calibration: a list's top follows your mix of kinds of game. A game's kinds are its most
+# distinctive tags (relevance x rarity), a few per game; your mix is your liked games' kinds, weighted
+# by how much you liked each. Each place in the list goes to the game that best trades its score
+# against keeping the list's mix close to yours.
+# 0: plain score order; 1: only the mix matters. On the owner's games 0.6 took Discover's top 12 from
+# 10 stealth games to 5 (their mix: Stealth 15%, Beat 'em up 9%, ...), every pick still a good fit.
+CALIBRATION = 0.6
+CALIBRATED_PLACES = 60  # the first places are calibrated; the rest stay in score order
+CALIBRATION_POOL = 300  # the best-scoring games those places are chosen from
+CALIBRATION_FLOOR = 0.5  # ...as long as they score at least half of the best one
+KINDS_PER_GAME = 3
+KINDS_IN_MIX = 30  # your mix keeps your main kinds; a list may hold others, they just don't count toward it
+MIX_SMOOTHING = 0.01  # keeps the measure finite while a kind is still missing from the list (Steck)
 WATCH_LIKENESS = 0.6  # a pick this alike to a game you rated low (sequel-close) gets a heads-up naming it
 
 
@@ -150,6 +167,7 @@ class _Model:
     dislikes: dict[int, float] = field(default_factory=dict)  # rated under 3 stars
     played: dict[int, PlayScore] = field(default_factory=dict)  # played, not rated (learned from when the switch is on)
     rated_and_played: dict[int, float] = field(default_factory=dict)  # what the games you played and rated got
+    calibrated: dict[tuple[int, ...], list[int]] = field(default_factory=dict)  # lists already put in order
 
     @cached_property
     def tag_units(self) -> dict[int, Vector]:
@@ -247,6 +265,26 @@ class _Model:
             for tag, value in self.vectors[app_id].items():
                 out[tag] = out.get(tag, 0.0) + w * value
         return out
+
+    def kinds(self, app_id: int) -> dict[str, float]:
+        """A game's kinds: its KINDS_PER_GAME most distinctive tags, as shares adding up to one."""
+        weighted = ((t, v) for t, v in self.vectors.get(app_id, {}).items() if v > 0)  # a tag on every game you have says nothing
+        top = sorted(weighted, key=lambda kv: kv[1], reverse=True)[:KINDS_PER_GAME]
+        total = sum(v for _, v in top)
+        return {t: v / total for t, v in top} if total > 0 else {}
+
+    @cached_property
+    def interest_mix(self) -> dict[str, float]:
+        """The kinds of game you like and in what proportions: your liked games' kinds, each game
+        counting by how much you liked it; your KINDS_IN_MIX main kinds, as shares adding up to one."""
+        mix: dict[str, float] = {}
+        for app_id, w in self.weights.items():
+            if w > 0:
+                for kind, share in self.kinds(app_id).items():
+                    mix[kind] = mix.get(kind, 0.0) + w * share
+        top = sorted(mix.items(), key=lambda kv: kv[1], reverse=True)[:KINDS_IN_MIX]
+        total = sum(v for _, v in top)
+        return {k: v / total for k, v in top} if total > 0 else {}
 
     @property
     def explicit(self) -> int:
@@ -393,7 +431,7 @@ def _cached(session: Session, ratings: dict[int, float], not_interested: dict[in
         if _cache["key"] != key:
             with SessionLocal() as own:
                 model = _build_model(own, ratings, not_interested)
-                model.broad, model.narrow, model.profile, model.disliked  # noqa: B018  (worked out while the session is open)
+                model.broad, model.narrow, model.profile, model.disliked, model.interest_mix  # noqa: B018  (worked out while the session is open)
                 scores = _score_everything(model)
                 model.session = None
             _cache.update(key=key, model=model, scores=scores)
@@ -531,6 +569,58 @@ def _score(cand: Game, model: _Model) -> Recommendation:
     )
 
 
+def _mix_distance(mix: dict[str, float], counts: dict[str, float], n: int) -> float:
+    """How far a list's kinds are from your mix (Kullback-Leibler), `counts` being the summed
+    kinds of its n games; smoothed toward your mix so a missing kind costs a lot, not infinity."""
+    total = 0.0
+    for kind, p in mix.items():
+        if p <= 0:
+            continue
+        q = counts.get(kind, 0.0) / n if n else 0.0
+        total += p * math.log(p / ((1 - MIX_SMOOTHING) * q + MIX_SMOOTHING * p))
+    return total
+
+
+def calibrate(recs: list[Recommendation], model: _Model, places: int = CALIBRATED_PLACES) -> list[Recommendation]:
+    """The list (best score first) with its first `places` chosen one at a time: each goes to the game
+    that best trades its score (scaled to the best one's) against keeping the list's mix of kinds close
+    to yours. The rest follow in score order. Nothing is added or dropped, only the order changes."""
+    mix = model.interest_mix
+    if not mix or CALIBRATION <= 0 or len(recs) < 2:
+        return list(recs)
+    key = tuple(r.game.steam_app_id for r in recs)
+    if key not in model.calibrated:
+        best = max((r.score for r in recs[:CALIBRATION_POOL]), default=0.0)
+        scale = best if best > 0 else 1.0
+        # Variety only among good fits: a kind you like is never filled with a game you'd barely like.
+        pool = [r for r in recs[:CALIBRATION_POOL] if best <= 0 or r.score >= CALIBRATION_FLOOR * best]
+        kinds = {r.game.steam_app_id: model.kinds(r.game.steam_app_id) for r in pool}
+        counts: dict[str, float] = {}
+        order: list[int] = []
+        while pool and len(order) < places:
+            def value(r: Recommendation) -> float:
+                with_it = dict(counts)
+                for kind, share in kinds[r.game.steam_app_id].items():
+                    with_it[kind] = with_it.get(kind, 0.0) + share
+                distance = _mix_distance(mix, with_it, len(order) + 1)
+                return (1 - CALIBRATION) * r.score / scale - CALIBRATION * distance
+
+            pick = max(pool, key=value)
+            pool.remove(pick)
+            order.append(pick.game.steam_app_id)
+            for kind, share in kinds[pick.game.steam_app_id].items():
+                counts[kind] = counts.get(kind, 0.0) + share
+        chosen = set(order)
+        model.calibrated[key] = order + [r.game.steam_app_id for r in recs if r.game.steam_app_id not in chosen]
+    by_id = {r.game.steam_app_id: r for r in recs}
+    return [by_id[i] for i in model.calibrated[key]]
+
+
+def interest_mix(session: Session, ratings: dict[int, float], not_interested: dict[int, str]) -> dict[str, float]:
+    """The kinds of game you like and in what proportions (what the lists are calibrated to)."""
+    return _cached(session, ratings, not_interested)[0].interest_mix
+
+
 def _classify(model: _Model) -> tuple[list[Game], list[Game], list[Game]]:
     """Split the candidates into (backlog, family, discover), dropping games whose
     other edition you already have or have played."""
@@ -588,7 +678,7 @@ def recommend(
             if base not in seen:
                 seen.add(base)
                 unique.append(r)
-        return unique[:limit]
+        return calibrate(unique, model)[:limit]
 
     return Recommendations(
         backlog=top(backlog),

@@ -28,7 +28,7 @@ from shelflife.quality import quality_factor
 from shelflife.recency import recency
 from shelflife.discover_job import SECONDS_PER_GAME, job as discover_job
 from shelflife.discovery import MIN_REVIEWS
-from shelflife.recommend import explain, play_score_of, recommend, score_all, taste_profile, top_taste_tags
+from shelflife.recommend import explain, interest_mix, play_score_of, recommend, score_all, taste_profile, top_taste_tags
 from shelflife.score import engagement_score
 from shelflife.settings import LEARN_FROM_PLAY_HELP, get_hide_adult, get_learn_from_play, set_hide_adult, set_learn_from_play
 from shelflife.learned import text_index
@@ -209,6 +209,7 @@ def home(
             "sizes": REC_PAGE_SIZES,
             "ratings": ratings,
             "learn_from_play": get_learn_from_play(session),
+            "mix": list(interest_mix(session, ratings, diary.load_not_interested(session)).items())[:6],
         },
     )
 
