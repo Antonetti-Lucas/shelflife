@@ -27,14 +27,18 @@ have yet (discover). Each is scored by the prediction times a quality factor fro
 
 import math
 import re
+import threading
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import select, text
+from sqlalchemy.orm import Session, selectinload
 
+from shelflife.db import SessionLocal
 from shelflife.diary import favorite_ratings, tracked_ids
+from shelflife.diary import load_not_interested as diary_not_interested
+from shelflife.diary import load_ratings as diary_ratings
 from shelflife.feedback import NOT_INTERESTED_RATING
 from shelflife.learned import (
     MATCH_SCALE,
@@ -143,6 +147,7 @@ class _Model:
     play_scores: dict[int, PlayScore] = field(default_factory=dict)
     shown_ratings: dict[int, float] = field(default_factory=dict)  # real ratings, for the reasons on a card
     games_by_id: dict[int, Game] = field(default_factory=dict)
+    scale: PlayScale | None = None  # percentiles of your play, for a game page
 
     @cached_property
     def tag_units(self) -> dict[int, Vector]:
@@ -362,13 +367,79 @@ def play_scale(games: list[Game]) -> PlayScale:
     return PlayScale(g.library_entry for g in games if is_played(g.library_entry, bool(g.family_shared)))
 
 
+# ---- kept between pages until your data changes ----
+#
+# Building the model reads every game and scoring reads it again; with a few thousand games that
+# took most of a second on every page, even when nothing had changed. So the model and the scores
+# are kept, and a cheap fingerprint of the data (counts, sums and the latest change times of
+# everything the model reads, one query) says when they must be built again: a rating, a sync, a
+# search for new games or a changed setting changes it.
+
+_DATA_VERSION = text("""
+SELECT
+  (SELECT count(*) || ':' || coalesce(sum(length(tags)), 0) || ':' || coalesce(sum(length(type)), 0) || ':'
+          || coalesce(sum(family_shared), 0) || ':' || coalesce(sum(reviews_positive), 0) || ':'
+          || coalesce(sum(reviews_negative), 0) || ':' || coalesce(max(details_fetched_at), '') || ':'
+          || coalesce(max(tags_fetched_at), '') || ':' || coalesce(sum(length(player_hours)), 0) || ':'
+          || coalesce(sum(player_hours_sample), 0) || ':' || coalesce(sum(length(about_text)), 0)
+     FROM games),
+  (SELECT count(*) || ':' || coalesce(sum(playtime_total_min), 0) || ':' || coalesce(sum(playtime_recent_min), 0) || ':'
+          || coalesce(sum(achievements_unlocked), 0) || ':' || coalesce(sum(achievements_total), 0) || ':'
+          || coalesce(sum(rarest_unlocked_pct), 0) || ':' || coalesce(max(last_played), '') || ':'
+          || coalesce(sum(length(unlock_times)), 0)
+     FROM library_entries),
+  (SELECT count(*) || ':' || coalesce(max(updated_at), '') || ':' || coalesce(sum(rating), 0) || ':'
+          || coalesce(sum(not_interested), 0) || ':' || coalesce(sum(favorite), 0) || ':' || coalesce(sum(length(status)), 0)
+     FROM diary_entries),
+  (SELECT coalesce(group_concat(key || '=' || value, ';'), '') FROM settings)
+""")
+
+_cache_lock = threading.Lock()
+_cache: dict = {"key": None, "model": None, "scores": None}
+
+
+def data_version(session: Session) -> tuple:
+    """A fingerprint of everything the model is built from."""
+    return tuple(session.execute(_DATA_VERSION).one())
+
+
+def _cached(session: Session, ratings: dict[int, float], not_interested: dict[int, str]) -> tuple[_Model, Scores]:
+    """The model and every game's score, built in a session of their own (so they outlive this
+    page's) and kept until the data, the ratings asked about or the setting change."""
+    key = (data_version(session), tuple(sorted(ratings.items())), tuple(sorted(not_interested)))
+    with _cache_lock:
+        if _cache["key"] != key:
+            with SessionLocal() as own:
+                model = _build_model(own, ratings, not_interested)
+                model.blend, model.profile, model.text_units  # noqa: B018  (worked out now, while the session is open)
+                scores = _score_everything(model)
+                model.session = None
+            _cache.update(key=key, model=model, scores=scores)
+        return _cache["model"], _cache["scores"]
+
+
+def clear_cache() -> None:
+    with _cache_lock:
+        _cache.update(key=None, model=None, scores=None)
+
+
+def _score_everything(model: _Model) -> Scores:
+    backlog, family, discover = _classify(model)
+    return Scores(
+        by_id={g.steam_app_id: _score(g, model) for g in model.games if model.vectors[g.steam_app_id]},
+        backlog={g.steam_app_id for g in backlog},
+        family={g.steam_app_id for g in family},
+        discover={g.steam_app_id for g in discover},
+    )
+
+
 def play_score_of(session: Session, app_id: int) -> PlayScore | None:
     """How much your play of one game says you liked it (None when you have not played it)."""
-    games = list(session.scalars(select(Game).join(LibraryEntry).where(Game.type == "game")))
-    game = next((g for g in games if g.steam_app_id == app_id), None)
+    game = session.get(Game, app_id)
     if game is None or not is_played(game.library_entry, bool(game.family_shared)):
         return None
-    return play_scale(games).score(game.library_entry)
+    model, _ = _cached(session, diary_ratings(session), diary_not_interested(session))
+    return model.scale.score(game.library_entry)
 
 
 def _build_model(
@@ -381,13 +452,13 @@ def _build_model(
     stand_ins.update(favorite_ratings(session))
     tracked = tracked_ids(session)
 
-    games = list(session.scalars(select(Game).where(Game.type == "game")))
+    games = list(session.scalars(select(Game).where(Game.type == "game").options(selectinload(Game.library_entry))))
     # Rarity is measured on your own library, not on the pool picked by tag.
     idf = compute_idf(g.tags for g in games if g.library_entry is not None)
     vectors = {g.steam_app_id: tag_vector(g.tags, idf) for g in games}
     scale = play_scale(games)
 
-    model = _Model(vectors, games, mode, session=session, shown_ratings=dict(ratings), hide_adult=get_hide_adult(session))
+    model = _Model(vectors, games, mode, session=session, shown_ratings=dict(ratings), hide_adult=get_hide_adult(session), scale=scale)
     for g in games:
         app_id, entry, family = g.steam_app_id, g.library_entry, bool(g.family_shared)
         model.games_by_id[app_id] = g
@@ -420,7 +491,7 @@ def top_taste_tags(
     n: int = 8,
 ) -> list[str]:
     """The tags your taste profile leans toward most; seeds the discovery pool."""
-    profile = _build_model(session, ratings, not_interested).profile
+    profile = _cached(session, ratings, not_interested)[0].profile
     ranked = sorted(profile.items(), key=lambda kv: kv[1], reverse=True)
     return [t for t, v in ranked[:n] if v > 0]
 
@@ -428,7 +499,7 @@ def top_taste_tags(
 def taste_profile(
     session: Session, ratings: dict[int, float], not_interested: dict[int, str]
 ) -> Taste:
-    model = _build_model(session, ratings, not_interested)
+    model, _ = _cached(session, ratings, not_interested)
     return Taste(model.profile, model.explicit, model.implicit)
 
 
@@ -443,11 +514,8 @@ def explain(
     Works for any game with tags, including ones you've already played; None when
     the game has no usable tags yet.
     """
-    model = _build_model(session, ratings, not_interested)
-    game = session.get(Game, app_id)
-    if game is None or not model.vectors.get(app_id):
-        return None
-    return _score(game, model)
+    _, scores = _cached(session, ratings, not_interested)
+    return scores.by_id.get(app_id)
 
 
 def held_out_liking(
@@ -557,18 +625,7 @@ def score_all(
     not_interested: dict[int, str] | None = None,
 ) -> Scores:
     """Score every game with tags once, and say which count as recommended."""
-    model = _build_model(session, ratings, not_interested or {})
-    backlog, family, discover = _classify(model)
-    return Scores(
-        by_id={
-            g.steam_app_id: _score(g, model)
-            for g in model.games
-            if model.vectors[g.steam_app_id]
-        },
-        backlog={g.steam_app_id for g in backlog},
-        family={g.steam_app_id for g in family},
-        discover={g.steam_app_id for g in discover},
-    )
+    return _cached(session, ratings, not_interested or {})[1]
 
 
 def recommend(
@@ -580,15 +637,13 @@ def recommend(
 ) -> Recommendations:
     """The recommendation lists. Games in `wishlist_ids` that you do not own come out of
     "discover" into their own list, so each game is listed once."""
-    model = _build_model(session, ratings, not_interested or {})
-    backlog_games, family_games, discover_games = _classify(model)
+    model, scores = _cached(session, ratings, not_interested or {})
     wished = set(wishlist_ids or ())
-    wishlist_games = [g for g in discover_games if g.steam_app_id in wished]
-    discover_games = [g for g in discover_games if g.steam_app_id not in wished]
-    backlog = [_score(g, model) for g in backlog_games]
-    family = [_score(g, model) for g in family_games]
-    discover = [_score(g, model) for g in discover_games]
-    wishlist = [_score(g, model) for g in wishlist_games]
+    pick = lambda ids: [scores.by_id[i] for i in ids]  # noqa: E731
+    backlog = pick(scores.backlog)
+    family = pick(scores.family)
+    discover = pick(i for i in scores.discover if i not in wished)
+    wishlist = pick(i for i in scores.discover if i in wished)
 
     def top(recs: list[Recommendation]) -> list[Recommendation]:
         recs.sort(key=lambda r: r.score, reverse=True)

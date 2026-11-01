@@ -19,7 +19,7 @@ os.environ["STEAM_ID"] = ""
 
 import pytest  # noqa: E402
 
-from shelflife import achievements, appnames, learned, reviews, store  # noqa: E402
+from shelflife import achievements, appnames, learned, recommend, reviews, store  # noqa: E402
 from shelflife.db import Base, SessionLocal, engine, init_db  # noqa: E402
 
 if "shelflife-tests-" not in str(engine.url):  # pragma: no cover - safety net
@@ -35,6 +35,7 @@ def isolated(tmp_path, monkeypatch):
     # What was learned from one test's games must not leak into the next one's.
     learned._text_cache.update(key=None, vectors={})
     learned._fit_cache.clear()
+    recommend.clear_cache()
     yield
 
 
