@@ -30,7 +30,7 @@ from shelflife.discover_job import SECONDS_PER_GAME, job as discover_job
 from shelflife.discovery import MIN_REVIEWS
 from shelflife.recommend import explain, play_score_of, recommend, score_all, taste_profile, top_taste_tags
 from shelflife.score import engagement_score
-from shelflife.settings import LEARN_FROM_PLAY_HELP, get_hide_adult, get_learn_from_play, set_hide_adult, set_learn_from_play
+from shelflife.settings import TASTE_MODE_LABELS, TASTE_MODES, get_hide_adult, get_taste_mode, set_hide_adult, set_taste_mode
 from shelflife.learned import text_index
 from shelflife.similar import search_tags, similar_to, tag_idf
 from shelflife.stats import compute_stats
@@ -101,13 +101,42 @@ def source_label(game: Game) -> str:
     return "Family" if game.family_shared else "Owned"
 
 
+def short_reviews(game: Game) -> str:
+    """"95% positive · 322k reviews", for a card."""
+    pos, neg = game.reviews_positive, game.reviews_negative
+    if pos is None or neg is None or pos + neg == 0:
+        return "no reviews yet"
+    total = pos + neg
+    count = f"{total / 1_000_000:.1f}M" if total >= 1_000_000 else f"{total / 1000:.0f}k" if total >= 10_000 else f"{total:,}"
+    return f"{pos / total:.0%} positive · {count} reviews"
+
+
+def stars(rating: float) -> str:
+    """4.5 as ★★★★½."""
+    return "★" * int(rating) + ("½" if rating % 1 else "")
+
+
+def fit_level(similarity: float) -> str:
+    """How a match badge is coloured."""
+    return "high" if similarity >= 0.25 else "low" if similarity < 0 else "mid"
+
+
+def game_of(label: str) -> str:
+    """The game's name from a reason such as "Hades (rated 5, 66% similar)"."""
+    return label.rsplit(" (", 1)[0]
+
+
 templates.env.globals.update(
     RATING_OPTIONS=RATING_OPTIONS,
     STATUSES=diary.STATUSES,
     STATUS_LABELS=diary.STATUS_LABELS,
     reviews_text=reviews_text,
+    short_reviews=short_reviews,
     rating_text=rating_text,
     source_label=source_label,
+    stars=stars,
+    fit_level=fit_level,
+    game_of=game_of,
 )
 
 
@@ -196,7 +225,7 @@ def home(
             "size": size,
             "sizes": REC_PAGE_SIZES,
             "ratings": ratings,
-            "learn_from_play": get_learn_from_play(session),
+            "taste_mode": get_taste_mode(session),
         },
     )
 
@@ -622,7 +651,7 @@ def game_page(request: Request, app_id: int, session: Session = Depends(get_sess
             "find_counts": FIND_COUNTS,
             "wish_note": wishlist_note(session.get(WishlistItem, app_id), game),
             "play": play_score_of(session, app_id),
-            "learn_from_play": get_learn_from_play(session),
+            "taste_mode": get_taste_mode(session),
         },
     )
 
@@ -750,8 +779,8 @@ def taste_page(request: Request, session: Session = Depends(get_session)):
             "taste": taste,
             "toward": toward,
             "biggest": biggest,
-            "learn_from_play": get_learn_from_play(session),
-            "learn_help": LEARN_FROM_PLAY_HELP,
+            "taste_mode": get_taste_mode(session),
+            "modes": TASTE_MODE_LABELS,
             "hide_adult": get_hide_adult(session),
         },
     )
@@ -764,10 +793,11 @@ def change_hide_adult(hide: str = Form("0"), session: Session = Depends(get_sess
     return RedirectResponse("/taste#content", status_code=303)
 
 
-@app.post("/taste/learn-from-play")
-def change_learn_from_play(learn: str = Form("0"), session: Session = Depends(get_session)):
-    """Also learn from games you played but didn't rate, or from your ratings only."""
-    set_learn_from_play(session, learn == "1")
+@app.post("/taste/mode")
+def change_taste_mode(mode: str = Form(""), session: Session = Depends(get_session)):
+    """What teaches your taste: ratings and play, ratings only, or play only."""
+    if mode in TASTE_MODES:
+        set_taste_mode(session, mode)
     return RedirectResponse("/taste#learn", status_code=303)
 
 

@@ -4,15 +4,11 @@
 {% block content %}
 {% set labels = {"playing": "Playing", "played": "Played", "dropped": "Dropped", "favorites": "★ Favorites", "not-interested": "Not interested"} %}
 
-<h2>Diary</h2>
+<div class="page-head"><h2>Diary</h2></div>
 <p class="lede">
-  Your games by status, newest first. Set a game's status or favorite on its page, or its status in the
-  <a href="/library">Library</a>.
+  {% if show == "not-interested" %}Hidden from recommendations and Explore; each also pushes down games very like it, a little less than a 2-star rating would.
+  {% else %}Your games by status, newest first. Set a status on a game's page or in the <a href="/library">Library</a>.{% endif %}
 </p>
-{% if show == "not-interested" %}
-<p class="meta">Games you marked "not interested" are hidden from recommendations and Explore, and push down
-  games very like them (a sequel, a near-clone), a little less than a 2-star rating would. Undo puts one back.</p>
-{% endif %}
 
 <nav class="tabs" aria-label="Diary sections">
   {% for key in tabs %}
@@ -28,7 +24,7 @@
 </form>
 {{ tag_note(unknown_tags) }}
 
-<h2>{{ labels[show] }} <small>{{ total }} game{{ "" if total == 1 else "s" }}{{ " match" if filtered }}</small></h2>
+<h3>{{ labels[show] }} <small>{{ total }} game{{ "" if total == 1 else "s" }}{{ " match" if filtered }}</small></h3>
 {% if items %}
 <div class="rows">
   {% for e, g in items %}
@@ -40,7 +36,7 @@
       <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a>
         {% if e.favorite and show != "favorites" %}<small>★ favorite</small>{% endif %}
         {% if show == "favorites" and e.status %}<small>{{ STATUS_LABELS[e.status] }}</small>{% endif %}
-        {% if e.rating is not none %}<small>rated {{ rating_text(e.rating) }}</small>{% endif %}</h3>
+        {% if e.rating is not none %}<small class="stars-text" title="rated {{ rating_text(e.rating) }}">{{ stars(e.rating) }}</small>{% endif %}</h3>
       {% if show == "not-interested" %}
       <form method="post" action="/game/{{ g.steam_app_id }}/not-interested" class="inline">
         <input type="hidden" name="value" value="0">

@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% from "_tagbox.html" import tag_input, tag_note %}
+{% from "_pager.html" import link_pager %}
 {% block title %}Library · ShelfLife{% endblock %}
 {% block content %}
-<h2>Library <small>{{ total }} games you own or can play through your family</small></h2>
-<p class="lede">
-  Rate games, set their status and enter family-game hours right here. Games you don't own are on
-  <a href="/explore">Explore</a>.
-</p>
+<div class="page-head">
+  <h2>Library<span class="count">{{ total }}</span></h2>
+</div>
+<p class="lede">Games you own or play through Family Sharing. Rate them, set a status or enter family-game hours right here.</p>
 
 <form class="filters" method="get" action="/library">
   <input type="search" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
@@ -21,7 +21,7 @@
       <option value="{{ value }}" {{ "selected" if status == value }}>{{ label }}</option>
     {% endfor %}
   </select>
-  <select name="rec" aria-label="Recommended">
+  <select name="rec" aria-label="Recommended" title="Keeps the unplayed games that fit your taste best, ranked by fit">
     {% for value, label in [("all", "All games"), ("50", "Recommended: top 50%"), ("25", "Recommended: top 25%"), ("10", "Recommended: top 10%")] %}
       <option value="{{ value }}" {{ "selected" if rec == value }}>{{ label }}</option>
     {% endfor %}
@@ -34,7 +34,6 @@
   <button type="submit">Apply</button>
 </form>
 {{ tag_note(unknown_tags) }}
-<p class="meta">"Recommended" keeps the games you haven't played yet that fit your taste best, ranked together by fit.</p>
 
 <div class="table-wrap">
 <table>
@@ -76,9 +75,9 @@
       <td class="num">
         <form method="post" action="/game/{{ g.steam_app_id }}/rate" class="cell">
           <input type="hidden" name="next" value="{{ here }}#g{{ g.steam_app_id }}">
-          <select name="rating" onchange="this.form.submit()" aria-label="Your rating of {{ g.name }}">
+          <select name="rating" class="stars {{ 'unrated' if r.rating is none }}" onchange="this.form.submit()" aria-label="Your rating of {{ g.name }}">
             <option value="">—</option>
-            {% for o in RATING_OPTIONS %}<option value="{{ o }}" {{ "selected" if r.rating == o }}>{{ o }}</option>{% endfor %}
+            {% for o in RATING_OPTIONS %}<option value="{{ o }}" {{ "selected" if r.rating == o }}>{{ stars(o) }} {{ "%g"|format(o) }}</option>{% endfor %}
           </select>
         </form>
       </td>
@@ -99,12 +98,6 @@
 </table>
 </div>
 
-{% if pages > 1 %}
-{% set base = "/library?q=" ~ (q|urlencode) ~ "&source=" ~ source ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&status=" ~ status ~ "&rec=" ~ rec ~ "&sort=" ~ sort %}
-<p class="pager">
-  {% if page > 1 %}<a href="{{ base }}&page={{ page - 1 }}">← Previous</a>{% endif %}
-  Page {{ page }} of {{ pages }}
-  {% if page < pages %}<a href="{{ base }}&page={{ page + 1 }}">Next →</a>{% endif %}
-</p>
-{% endif %}
+{% set base = "/library?q=" ~ (q|urlencode) ~ "&source=" ~ source ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&status=" ~ status ~ "&rec=" ~ rec ~ "&sort=" ~ sort ~ "&page=" %}
+{{ link_pager(page, pages, base) }}
 {% endblock %}

@@ -459,7 +459,7 @@ def test_explore_offers_the_search_with_your_taste_tags_as_the_default(client, s
     rate_the_scenario(session)
     html = client.get("/explore").text
     assert 'action="/explore/find"' in html and "Find games" in html
-    assert "empty: your taste, Stealth" in html
+    assert "(empty: Stealth" in html  # no tags: your taste tags
     assert '<option value="Stealth">' in html
 
 

@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% from "_card.html" import card %}
 {% from "_tagbox.html" import tag_input, tag_note %}
+{% from "_pager.html" import link_pager %}
 {% block title %}Wishlist · ShelfLife{% endblock %}
 {% block content %}
-<h2>Wishlist <small>{{ total }} of {{ on_list }} games on your Steam wishlist</small></h2>
-<p class="lede">
-  Your Steam wishlist, ranked by how well each game fits your taste. It is read from Steam by
-  <a href="/sync">Sync</a> and never teaches your taste: wanting a game is not liking it.
-</p>
+<div class="page-head">
+  <h2>Wishlist<span class="count">{{ total }} of {{ on_list }}</span></h2>
+</div>
+<p class="lede">Your Steam wishlist, ranked by how well each game fits your taste. Wanting a game never teaches your taste.</p>
 
 {% if not on_list %}
   <p class="empty">Nothing here yet. Press <a href="/sync">Sync</a> to read your wishlist (it must be public on Steam).</p>
@@ -28,9 +28,13 @@
   <button type="submit">Apply</button>
 </form>
 {{ tag_note(unknown_tags) }}
-{% if waiting %}<p class="meta">{{ waiting }} wishlist game{{ "" if waiting == 1 else "s" }} still waiting for store details: press <a href="/sync">Sync</a> to rank {{ "it" if waiting == 1 else "them" }}.</p>{% endif %}
-{% if other %}<p class="meta">{{ other }} can't be ranked (DLC or software, or no tags).</p>{% endif %}
-{% if dismissed %}<p class="meta">{{ dismissed }} you marked "not interested" {{ "is" if dismissed == 1 else "are" }} hidden.</p>{% endif %}
+{% if waiting or other or dismissed %}
+<p class="meta">
+  {% if waiting %}{{ waiting }} still waiting for store details (<a href="/sync">Sync</a> to rank {{ "it" if waiting == 1 else "them" }}).{% endif %}
+  {% if other %}{{ other }} can't be ranked (DLC, software or no tags).{% endif %}
+  {% if dismissed %}{{ dismissed }} you marked "not interested" {{ "is" if dismissed == 1 else "are" }} hidden.{% endif %}
+</p>
+{% endif %}
 
 {% if recs %}
   <div class="grid">
@@ -40,13 +44,7 @@
   <p class="empty">No games match. Try a different search or filter.</p>
 {% endif %}
 
-{% if pages > 1 %}
-{% set base = "/wishlist?q=" ~ (q|urlencode) ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&rec=" ~ rec ~ "&sort=" ~ sort %}
-<p class="pager">
-  {% if page > 1 %}<a href="{{ base }}&page={{ page - 1 }}">← Previous</a>{% endif %}
-  Page {{ page }} of {{ pages }}
-  {% if page < pages %}<a href="{{ base }}&page={{ page + 1 }}">Next →</a>{% endif %}
-</p>
-{% endif %}
+{% set base = "/wishlist?q=" ~ (q|urlencode) ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&rec=" ~ rec ~ "&sort=" ~ sort ~ "&page=" %}
+{{ link_pager(page, pages, base) }}
 {% endif %}
 {% endblock %}

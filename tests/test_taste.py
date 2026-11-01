@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from shelflife import diary
 from shelflife.recommend import _build_model, explain, score_all, taste_profile
-from shelflife.settings import get_learn_from_play, set_learn_from_play
+from shelflife.settings import get_taste_mode, set_taste_mode
 from shelflife.web.app import app
 from tests.factories import add_game
 
@@ -37,7 +37,7 @@ def horror(session):
     add_game(session, 10, "Exit Corridor 2", tags={"Horror": 100, "Walking Simulator": 80, "Puzzle": 35}, owned=False, reviews=(900, 100))
     add_game(session, 11, "Moon Horror", tags={"Horror": 100, "Sci-fi": 85, "Atmospheric": 50}, owned=False, reviews=(900, 100))
     add_game(session, 12, "Haunted Space Station", tags={"Horror": 100, "Sci-fi": 70, "Atmospheric": 40}, owned=False, reviews=(900, 100))
-    set_learn_from_play(session, False)
+    set_taste_mode(session, "ratings")
     return {1: 1.5, 2: 5.0}
 
 
@@ -98,7 +98,7 @@ def test_a_rating_wins_over_not_interested(session, horror):
 
 
 def test_a_game_you_played_then_dismissed_is_not_learned_as_liked(session, horror):
-    set_learn_from_play(session, True)
+    set_taste_mode(session, "both")
     model = _build_model(session, LOVED, NOT_FOR_ME)
     assert 1 in model.dismissed and 1 not in model.played
 
@@ -133,9 +133,9 @@ def played(session):
 
 
 def test_learning_from_play_is_on_by_default_and_remembered(session):
-    assert get_learn_from_play(session) is True
-    set_learn_from_play(session, False)
-    assert get_learn_from_play(session) is False
+    assert get_taste_mode(session) == "both"
+    set_taste_mode(session, "ratings")
+    assert get_taste_mode(session) == "ratings"
 
 
 def test_a_game_you_played_a_lot_counts_as_a_likely_like(session, played):
@@ -148,7 +148,7 @@ def test_more_play_counts_more_and_little_play_never_counts_against(session, pla
 
 
 def test_with_the_switch_off_play_teaches_nothing(session, played):
-    set_learn_from_play(session, False)
+    set_taste_mode(session, "ratings")
     assert liking(session, played, 20) == pytest.approx(liking(session, played, 22))
     model = _build_model(session, played, {})
     assert model.implicit == 0 and model.explicit == 1
@@ -157,6 +157,45 @@ def test_with_the_switch_off_play_teaches_nothing(session, played):
 def test_a_rated_game_teaches_through_its_rating_not_its_play(session, played):
     model = _build_model(session, {1: 5.0, 2: 1.0}, {})
     assert 2 in model.dislikes and 2 not in model.played  # played a lot, rated 1: the rating speaks
+
+
+# ---- play only ----
+
+
+def test_play_only_ignores_ratings_and_learns_every_played_game_from_its_play(session, played):
+    model = _build_model(session, {1: 5.0, 2: 1.0}, {}, mode="play")
+    assert model.likes == {} and model.dislikes == {} and model.explicit == 0
+    assert {1, 2, 3} <= set(model.played)  # rated or not, every played game counts by its play
+
+
+def test_in_play_only_a_rating_changes_nothing(session, played):
+    set_taste_mode(session, "play")
+    assert liking(session, {2: 1.0}, 20) == pytest.approx(liking(session, {}, 20))
+    assert liking(session, played, 20) > liking(session, played, 22)  # still learned from play
+
+
+def test_in_play_only_a_rated_game_is_still_not_recommended(session, played):
+    set_taste_mode(session, "play")
+    add_game(session, 23, "Rated elsewhere", tags={"Eta": 100}, owned=False, reviews=(900, 100))
+    assert 23 in score_all(session, played).discover
+    assert 23 not in score_all(session, played | {23: 4.0}).discover
+
+
+def test_not_interested_still_counts_in_play_only(session, horror):
+    set_taste_mode(session, "play")
+    assert liking(session, {}, 10, NOT_FOR_ME) < liking(session, {}, 10)
+
+
+def test_the_old_switch_carries_over_as_ratings_only(session):
+    from shelflife.models import Setting
+
+    session.add(Setting(key="learn_from_play", value="0"))
+    session.commit()
+    assert get_taste_mode(session) == "ratings"
+    set_taste_mode(session, "play")
+    assert get_taste_mode(session) == "play"
+    with pytest.raises(ValueError):
+        set_taste_mode(session, "nonsense")
 
 
 def test_the_counts_say_how_many_games_taught_what(session, played):
@@ -216,26 +255,32 @@ def client():
         yield c
 
 
-def test_the_taste_page_has_the_switch_and_no_modes(client, session):
+def test_the_taste_page_offers_the_three_modes_with_the_current_one_picked(client, session):
     html = client.get("/taste").text
-    assert 'action="/taste/learn-from-play"' in html and "Also learn from games I played" in html
-    assert "Mix of both" not in html and 'name="mode"' not in html
+    assert 'action="/taste/mode"' in html
+    assert all(f'value="{m}"' in html for m in ("both", "ratings", "play"))
+    assert 'value="both" checked' in html and "Ratings and play" in html
 
 
-def test_the_switch_turns_learning_from_play_off_and_on(client, session):
-    client.post("/taste/learn-from-play", data={}, headers=SAME_SITE)  # an unticked box sends nothing
-    assert get_learn_from_play(session) is False
-    assert "games you only played are not used" in client.get("/").text
-    client.post("/taste/learn-from-play", data={"learn": "1"}, headers=SAME_SITE)
-    assert get_learn_from_play(session) is True
+@pytest.mark.parametrize("mode, says", [("ratings", "(ratings only)"), ("play", "(play only)"), ("both", "games you played")])
+def test_picking_a_mode_is_remembered_and_shown(client, session, mode, says):
+    client.post("/taste/mode", data={"mode": mode}, headers=SAME_SITE)
+    assert get_taste_mode(session) == mode
+    assert says in client.get("/").text
+    assert f'value="{mode}" checked' in client.get("/taste").text
+
+
+def test_an_unknown_mode_changes_nothing(client, session):
+    client.post("/taste/mode", data={"mode": "nonsense"}, headers=SAME_SITE)
+    assert get_taste_mode(session) == "both"
 
 
 def test_with_nothing_to_learn_from_the_pages_say_so(client, session):
     add_game(session, 1, "Played a lot", tags={"Grind": 100}, minutes=60000)
-    client.post("/taste/learn-from-play", data={}, headers=SAME_SITE)
+    client.post("/taste/mode", data={"mode": "ratings"}, headers=SAME_SITE)
     for page in ("/taste", "/"):
         assert "nothing to learn from yet" in client.get(page).text.lower()
-    client.post("/taste/learn-from-play", data={"learn": "1"}, headers=SAME_SITE)
+    client.post("/taste/mode", data={"mode": "both"}, headers=SAME_SITE)
     assert "nothing to learn from" not in client.get("/taste").text.lower()
 
 
@@ -246,5 +291,5 @@ def test_the_game_page_says_what_this_game_teaches(client, session):
     diary.save_rating(session, 1, 1.5)
     assert "pushes down only games very like it" in client.get("/game/1").text
     assert "counts as a game you probably liked" in client.get("/game/2").text
-    set_learn_from_play(session, False)
+    set_taste_mode(session, "ratings")
     assert "don't teach your taste" in client.get("/game/2").text

@@ -243,7 +243,7 @@ def test_hours_are_refused_for_a_game_you_own(client, scenario):
 def test_the_game_page_explains_the_score_and_recency(client, scenario):
     html = client.get("/game/1").text
     assert "Engagement score" in html and "recency" in html
-    assert "How much your play says you liked it" in html and "50% is your typical played game" in html
+    assert "play score" in html and "50% is your typical played game" in html
     assert "Your rating is what this game teaches your taste" in html
 
 
@@ -354,7 +354,7 @@ def test_the_game_page_shows_the_status_dates_and_favorite(client, scenario):
     html = client.get("/game/20").text
     assert re.search(r'<option value="dropped" selected', html)
     assert 'value="2025-01-02"' in html and 'value="2025-02-03"' in html
-    assert "favorites" in html and "does not change your recommendations" in html
+    assert "One of your <strong>favorites</strong>" in html and "they don't change your" in html
 
 
 def test_the_library_row_has_a_status_picker_with_the_current_status(client, scenario):

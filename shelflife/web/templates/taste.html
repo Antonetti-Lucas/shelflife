@@ -1,71 +1,80 @@
 {% extends "base.html" %}
 {% block title %}My taste · ShelfLife{% endblock %}
 {% block content %}
-<h2>My taste</h2>
+<div class="page-head"><h2>My taste</h2></div>
 <p class="lede">
-  The profile behind your recommendations, from {{ taste.explicit_count }} games you rated{% if learn_from_play %}
-  and {{ taste.implicit_count }} you played without rating{% endif %}. Tags are weighted by how much you liked
-  the games they came from. Your star ratings teach it; "not interested" hides a game and counts a little
-  against its close look-alikes; favorites, statuses and your wishlist never do.
+  {% if taste_mode == "play" %}Learned from how you played {{ taste.implicit_count }} games.
+  {% elif taste_mode == "ratings" %}Learned from {{ taste.explicit_count }} games you rated.
+  {% else %}Learned from {{ taste.explicit_count }} games you rated and {{ taste.implicit_count }} you played without rating.{% endif %}
 </p>
 
-<section id="learn">
+<section id="learn" class="panel">
   <h3>What your taste learns from</h3>
-  <form method="post" action="/taste/learn-from-play" class="inline">
-    <label><input type="checkbox" name="learn" value="1" {{ "checked" if learn_from_play }} onchange="this.form.submit()">
-      Also learn from games I played but didn't rate</label>
+  <form method="post" action="/taste/mode">
+    <div class="modes">
+      {% for key, (label, help) in modes.items() %}
+      <label class="mode {{ 'on' if key == taste_mode }}">
+        <input type="radio" name="mode" value="{{ key }}" {{ "checked" if key == taste_mode }} onchange="this.form.submit()">
+        <span><strong>{{ label }}</strong><small>{{ help }}</small></span>
+      </label>
+      {% endfor %}
+    </div>
     <noscript><button type="submit">Save</button></noscript>
   </form>
-  <p class="meta">{{ learn_help }}</p>
+  <p class="meta">Try each to see what it picks: the modes only change what teaches the taste. "Not interested" counts in all three; favorites, statuses and your wishlist never do.</p>
   {% if taste.explicit_count + taste.implicit_count == 0 %}
-    <p class="warn">Nothing to learn from yet, so the picks are not based on your taste: rate some games{% if not learn_from_play %},
-      or also learn from the games you played{% else %}, or sync your library and achievements{% endif %}.</p>
+    <p class="warn">Nothing to learn from yet, so the picks are not based on your taste:
+      {% if taste_mode == "ratings" %}rate some games, or pick a mode that uses your play.
+      {% elif taste_mode == "play" %}sync your library and achievements, or pick a mode that uses your ratings.
+      {% else %}rate some games, or sync your library and achievements.{% endif %}</p>
   {% endif %}
 </section>
 
-<section id="content">
-  <h3>Games for adults</h3>
-  <form method="post" action="/taste/hide-adult" class="inline">
-    <label><input type="checkbox" name="hide" value="1" {{ "checked" if hide_adult }} onchange="this.form.submit()">
-      Hide games for adults from recommendations and Explore</label>
-    <noscript><button type="submit">Save</button></noscript>
-  </form>
-  <p class="meta">A game counts as one when its community tags are mostly about sexual content (for example
-    "Sexual Content" or "NSFW" among its top three tags together with "Nudity", "Visual Novel" or "Dating Sim").
-    Games with some adult scenes, such as Cyberpunk 2077 or Baldur's Gate 3, are not hidden. Your library,
-    diary and wishlist page always show every game.</p>
-</section>
-
-<div class="two">
-  <section>
+<div class="two" style="margin-top: 20px">
+  <section class="panel">
     <h3>Leans toward</h3>
     <ul class="bars good">
       {% for tag, value in toward %}
         <li><span>{{ tag }}</span><i style="width: {{ (value / biggest * 100)|round|int }}%"></i></li>
+      {% else %}
+        <li class="empty">Nothing yet.</li>
       {% endfor %}
     </ul>
   </section>
-  <section>
+  <section class="panel">
     <h3>Games you rated low</h3>
-    <p class="meta">A rating under 3 stars says "not this game": it pushes down only games very like it (a sequel,
-      a near-clone), not its whole genre.</p>
+    <p class="meta">Each pushes down only games very like it (a sequel, a near-clone), never its genre.</p>
     {% if taste.disliked %}
     <ul class="plain">
       {% for game, rating in taste.disliked %}
-        <li><a href="/game/{{ game.steam_app_id }}">{{ game.name }}</a> <span class="meta">rated {{ "%g"|format(rating) }}</span></li>
+        <li><a href="/game/{{ game.steam_app_id }}">{{ game.name }}</a> <span class="stars-text">{{ stars(rating) }}</span></li>
       {% endfor %}
     </ul>
     {% else %}
-      <p class="empty">None yet.</p>
+      <p class="empty">None{% if taste_mode == "play" %}: ratings are ignored in play only{% endif %}.</p>
     {% endif %}
     {% if taste.dismissed %}
     <h3>Games you're not interested in</h3>
-    <p class="meta">Each also pushes down only its close look-alikes, a little less than a 2-star rating would.
-      <a href="/diary?show=not-interested">Manage them in the Diary.</a></p>
+    <p class="meta">Like a low rating, a little weaker. <a href="/diary?show=not-interested">Manage them</a>.</p>
     <ul class="plain">
       {% for game in taste.dismissed %}<li><a href="/game/{{ game.steam_app_id }}">{{ game.name }}</a></li>{% endfor %}
     </ul>
     {% endif %}
   </section>
 </div>
+
+<section id="content" class="panel" style="margin-top: 20px">
+  <h3>Games for adults</h3>
+  <form method="post" action="/taste/hide-adult" class="inline">
+    <label class="switch"><input type="checkbox" name="hide" value="1" {{ "checked" if hide_adult }} onchange="this.form.submit()">
+      Hide games for adults from recommendations and Explore</label>
+    <noscript><button type="submit">Save</button></noscript>
+  </form>
+  <details class="help">
+    <summary>Which games count</summary>
+    <p>A game counts when its community tags are mostly about sexual content (for example "Sexual Content" or "NSFW"
+      among its top three tags together with "Nudity", "Visual Novel" or "Dating Sim"). Games with some adult scenes,
+      such as Cyberpunk 2077 or Baldur's Gate 3, are not hidden. Your library, diary and wishlist always show every game.</p>
+  </details>
+</section>
 {% endblock %}

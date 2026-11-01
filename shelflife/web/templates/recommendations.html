@@ -1,11 +1,13 @@
 {% extends "base.html" %}
 {% from "_card.html" import card %}
 {% from "_pager.html" import pager with context %}
-{% block title %}Recommendations · ShelfLife{% endblock %}
+{% block title %}For you · ShelfLife{% endblock %}
 {% block content %}
 {% macro section(key, title, hint) %}
 <section id="{{ key }}">
-  <h2>{{ title }} <small>{{ hint }}</small> <small>{{ sections[key].total }} games</small></h2>
+  <div class="section-head">
+    <h2>{{ title }}</h2><span class="count">{{ sections[key].total }}</span><span class="hint">{{ hint }}</span>
+  </div>
   {% if sections[key].recs %}
     <div class="grid">{% for r in sections[key].recs %}{{ card(r, page_url(key), ratings.get(r.game.steam_app_id)) }}{% endfor %}</div>
     {{ pager(key) }}
@@ -15,27 +17,29 @@
 </section>
 {% endmacro %}
 
-<p class="lede">
-  Built from {{ taste.explicit_count }} games you rated{% if learn_from_play %} and {{ taste.implicit_count }}
-  you played without rating{% else %} (games you only played are not used: <a href="/taste#learn">change</a>){% endif %}.
-  <a href="/taste">See your taste profile</a>.
-  {% if taste.explicit_count + taste.implicit_count == 0 %}<span class="warn">Nothing to learn from yet, so these picks are not based on your taste.</span>{% endif %}
-</p>
-<p class="sizes">
-  Per page:
-  {% for s in sizes %}{% if s == size %}<strong>{{ s }}</strong>{% else %}<a href="/?size={{ s }}">{{ s }}</a>{% endif %}{% endfor %}
-</p>
+<div class="page-head">
+  <p class="meta">
+    {% if taste_mode == "play" %}Learned from how you played {{ taste.implicit_count }} games (play only).
+    {% elif taste_mode == "ratings" %}Learned from {{ taste.explicit_count }} ratings (ratings only).
+    {% else %}Learned from {{ taste.explicit_count }} ratings and {{ taste.implicit_count }} games you played.{% endif %}
+    <a href="/taste">Your taste</a>
+  </p>
+  <p class="sizes">Show
+    {% for s in sizes %}{% if s == size %}<strong>{{ s }}</strong>{% else %}<a href="/?size={{ s }}">{{ s }}</a>{% endif %}{% endfor %}
+  </p>
+</div>
+{% if taste.explicit_count + taste.implicit_count == 0 %}<p class="warn">Nothing to learn from yet, so these picks are not based on your taste.</p>{% endif %}
 
 {% call section("backlog", "From your backlog", "owned, barely played") %}
   <p class="empty">Nothing to suggest from your backlog yet.</p>
 {% endcall %}
 
 {% call section("family", "From your family library", "free to play") %}
-  <p class="empty">No family games yet. Family Sharing games come from a file you export in your browser (see "Family Sharing" in the README).</p>
+  <p class="empty">No family games yet. They come from a file you export in your browser (see "Family Sharing" in the README).</p>
 {% endcall %}
 
 {% call section("wishlist", "From your wishlist", "on Steam, not yours yet") %}
-  <p class="empty">Nothing from your wishlist yet. <a href="/sync">Sync</a> reads it; <a href="/wishlist">see the whole list</a>.</p>
+  <p class="empty">Nothing from your wishlist yet. <a href="/sync">Sync</a> reads it.</p>
 {% endcall %}
 
 {% call section("discover", "To discover", "not in your library") %}

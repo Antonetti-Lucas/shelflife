@@ -10,7 +10,7 @@ from shelflife.diary import save_rating
 from shelflife.learned import fit, likeness, text_index, text_vectors, unit
 from shelflife.models import Game, LibraryEntry
 from shelflife.recommend import _because, _build_model, explain, recommend, score_all
-from shelflife.settings import set_learn_from_play
+from shelflife.settings import set_taste_mode
 from shelflife.sync import about_due, enrich_one, sync_about
 from shelflife.throttle import RateLimited
 from shelflife.wishlist import WishlistEntry, import_wishlist
@@ -249,7 +249,7 @@ def test_a_three_star_rating_teaches_that_games_like_it_are_ordinary(session):
     add_game(session, 2, "Meh", tags={"Eta": 100}, minutes=3000)
     add_game(session, 3, "Like Loved", tags={"Zeta": 100, "Theta": 20}, owned=False, reviews=(9000, 500))
     add_game(session, 4, "Like Meh", tags={"Eta": 100, "Theta": 20}, owned=False, reviews=(9000, 500))
-    set_learn_from_play(session, False)
+    set_taste_mode(session, "ratings")
     scores = score_all(session, {1: 5.0, 2: 3.0}).by_id
     assert scores[3].similarity > 0 > scores[4].similarity  # like your usual 3-star game: a little below what you love
     assert _build_model(session, {1: 5.0, 2: 3.0}, {}).likes[2] == 0.0  # a 3-star rating is a data point, not unknown

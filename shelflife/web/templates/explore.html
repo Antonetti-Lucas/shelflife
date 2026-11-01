@@ -1,26 +1,25 @@
 {% extends "base.html" %}
 {% from "_card.html" import card %}
 {% from "_tagbox.html" import tag_input, tag_note %}
+{% from "_pager.html" import link_pager %}
 {% block title %}Explore · ShelfLife{% endblock %}
 {% block head %}{% if job.running %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
 {% block content %}
 {% if ref %}
-<h2>Games like {{ ref.name }} <small>{{ total }} games you don't own, closest first</small></h2>
-<p class="lede">
-  Ranked by how close their tags are to <a href="/game/{{ ref.steam_app_id }}">{{ ref.name }}</a>'s.
-  <a href="/explore">← Back to all of Explore</a>. To bring in more, use <a href="#find">Find more games</a> below.
-</p>
+<div class="page-head">
+  <h2>Games like {{ ref.name }}<span class="count">{{ total }}</span></h2>
+  <a href="/explore">← All of Explore</a>
+</div>
+<p class="lede">Games you don't own, closest to <a href="/game/{{ ref.steam_app_id }}">{{ ref.name }}</a> first.</p>
 {% else %}
-<h2>Explore Steam <small>{{ total }} games you don't own</small></h2>
-<p class="lede">
-  Well-reviewed games from the tags you like, ranked by how well they fit your taste.
-  Rate a game you've played elsewhere, or dismiss what doesn't interest you. To grow this
-  list, use <a href="#find">Find more games</a> below.
-</p>
+<div class="page-head">
+  <h2>Explore Steam<span class="count">{{ total }}</span></h2>
+</div>
+<p class="lede">Well-reviewed games you don't own, ranked by how well they fit your taste.</p>
 {% endif %}
 
-<section class="find" id="find">
-  <h3>Find more games</h3>
+<details class="find" id="find" {{ "open" if job.running or job.message or sync_running }}>
+  <summary>Find more games{% if job.running %} <span class="meta">· searching…</span>{% endif %}</summary>
   {% if sync_running %}<p class="warn">A sync is running, so searching has to wait. <a href="/sync">See the sync</a>.</p>{% endif %}
   {% if job.running %}
     <p>
@@ -31,11 +30,10 @@
       {% else %}Step 3 of 3: fetching game details ({{ job.done }} of {{ job.total }}){% endif %}
     </p>
     <progress value="{{ job.done }}" max="{{ job.total or 1 }}"></progress>
-    <p class="meta">{{ job.text }}</p>
+    <p class="meta">{{ job.text }} You can keep browsing: games appear below as they arrive.</p>
     <form method="post" action="/explore/find/stop" class="inline">
       <button class="ghost" type="submit">Stop</button>
     </form>
-    <p class="meta">You can keep browsing; this page refreshes by itself. Games appear in the list below as their details arrive.</p>
   {% else %}
     {% if job.message %}
       <p class="{{ 'warn' if job.failed else '' }}">{{ job.message }}
@@ -46,40 +44,30 @@
         <input type="hidden" name="like" value="{{ ref.steam_app_id }}">
         <span class="inline-field like-note">New games like <strong>{{ ref.name }}</strong>, searching {{ like_tags|join(", ") }}</span>
       {% else %}
-      <label class="inline-field">Look
-        <select name="source" aria-label="Where to look for games">
-          <option value="tags" selected>by tags</option>
-          <option value="popular">at well-reviewed games, no tags</option>
-        </select>
-      </label>
+      <select name="source" aria-label="Where to look for games">
+        <option value="tags" selected>By tags</option>
+        <option value="popular">Well-reviewed, any tag</option>
+      </select>
       {{ tag_input("", find_tag_options, none, "tags", "find-tag-options",
-                   "Genres or tags, e.g. Roguelike, Co-op" ~ ((" (empty: your taste, " ~ taste_tags|join(", ") ~ ")") if taste_tags else "")) }}
+                   "Tags, e.g. Roguelike, -Horror" ~ ((" (empty: " ~ taste_tags|join(", ") ~ ")") if taste_tags else "")) }}
       {% endif %}
-      <label class="inline-field">Games
-        <select name="count">{% for n in find_counts %}<option value="{{ n }}" {{ "selected" if n == 25 }}>{{ n }}</option>{% endfor %}</select>
-      </label>
-      <label class="inline-field">With at least
-        <select name="min_reviews">{% for n in find_min_reviews %}<option value="{{ n }}" {{ "selected" if n == min_reviews_default }}>{{ "{:,}".format(n) }} reviews</option>{% endfor %}</select>
-      </label>
+      <select name="count" aria-label="How many games">{% for n in find_counts %}<option value="{{ n }}" {{ "selected" if n == 25 }}>{{ n }} games</option>{% endfor %}</select>
+      <select name="min_reviews" aria-label="Fewest reviews">{% for n in find_min_reviews %}<option value="{{ n }}" {{ "selected" if n == min_reviews_default }}>{{ "{:,}".format(n) }}+ reviews</option>{% endfor %}</select>
       <button type="submit">Find games</button>
     </form>
-    <p class="meta">
-      Looks up each tag on SteamSpy, goes down its best-reviewed games and keeps the ones that are really about the tag
-      (it must be one of the game's 10 most voted tags), taking turns between tags. Games already here are skipped, so
-      pressing it again finds new ones. It takes about {{ seconds_per_game }} seconds per game, longer for narrow tags
-      (25 games is a few minutes), and only runs when you press the button. Genres are tags too: try RPG, Strategy or Roguelike.
-      {% if ref %}Here it also keeps only games whose tags are close to {{ ref.name }}'s.{% endif %}
-    </p>
-    {% if not ref %}
-    <p class="meta">
-      <strong>By tags</strong> is the search above. <strong>Well-reviewed games, no tags</strong> ignores tags: it takes the
-      best-reviewed games from SteamSpy's list of popular games that you don't have (SteamSpy allows one page of 1,000 a
-      minute, so it can wait a little), and Explore then ranks them by how well they fit your taste. To stay with better-known
-      games, raise "With at least" to 1,000 reviews.
-    </p>
-    {% endif %}
+    <details class="help">
+      <summary>How it works</summary>
+      <p><strong>By tags</strong> looks up each tag on SteamSpy and keeps the best-reviewed games that are really about it
+        (one of their 10 most voted tags), taking turns between tags and skipping games already here. A minus leaves a tag
+        out. Genres are tags too: try RPG or Strategy. With no tags it uses the ones you like most.
+        {% if ref %}Here it also keeps only games close to {{ ref.name }}.{% endif %}</p>
+      {% if not ref %}<p><strong>Well-reviewed, any tag</strong> takes the best-reviewed popular games you don't have, and
+        Explore ranks them by fit. Raise the reviews to 1,000+ to stay with better-known games.</p>{% endif %}
+      <p>About {{ seconds_per_game }} seconds a game (25 games is a few minutes). It only runs when you press the button.</p>
+    </details>
   {% endif %}
-</section>
+</details>
+<script>if (location.hash === "#find") document.getElementById("find").open = true;</script>
 
 <form class="filters" method="get" action="/explore">
   {% if ref %}<input type="hidden" name="like" value="{{ ref.steam_app_id }}">{% endif %}
@@ -112,12 +100,6 @@
   <p class="empty">No games match. Try a different search or filter.</p>
 {% endif %}
 
-{% if pages > 1 %}
-{% set base = "/explore?q=" ~ (q|urlencode) ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&wishlist=" ~ wishlist ~ "&rec=" ~ rec ~ "&sort=" ~ sort ~ ("&like=" ~ ref.steam_app_id if ref else "") %}
-<p class="pager">
-  {% if page > 1 %}<a href="{{ base }}&page={{ page - 1 }}">← Previous</a>{% endif %}
-  Page {{ page }} of {{ pages }}
-  {% if page < pages %}<a href="{{ base }}&page={{ page + 1 }}">Next →</a>{% endif %}
-</p>
-{% endif %}
+{% set base = "/explore?q=" ~ (q|urlencode) ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&wishlist=" ~ wishlist ~ "&rec=" ~ rec ~ "&sort=" ~ sort ~ ("&like=" ~ ref.steam_app_id if ref else "") ~ "&page=" %}
+{{ link_pager(page, pages, base) }}
 {% endblock %}

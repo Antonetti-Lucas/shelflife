@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Stats · ShelfLife{% endblock %}
 {% block content %}
-<h2>Stats</h2>
+<div class="page-head"><h2>Stats</h2></div>
 
 <div class="figures">
   <div><strong>{{ stats.owned + stats.family }}</strong><span>games in your library<br>{{ stats.owned }} owned, {{ stats.family }} family</span></div>
@@ -11,7 +11,7 @@
 </div>
 
 <div class="two">
-  <section>
+  <section class="panel">
     <h3>Your diary</h3>
     <ul class="plain">
       {% for s in STATUSES %}
@@ -34,7 +34,7 @@
     {% if stats.finished_undated %}<p class="meta">{{ stats.finished_undated }} played games have no finish date and are not counted here.</p>{% endif %}
   </section>
 
-  <section>
+  <section class="panel">
     <h3>How you rate</h3>
     {% if stats.rated %}
     <ul class="bars">
@@ -48,7 +48,7 @@
   </section>
 </div>
 
-<section>
+<section class="panel similar">
   <h3>Most played</h3>
   {% if stats.top_hours %}
   <ul class="bars wide">

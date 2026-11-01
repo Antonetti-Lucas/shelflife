@@ -2,7 +2,7 @@
 scoring, so a change is judged by numbers instead of by a few examples.
 
     python tools/evaluate.py                  # your own database (only reads it)
-    DATABASE_URL=sqlite:///copy.db python tools/evaluate.py --play on
+    DATABASE_URL=sqlite:///copy.db python tools/evaluate.py --mode ratings
 
 For every game you rated, it predicts how much you would like it with everything you told
 ShelfLife about that game left out (its rating, favorite and play), from your other games only,
@@ -28,6 +28,7 @@ from shelflife import diary  # noqa: E402
 from shelflife.db import SessionLocal  # noqa: E402
 from shelflife.rankings import load_rankings  # noqa: E402
 from shelflife.recommend import held_out_liking  # noqa: E402
+from shelflife.settings import TASTE_MODE_LABELS, TASTE_MODES  # noqa: E402
 
 
 def ranks(values: list[float]) -> list[float]:
@@ -89,24 +90,24 @@ def check_rankings(predicted: dict[int, float], ranked: list) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
-        "--play", choices=("on", "off", "both"), default="both",
-        help="learn from games you played but didn't rate: on, off, or check both (default)",
+        "--mode", choices=(*TASTE_MODES, "all"), default="all",
+        help="taste mode to check: both (ratings and play), ratings, play, or all of them (default)",
     )
     args = parser.parse_args()
-    variants = {"on": [True], "off": [False], "both": [True, False]}[args.play]
+    variants = TASTE_MODES if args.mode == "all" else (args.mode,)
 
     ranked = [r for r in load_rankings() if r.app_id]
     with SessionLocal() as session:
         ratings = diary.load_ratings(session)
         not_interested = diary.load_not_interested(session)
         print(f"{len(ratings)} rated games" + (f", {len(ranked)} ranked games" if ranked else "") + "\n")
-        for learn in variants:
+        for mode in variants:
             started = time.perf_counter()
             wanted = set(ratings) | {r.app_id for r in ranked}
-            predicted = held_out_liking(session, ratings, not_interested, wanted, learn_from_play=learn)
+            predicted = held_out_liking(session, ratings, not_interested, wanted, mode=mode)
             r = check_ratings(predicted, ratings)
             line = (
-                f"{'with play' if learn else 'ratings only':<18} ratings: {r['spearman']:+.3f} on {r['games']} games "
+                f"{TASTE_MODE_LABELS[mode][0].lower():<18} ratings: {r['spearman']:+.3f} on {r['games']} games "
                 f"(top fifth averages {r['top_fifth']:.2f}★, bottom fifth {r['bottom_fifth']:.2f}★, all {r['average']:.2f}★)"
             )
             if ranked:

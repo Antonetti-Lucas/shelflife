@@ -2,21 +2,17 @@
 {% block title %}Sync · ShelfLife{% endblock %}
 {% block head %}{% if job.running %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
 {% block content %}
-<h2>Sync <small>bring your library up to date</small></h2>
-<p class="lede">
-  Reads your Steam library and playtime, your wishlist, your achievements, the store details of new games, everyone's review counts and how long other players play the games you played.
-  It talks to Steam only when you press a button.
-</p>
+<div class="page-head"><h2>Sync</h2></div>
+<p class="lede">Brings your library, wishlist, achievements and game details up to date. It talks to Steam only when you press a button.</p>
 
 <section class="find" id="sync">
   {% if job.running %}
     <p>Step {{ job.step }} of {{ job.steps }}: {{ steps[job.step - 1][1] }}{% if job.total %} ({{ job.done }} of {{ job.total }}){% endif %}</p>
     <progress value="{{ job.done }}" max="{{ job.total or 1 }}"></progress>
-    <p class="meta">{{ job.text }}</p>
+    <p class="meta">{{ job.text }} You can keep browsing; stopping keeps everything done so far.</p>
     <form method="post" action="/sync/stop" class="inline">
       <button class="ghost" type="submit">Stop</button>
     </form>
-    <p class="meta">You can keep browsing; this page refreshes by itself. Stopping keeps everything done so far.</p>
   {% else %}
     {% if job.message %}
       <p class="{{ 'warn' if job.failed else '' }}">{{ job.message }}
@@ -49,7 +45,8 @@
   </p>
 </section>
 
-<h3>What a sync re-reads</h3>
+<details class="help">
+<summary>What a sync reads</summary>
 <ol>
   <li><strong>{{ steps[0][1] }}.</strong> One call to Steam's API: your games, hours and when you last played each. Every sync.</li>
   <li><strong>{{ steps[1][1] }}.</strong> Your whole wishlist, so games you bought drop off it and new ones appear. A wishlist Steam can't give (private, or Steam failing) is skipped and the rest carries on.</li>
@@ -59,9 +56,8 @@
   <li><strong>{{ steps[5][1] }}.</strong> Every library and wishlist game, played or not, that has no counts yet or whose counts are a month old.</li>
   <li><strong>{{ steps[6][1] }}.</strong> For each game you've played, how long the people who reviewed it have played it (up to 500 reviews, about 5 seconds a game), so your hours are measured against that game's own length: two hours of a short game can mean you loved it, a hundred of an endless one may be ordinary. Only a few numbers per game are kept, never who wrote a review. Read once, then every six months.</li>
 </ol>
-<p class="meta">
-  A sync saves as it goes. If you stop it, or Steam turns it away, the next one carries on where it left off.
-  <strong>Check everything again</strong> ignores all these limits and re-reads every game, which is slow. A sync never changes your diary;
-  Family Sharing games are not found by it (that needs the import).
-</p>
+<p>A sync saves as it goes: if you stop it, or Steam turns it away, the next one carries on.
+  <strong>Check everything again</strong> ignores these limits and re-reads every game, which is slow. A sync never changes
+  your diary, and doesn't find Family Sharing games (that needs the import).</p>
+</details>
 {% endblock %}

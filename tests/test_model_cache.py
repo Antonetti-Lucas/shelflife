@@ -8,7 +8,7 @@ from shelflife import diary, recommend
 from shelflife.hours import set_hours
 from shelflife.models import Game, LibraryEntry
 from shelflife.recommend import data_version, recommend as recommend_games, score_all
-from shelflife.settings import set_hide_adult, set_learn_from_play
+from shelflife.settings import set_hide_adult, set_taste_mode
 from tests.factories import add_game, build_scenario
 
 
@@ -40,11 +40,11 @@ def test_nothing_changed_nothing_rebuilt(session, builds):
         lambda s: diary.set_not_interested(s, 40, True),
         lambda s: diary.set_favorite(s, 10, True),
         lambda s: diary.set_status(s, 21, "playing"),
-        lambda s: set_learn_from_play(s, False),
+        lambda s: set_taste_mode(s, "ratings"),
         lambda s: set_hide_adult(s, False),
         lambda s: add_game(s, 99, "New in the pool", tags={"Stealth": 100}, owned=False, reviews=(10, 1)),
     ],
-    ids=["rating", "not interested", "favorite", "status", "learn from play", "adult setting", "new game"],
+    ids=["rating", "not interested", "favorite", "status", "taste mode", "adult setting", "new game"],
 )
 def test_a_change_to_what_the_model_reads_rebuilds_it(session, builds, change):
     build_scenario(session)

@@ -5,7 +5,7 @@ import pytest
 
 from shelflife.learned import fit
 from shelflife.recommend import _build_model, held_out_liking
-from shelflife.settings import get_learn_from_play, set_learn_from_play
+from shelflife.settings import get_taste_mode, set_taste_mode
 from tests.factories import add_game
 
 
@@ -21,19 +21,19 @@ def library(session):
     return {1: 5.0, 2: 5.0, 3: 1.0, 4: 5.0}
 
 
-@pytest.mark.parametrize("learn", [True, False])
-def test_a_game_unlike_all_others_is_predicted_from_nothing_however_much_you_loved_and_played_it(session, library, learn):
-    assert held_out_liking(session, library, {}, [4], learn_from_play=learn)[4] == pytest.approx(0.0)
+@pytest.mark.parametrize("mode", ["both", "ratings", "play"])
+def test_a_game_unlike_all_others_is_predicted_from_nothing_however_much_you_loved_and_played_it(session, library, mode):
+    assert held_out_liking(session, library, {}, [4], mode=mode)[4] == pytest.approx(0.0)
 
 
-@pytest.mark.parametrize("learn", [True, False])
-def test_a_game_is_predicted_from_the_games_like_it(session, library, learn):
-    assert held_out_liking(session, library, {}, [1], learn_from_play=learn)[1] > 0
+@pytest.mark.parametrize("mode", ["both", "ratings", "play"])
+def test_a_game_is_predicted_from_the_games_like_it(session, library, mode):
+    assert held_out_liking(session, library, {}, [1], mode=mode)[1] > 0
 
 
 def test_holding_out_a_rated_game_is_the_same_as_never_having_rated_it(session, library):
-    held = held_out_liking(session, library, {}, [1], learn_from_play=False)[1]
-    without = _build_model(session, {k: v for k, v in library.items() if k != 1}, {}, learn_from_play=False)
+    held = held_out_liking(session, library, {}, [1], mode="ratings")[1]
+    without = _build_model(session, {k: v for k, v in library.items() if k != 1}, {}, mode="ratings")
     training, ridges = without.broad_training()
     taste = fit(training, without.tag_units, without.text_units, without.beta, ridges=ridges)
     expected = taste.predict(without.tag_units[1], without.text_units.get(1)) + without.push_down(1, without.narrow_alphas())
@@ -41,9 +41,9 @@ def test_holding_out_a_rated_game_is_the_same_as_never_having_rated_it(session, 
 
 
 def test_the_check_never_changes_your_choice(session, library):
-    set_learn_from_play(session, False)
-    held_out_liking(session, library, {}, [1, 2], learn_from_play=True)
-    assert get_learn_from_play(session) is False
+    set_taste_mode(session, "ratings")
+    held_out_liking(session, library, {}, [1, 2], mode="both")
+    assert get_taste_mode(session) == "ratings"
 
 
 def test_games_without_tags_are_skipped(session, library):

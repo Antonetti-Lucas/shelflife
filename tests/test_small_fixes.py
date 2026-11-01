@@ -33,7 +33,7 @@ def test_my_ratings_is_paged_and_keeps_your_place_after_an_edit(client, session)
         add_game(session, i, f"Game {i:03}", minutes=600)
         diary.save_rating(session, i, 4.0)
     first = client.get("/ratings").text
-    assert f"{RATINGS_PAGE_SIZE + 5} games" in first and "Page 1 of 2" in first
+    assert f'class="count">{RATINGS_PAGE_SIZE + 5}<' in first and "Page 1 of 2" in first
     second = client.get("/ratings?page=2").text
     assert "Page 2 of 2" in second and second.count('class="row"') == 5
     assert 'name="next" value="/ratings?page=2#g' in second  # saving a rating returns to page 2

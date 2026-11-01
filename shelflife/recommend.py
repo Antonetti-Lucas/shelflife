@@ -1,18 +1,18 @@
 """Recommendations from how well a game fits what you liked, scaled by review quality.
 
-What teaches your taste, and nothing else:
-- **Your star ratings.** A rating of 3 stars or more says how much you liked a game, `(rating - 3) / 2`
+What teaches your taste, and nothing else (the taste mode on My taste picks between the first two):
+- **Your star ratings** (modes "both" and "ratings"). A rating of 3 stars or more says how much you liked a game, `(rating - 3) / 2`
   (0 to +1), and teaches the broad taste: games like it rise. A rating under 3 says "not this
   game": it pushes down only games very like it (a sequel, a near-clone), through a narrow
   likeness (`LOOK_ALIKE_POWER`), never the whole genre. Disliking one horror game says nothing
   about horror.
-- **Games you played but didn't rate**, when "also learn from games I played but didn't rate" is
-  on (the default, My taste page). Playing a game says you probably liked it; how much you played
-  it (shelflife/play.py: against your other games and the game's own players) says how sure that
-  is. So such a game counts as the rating your played games usually get, with a confidence that
-  grows with your play. Little play means "not sure", never "didn't like it".
-
-- **"Not interested"** hides a game, and counts as a weak "not this game": like a 2-star rating,
+- **Games you played but didn't rate** (modes "both", the default, and "play"). Playing a game
+  says you probably liked it; how much you played it (shelflife/play.py: against your other games
+  and the game's own players) says how sure that is. So such a game counts as the rating your
+  played games usually get, with a confidence that grows with your play. Little play means "not
+  sure", never "didn't like it". In "play" every played game counts this way, rated or not, and
+  "usually get" is a plain like (+0.5), since ratings are left out.
+- **"Not interested"** (every mode) hides a game, and counts as a weak "not this game": like a 2-star rating,
   but less sure (`NOT_INTERESTED_CONFIDENCE`), since it can also mean "not now" or "too expensive".
   So it pushes down only its close look-alikes, a little less than a 2-star rating would. A
   rating you gave the game wins over it.
@@ -58,7 +58,7 @@ from shelflife.learned import (
 from shelflife.models import Game
 from shelflife.play import BACKLOG_MAX_MIN, PlayScale, PlayScore, is_played
 from shelflife.quality import quality_factor
-from shelflife.settings import get_hide_adult, get_learn_from_play
+from shelflife.settings import get_hide_adult, get_taste_mode
 from shelflife.tags import compute_idf, is_adult, tag_vector
 
 __all__ = ["BACKLOG_MAX_MIN", "is_played"]  # also imported from here by other modules
@@ -151,7 +151,7 @@ class _Model:
     vectors: dict[int, dict[str, float]]
     games: list[Game]
     session: Session | None = None
-    learn_from_play: bool = True
+    mode: str = "both"  # what teaches the taste: "both", "ratings" or "play" (settings.TASTE_MODES)
     hide_adult: bool = False  # leave games for adults out of the lists
     candidates: list[Game] = field(default_factory=list)
     played_titles: set[str] = field(default_factory=set)
@@ -163,8 +163,12 @@ class _Model:
     likes: dict[int, float] = field(default_factory=dict)  # rated 3 stars or more: (rating - 3) / 2
     dislikes: dict[int, float] = field(default_factory=dict)  # rated under 3 stars
     dismissed: set[int] = field(default_factory=set)  # marked "not interested", not rated
-    played: dict[int, PlayScore] = field(default_factory=dict)  # played, not rated (learned from when the switch is on)
+    played: dict[int, PlayScore] = field(default_factory=dict)  # played, not rated (or any played game in "play"); learned from unless the mode is "ratings"
     rated_and_played: dict[int, float] = field(default_factory=dict)  # what the games you played and rated got
+
+    @property
+    def learns_from_play(self) -> bool:
+        return self.mode != "ratings"
 
     @cached_property
     def tag_units(self) -> dict[int, Vector]:
@@ -197,7 +201,7 @@ class _Model:
         ridge of each game you only played (the less sure, the larger)."""
         training = [(i, r) for i, r in self.likes.items() if i != skip]
         ridges: dict[int, float] = {}
-        if self.learn_from_play:
+        if self.learns_from_play:
             usual = self.usual_rating(skip)
             for i in self.played:
                 if i != skip:
@@ -249,7 +253,7 @@ class _Model:
         """How much each liked game shapes the tag profile: its rating, or for a game you only
         played, the usual rating times how sure its play makes us."""
         out = {i: r for i, r in self.likes.items()}
-        if self.learn_from_play:
+        if self.learns_from_play:
             usual = self.usual_rating()
             out.update({i: usual * self.confidence(i) for i in self.played})
         return out
@@ -272,7 +276,7 @@ class _Model:
 
     @property
     def implicit(self) -> int:
-        return len(self.played) if self.learn_from_play else 0
+        return len(self.played) if self.learns_from_play else 0
 
     @cached_property
     def disliked(self) -> list[tuple[Game, float]]:
@@ -336,9 +340,11 @@ def play_scale(games: list[Game]) -> PlayScale:
 
 
 def _build_model(
-    session: Session, ratings: dict[int, float], not_interested: dict[int, str], learn_from_play: bool | None = None
+    session: Session, ratings: dict[int, float], not_interested: dict[int, str], mode: str | None = None
 ) -> _Model:
-    learn = get_learn_from_play(session) if learn_from_play is None else learn_from_play
+    mode = get_taste_mode(session) if mode is None else mode
+    # In "play" your ratings teach nothing, and the reasons on a card show hours, not stars.
+    taught = ratings if mode != "play" else {}
     # In your diary, so not recommended. Of these only "not interested" teaches anything (below).
     in_diary = set(not_interested) | favorite_ids(session) | tracked_ids(session)
 
@@ -349,8 +355,8 @@ def _build_model(
     scale = play_scale(games)
 
     model = _Model(
-        vectors, games, session=session, learn_from_play=learn, hide_adult=get_hide_adult(session),
-        shown_ratings=dict(ratings), scale=scale,
+        vectors, games, session=session, mode=mode, hide_adult=get_hide_adult(session),
+        shown_ratings=dict(taught), scale=scale,
     )
     for g in games:
         app_id, entry, family = g.steam_app_id, g.library_entry, bool(g.family_shared)
@@ -366,6 +372,7 @@ def _build_model(
         model.played_titles.add(_base_name(g.name))
         if not vectors[app_id]:
             continue
+        rating = taught.get(app_id)
         if rating is not None:
             weight = rating_weight(rating)
             (model.likes if weight >= 0 else model.dislikes)[app_id] = weight
@@ -494,13 +501,13 @@ def held_out_liking(
     ratings: dict[int, float],
     not_interested: dict[int, str],
     app_ids: Collection[int],
-    learn_from_play: bool | None = None,
+    mode: str | None = None,
 ) -> dict[int, float]:
     """For checking the model (tools/evaluate.py): how much you would like each game in `app_ids`,
     predicted with everything known about that game left out (its rating and its play, also from
     "what a game you played usually gets"). Games without tags are skipped. (Each game's play is
     still among the percentiles the others are ranked by; that is minor.)"""
-    model = _build_model(session, ratings, not_interested, learn_from_play)
+    model = _build_model(session, ratings, not_interested, mode)
     known: dict[tuple[int, int], float] = {}
     worked_out = model.kernel
 

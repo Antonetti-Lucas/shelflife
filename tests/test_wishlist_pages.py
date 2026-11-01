@@ -55,7 +55,7 @@ def test_the_page_lists_your_wishlisted_games_best_fit_first_and_nothing_else(cl
     wish(session, 40, 41)
     html = client.get("/wishlist").text
     assert titles(html) == ["Pool Stealth Good", "Pool Stealth Bad"]
-    assert "2 of 2 games on your Steam wishlist" in html
+    assert 'class="count">2 of 2<' in html
     assert "Backlog Stealth" not in html and "Family Stealth" not in html
 
 
@@ -94,8 +94,8 @@ def test_games_still_waiting_for_details_and_ones_that_cannot_be_ranked_are_coun
     session.commit()
     wish(session, 40, 900, 43)
     html = client.get("/wishlist").text
-    assert "1 wishlist game still waiting for store details" in html
-    assert "1 can't be ranked (DLC or software, or no tags)" in html
+    assert "1 still waiting for store details" in html
+    assert "1 can't be ranked (DLC, software or no tags)" in html
     assert titles(html) == ["Pool Stealth Good"] and "App 900" not in html
 
 

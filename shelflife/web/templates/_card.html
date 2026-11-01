@@ -1,33 +1,35 @@
 {# One recommendation. `next_url` is where to return after rating or dismissing;
    `rating` is your current rating of the game, if any. #}
+{% macro rating_select(g, next_url, rating) %}
+<form method="post" action="/game/{{ g.steam_app_id }}/rate">
+  <input type="hidden" name="next" value="{{ next_url }}">
+  <select name="rating" class="stars {{ 'unrated' if rating is none }}" onchange="this.form.submit()" aria-label="Rate {{ g.name }}">
+    <option value="">{{ "☆ Rate" if rating is none else "Not rated" }}</option>
+    {% for o in RATING_OPTIONS %}<option value="{{ o }}" {{ "selected" if rating == o }}>{{ stars(o) }} {{ "%g"|format(o) }}</option>{% endfor %}
+  </select>
+</form>
+{% endmacro %}
+
 {% macro card(r, next_url, rating=none, similar_to=none, note=none) %}
 {% set g = r.game %}
 <article class="card">
   <a class="cover" href="/game/{{ g.steam_app_id }}">
     {% if g.cover_url %}<img src="{{ g.cover_url }}" loading="lazy" alt="">{% else %}<span class="nocover">{{ g.name[:1] }}</span>{% endif %}
+    <span class="badge {{ fit_level(r.similarity) }}">{{ "%.0f"|format(r.similarity * 100) }}% {{ "similar" if similar_to else "match" }}</span>
+    {% if note %}<span class="flag">★ Wishlist</span>{% endif %}
   </a>
   <div class="card-body">
     <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a></h3>
-    <p class="meta">
-      {% if similar_to %}<strong>{{ "%.0f"|format(r.similarity * 100) }}% similar</strong> to {{ similar_to }}{% else %}<strong>{{ "%.0f"|format(r.similarity * 100) }}% match</strong>{% endif %}
-      · quality ×{{ "%.2f"|format(r.quality) }}
-      · {{ reviews_text(g) }}
-    </p>
-    {% if note %}<p class="wish">★ {{ note }}</p>{% endif %}
-    {% if r.because %}<p class="why">Because you played {{ r.because|join(", ") }}</p>{% endif %}
-    {% if r.tags %}<p class="tags">{% if similar_to %}<span class="meta">Shares</span>{% endif %}{% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}</p>{% endif %}
-    {% if r.watch %}<p class="watch">Heads-up: very like {{ r.watch|join(", ") }}.</p>{% endif %}
+    <p class="meta">{{ short_reviews(g) }}</p>
+    {% if note %}<p class="wish" title="{{ note }}">★ {{ note }}</p>{% endif %}
+    {% if r.because %}<p class="why" title="{{ r.because|join('; ') }}">Like {% for b in r.because %}<b>{{ game_of(b) }}</b>{{ ", " if not loop.last }}{% endfor %}</p>{% endif %}
+    {% if r.tags %}<p class="tags">{% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}</p>{% endif %}
+    {% if r.watch %}<p class="watch">Very like {{ r.watch|join(", ") }}</p>{% endif %}
     <div class="actions">
-      <form method="post" action="/game/{{ g.steam_app_id }}/rate">
-        <input type="hidden" name="next" value="{{ next_url }}">
-        <select name="rating" onchange="this.form.submit()" aria-label="Rate {{ g.name }}">
-          <option value="">{{ "Rate…" if rating is none else "Not rated" }}</option>
-          {% for o in RATING_OPTIONS %}<option value="{{ o }}" {{ "selected" if rating == o }}>{{ o }}</option>{% endfor %}
-        </select>
-      </form>
+      {{ rating_select(g, next_url, rating) }}
       <form method="post" action="/game/{{ g.steam_app_id }}/not-interested">
         <input type="hidden" name="next" value="{{ next_url }}">
-        <button class="ghost" type="submit">Not interested</button>
+        <button class="ghost" type="submit" title="Hide it, and push down games very like it">Not interested</button>
       </form>
     </div>
   </div>

@@ -14,11 +14,10 @@
   <option value="any" {{ "selected" if match == "any" }}>Any of these tags</option>
 </select>
 {% endif %}
-<p class="meta tagtip">Put a minus in front of a tag to leave out the games that have it (for example <code>-Horror</code>).</p>
 {% endmacro %}
 
 {% macro tag_note(unknown) %}
 {% if unknown %}
-<p class="meta">No game here has the tag {{ unknown|join(", ") }}. Tags are matched whole, so "Co-op" is not "Online Co-Op"; pick one from the suggestions.</p>
+<p class="meta warn">No game here has the tag {{ unknown|join(", ") }}. Tags match whole ("Co-op" is not "Online Co-Op"): pick one from the suggestions.</p>
 {% endif %}
 {% endmacro %}

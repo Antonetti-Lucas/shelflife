@@ -318,7 +318,7 @@ def start_calls(monkeypatch):
 def test_explore_offers_a_choice_between_tags_and_popular_games(client, session):
     html = client.get("/explore").text
     assert 'name="source"' in html and 'value="tags" selected' in html and 'value="popular"' in html
-    assert "Well-reviewed games, no tags" in html
+    assert "Well-reviewed, any tag" in html
 
 
 def test_choosing_popular_games_starts_a_search_without_tags(client, session, monkeypatch):
