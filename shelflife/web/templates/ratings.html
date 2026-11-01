@@ -8,8 +8,59 @@
 </a>
 {% endmacro %}
 
-<div class="page-head"><h2>My ratings<span class="count">{{ rated_total }}</span></h2></div>
-{% if rated %}
+<div class="page-head">
+  <h2>My ratings<span class="count">{{ rated_total }}</span></h2>
+  <nav class="viewswitch" aria-label="View">
+    <a href="{{ url(view='grid', page=1) }}" class="{{ 'on' if view == 'grid' }}" title="Posters" aria-label="Posters">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg></a>
+    <a href="{{ url(view='list', page=1) }}" class="{{ 'on' if view == 'list' }}" title="List, to edit" aria-label="List, to edit">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="2" width="14" height="3" rx="1"/><rect x="1" y="6.5" width="14" height="3" rx="1"/><rect x="1" y="11" width="14" height="3" rx="1"/></svg></a>
+  </nav>
+</div>
+
+{% if rated_total %}
+<form class="bar" method="get" action="/ratings">
+  {% if view == "list" %}<input type="hidden" name="view" value="list">{% endif %}
+  <select name="rating" aria-label="Rating" onchange="this.form.submit()">
+    <option value="">Any rating</option>
+    {% for o in RATING_OPTIONS|reverse %}<option value="{{ '%g'|format(o) }}" {{ "selected" if rating == '%g'|format(o) }}>{{ stars(o) }}</option>{% endfor %}
+    <option value="none" {{ "selected" if rating == "none" }}>Reviewed, not rated</option>
+  </select>
+  <select name="decade" aria-label="Decade" onchange="this.form.submit()">
+    <option value="">Any decade</option>
+    {% for d in decades %}<option value="{{ d }}" {{ "selected" if decade == d|string }}>{{ d }}s</option>{% endfor %}
+  </select>
+  <select name="genre" aria-label="Genre" onchange="this.form.submit()">
+    <option value="">Any genre</option>
+    {% for x in genres %}<option value="{{ x }}" {{ "selected" if genre == x }}>{{ x }}</option>{% endfor %}
+  </select>
+  <span class="bar-gap"></span>
+  <select name="sort" aria-label="Sort by" onchange="this.form.submit()">
+    {% for value, label in sorts.items() %}<option value="{{ value }}" {{ "selected" if sort == value }}>{{ label }}</option>{% endfor %}
+  </select>
+  <noscript><button type="submit">Apply</button></noscript>
+</form>
+{% if filtered %}<p class="meta">{{ total }} of {{ rated_total }} games · <a href="{{ url(rating='', decade='', genre='', page=1) }}">Clear filters</a></p>{% endif %}
+{% endif %}
+
+{% if rated and view == "grid" %}
+<div class="posters">
+  {% for e, g in rated %}
+  <a class="poster-item" href="/game/{{ g.steam_app_id }}" title="{{ g.name }}{% if e.review %} · reviewed{% endif %}">
+    <span class="poster">
+      <img src="{{ poster_url(g) }}" loading="lazy" alt="{{ g.name }}"
+           onerror='this.onerror = null; this.closest(".poster").classList.add("wide"); {% if g.cover_url %}this.src = {{ g.cover_url|tojson }};{% else %}this.remove();{% endif %}'>
+      <span class="poster-name">{{ g.name }}</span>
+    </span>
+    <span class="poster-meta">
+      {% if e.rating is not none %}<span class="stars-text">{{ stars(e.rating) }}</span>{% endif %}
+      {% if g.steam_app_id in favorites %}<span class="fav" title="One of your favorites">♥</span>{% endif %}
+      {% if e.review %}<span class="has-review" title="You reviewed it">≡</span>{% endif %}
+    </span>
+  </a>
+  {% endfor %}
+</div>
+{% elif rated %}
 <div class="rows">
   {% for e, g in rated %}
   {% set msg = "Delete your rating and review for " ~ g.name ~ "?" %}
@@ -36,10 +87,13 @@
   </article>
   {% endfor %}
 </div>
-{{ link_pager(page, pages, "/ratings?page=") }}
+{% elif filtered %}
+  <p class="empty">No rated game matches. <a href="{{ url(rating='', decade='', genre='', page=1) }}">Clear filters</a></p>
 {% else %}
   <p class="empty">Nothing rated yet. Rate games from the recommendations or a game's page.</p>
 {% endif %}
+{% set b = url(page="") %}
+{{ link_pager(page, pages, b ~ ("page=" if b.endswith("?") else "&page=")) }}
 
-<p class="meta">Games you marked "not interested" are in the <a href="/diary?show=not-interested">Diary</a>.</p>
+<p class="meta" style="margin-top: 24px">Games you marked "not interested" are in the <a href="/diary?show=not-interested">Diary</a>.</p>
 {% endblock %}

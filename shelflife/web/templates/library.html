@@ -26,11 +26,8 @@
       <option value="{{ value }}" {{ "selected" if rec == value }}>{{ label }}</option>
     {% endfor %}
   </select>
-  <select name="sort" aria-label="Sort by">
-    {% for value, label in [("hours", "Most played"), ("recent", "Recently played"), ("fit", "Best recommendation"), ("score", "Engagement score"), ("rating", "Your rating"), ("name", "Name")] %}
-      <option value="{{ value }}" {{ "selected" if sort == value }}>{{ label }}</option>
-    {% endfor %}
-  </select>
+  <input type="hidden" name="sort" value="{{ sort }}">
+  <input type="hidden" name="dir" value="{{ dir }}">
   <button type="submit">Apply</button>
 </form>
 {{ tag_note(unknown_tags) }}
@@ -39,9 +36,15 @@
 <table>
   <thead>
     <tr>
-      <th>Game</th><th>Source</th><th class="num">Hours</th><th class="num">Last played</th><th class="num">Engagement</th>
-      <th class="num" title="Taste match × review quality, for games you haven't played yet">Fit</th>
-      <th class="num">Your rating</th><th>Status</th>
+      {% for key, label, cls, tip in [
+           ("name", "Game", "", ""), ("source", "Source", "", ""), ("hours", "Hours", "num", ""),
+           ("recent", "Last played", "num", ""), ("score", "Engagement", "num", ""),
+           ("fit", "Fit", "num", "Taste match × review quality, for games you haven't played yet"),
+           ("rating", "Your rating", "num", ""), ("status", "Status", "", "")] %}
+        <th class="{{ cls }} sortable {{ 'on' if sort == key }}" {% if sort == key %}aria-sort="{{ 'ascending' if dir == 'asc' else 'descending' }}"{% endif %}>
+          <a href="{{ sort_url(key) }}" {% if tip %}title="{{ tip }}"{% endif %}>{{ label }}<span class="arrow" aria-hidden="true">{{ ("▲" if dir == "asc" else "▼") if sort == key else "↕" }}</span></a>
+        </th>
+      {% endfor %}
     </tr>
   </thead>
   <tbody>
@@ -98,6 +101,5 @@
 </table>
 </div>
 
-{% set base = "/library?q=" ~ (q|urlencode) ~ "&source=" ~ source ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&status=" ~ status ~ "&rec=" ~ rec ~ "&sort=" ~ sort ~ "&page=" %}
-{{ link_pager(page, pages, base) }}
+{{ link_pager(page, pages, pager_base) }}
 {% endblock %}

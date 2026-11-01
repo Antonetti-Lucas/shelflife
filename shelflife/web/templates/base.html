@@ -11,7 +11,14 @@
 </head>
 <body>
   <header class="top">
-    <a class="brand" href="/"><span class="logo" aria-hidden="true"><i></i><i></i><i></i></span><span>ShelfLife</span></a>
+    <a class="brand" href="/">
+      <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3" y="7" width="4.5" height="12" rx="1" fill="#3fcf9b"/>
+        <rect x="8.5" y="4" width="4.5" height="15" rx="1" fill="#2a9d74"/>
+        <rect x="14.6" y="6.4" width="4.5" height="12.6" rx="1" fill="#7fe3bd" transform="rotate(12 16.85 19)"/>
+        <rect x="1.5" y="19.5" width="21" height="2" rx="1" fill="#c9ced6"/>
+      </svg>
+      <span>ShelfLife</span></a>
     <nav>
       {% set path = request.url.path %}
       <a href="/" class="{{ 'on' if path == '/' }}">For you</a>

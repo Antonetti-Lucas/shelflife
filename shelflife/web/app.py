@@ -6,6 +6,7 @@ addressed to this computer's own names, and refuses form posts from other sites.
 """
 
 import os
+import re
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
@@ -20,6 +21,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from shelflife import diary
+from shelflife.diary import favorite_ids
 from shelflife.config import try_load_settings
 from shelflife.db import SessionLocal, init_db
 from shelflife.hours import set_hours
@@ -240,12 +242,20 @@ def current_url(request: Request) -> str:
     return request.url.path + (f"?{query}" if query else "")
 
 
+# The Library's sortable columns and the order each starts in when you click it.
+LIBRARY_COLUMNS = {
+    "name": "asc", "source": "asc", "hours": "desc", "recent": "desc", "score": "desc",
+    "fit": "desc", "rating": "desc", "status": "asc",
+}
+
+
 @app.get("/library")
 def library(
     request: Request,
     q: str = "",
     source: str = "all",
     sort: str = "",
+    dir: str = "",
     rec: str = "all",
     status: str = "all",
     tag: str = "",
@@ -253,6 +263,7 @@ def library(
     page: str = "1",
     session: Session = Depends(get_session),
 ):
+    """Your games as a table; click a column's name to sort by it, again to turn the order round."""
     ratings = diary.load_ratings(session)
     entries = diary.load_entries(session)
     filters = ListFilter.read(q, tag, match)
@@ -260,7 +271,8 @@ def library(
     scores = score_all(session, ratings, diary.load_not_interested(session))
     scope = scores.backlog | scores.family  # what "recommended" means in the library
     rec, keep = recommended(rec, {i: scores.by_id[i].score for i in scope})
-    sort = sort or ("fit" if keep is not None else "hours")
+    sort = sort if sort in LIBRARY_COLUMNS else ("fit" if keep is not None else "hours")
+    dir = dir if dir in ("asc", "desc") else LIBRARY_COLUMNS[sort]
 
     query = (
         select(Game)
@@ -298,18 +310,32 @@ def library(
             }
         )
 
-    keys = {
+    value = {
         "name": lambda r: r["game"].name.lower(),
-        "hours": lambda r: -(r["hours"] or 0),
-        "score": lambda r: -(r["score"] or 0),
-        "fit": lambda r: -(r["fit"] if r["fit"] is not None else -1e9),
-        "rating": lambda r: -(r["rating"] or 0),
-        # Most recent first; games with no date (family games, never played) last.
-        "recent": lambda r: (r["last_played"] is None, -(r["last_played"].timestamp() if r["last_played"] else 0)),
-    }
-    rows.sort(key=keys.get(sort, keys["hours"]))
+        "source": lambda r: source_label(r["game"]),
+        "hours": lambda r: r["hours"] or 0,
+        "recent": lambda r: r["last_played"],
+        "score": lambda r: r["score"] or 0,
+        "fit": lambda r: r["fit"],
+        "rating": lambda r: r["rating"],
+        "status": lambda r: diary.STATUSES.index(r["status"]) if r["status"] else None,
+    }[sort]
+    rows.sort(key=lambda r: r["game"].name.lower())  # ties in name order
+    known = [r for r in rows if value(r) is not None]
+    rows = sorted(known, key=value, reverse=dir == "desc") + [r for r in rows if value(r) is None]  # blanks last
 
     part = paginate(rows, page, PAGE_SIZE)
+    settings = {"q": q, "source": source, "tag": tag, "match": filters.match, "status": status, "rec": rec, "sort": sort, "dir": dir}
+
+    def url(**changes) -> str:
+        return "/library?" + urlencode({k: v for k, v in (settings | changes).items() if v not in ("", None)})
+
+    def sort_url(column: str) -> str:
+        """Sort by this column; the column already sorted by turns its order round."""
+        if column == sort:
+            return url(dir="asc" if dir == "desc" else "desc")
+        return url(sort=column, dir=LIBRARY_COLUMNS[column])
+
     return templates.TemplateResponse(
         request,
         "library.html",
@@ -318,6 +344,9 @@ def library(
             "total": part.total,
             "source": source,
             "sort": sort,
+            "dir": dir,
+            "sort_url": sort_url,
+            "pager_base": url() + "&page=",
             "rec": rec,
             "status": status,
             **filters.context(tag_index),
@@ -656,27 +685,95 @@ def game_page(request: Request, app_id: int, session: Session = Depends(get_sess
     )
 
 
-RATINGS_PAGE_SIZE = 30
+RATINGS_PAGE_SIZE = 30  # the list view, where each game can be edited
+POSTERS_PAGE_SIZE = 72  # the poster grid
+RATINGS_SORTS = {"rating": "Highest rated", "rated": "Recently rated", "release": "Release date", "name": "Name"}
+YEAR = re.compile(r"\b(19[5-9]\d|20\d\d)\b")
+
+
+def release_year(game: Game) -> int | None:
+    """The year in Steam's release date text ("17 Sep, 2020", "Nov 16, 2009", "Q1 2027"...)."""
+    found = YEAR.search(game.release_date or "")
+    return int(found.group(1)) if found else None
+
+
+def poster_url(game: Game) -> str:
+    """Steam's portrait library art (600x900), from the same store CDN as the covers. Some games
+    have none; the page then falls back to the wide cover."""
+    return f"https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{game.steam_app_id}/library_600x900.jpg"
 
 
 @app.get("/ratings")
-def ratings_page(request: Request, page: str = "1", session: Session = Depends(get_session)):
-    entries = session.execute(
-        select(DiaryEntry, Game)
-        .join(Game, Game.steam_app_id == DiaryEntry.steam_app_id)
-        .order_by(DiaryEntry.rating.desc().nulls_last(), Game.name)
-    ).all()
+def ratings_page(
+    request: Request,
+    view: str = "grid",
+    rating: str = "",
+    decade: str = "",
+    genre: str = "",
+    sort: str = "rating",
+    page: str = "1",
+    session: Session = Depends(get_session),
+):
+    """Every game you rated or reviewed: a poster wall to browse, or a list to edit."""
+    view = "list" if view == "list" else "grid"
+    sort = sort if sort in RATINGS_SORTS else "rating"
+    entries = session.execute(select(DiaryEntry, Game).join(Game, Game.steam_app_id == DiaryEntry.steam_app_id)).all()
     # A game can have just a review and no rating, so list those too.
-    rated = paginate([(e, g) for e, g in entries if e.rating is not None or e.review], page, RATINGS_PAGE_SIZE)
+    rated = [(e, g) for e, g in entries if e.rating is not None or e.review]
+    decades = sorted({y // 10 * 10 for _, g in rated if (y := release_year(g))}, reverse=True)
+    genres = sorted({x for _, g in rated for x in (g.genres or [])}, key=str.lower)
+
+    shown = rated
+    if rating in {f"{o:g}" for o in RATING_OPTIONS}:
+        shown = [(e, g) for e, g in shown if e.rating == float(rating)]
+    elif rating == "none":
+        shown = [(e, g) for e, g in shown if e.rating is None]
+    else:
+        rating = ""
+    if (wanted_decade := whole(decade, 0)) in decades:
+        shown = [(e, g) for e, g in shown if (y := release_year(g)) and y // 10 * 10 == wanted_decade]
+    else:
+        decade = ""
+    if genre in genres:
+        shown = [(e, g) for e, g in shown if genre in (g.genres or [])]
+    else:
+        genre = ""
+
+    shown.sort(key=lambda p: p[1].name.lower())
+    if sort == "rating":
+        shown.sort(key=lambda p: -(p[0].rating or 0))
+    elif sort == "rated":
+        shown.sort(key=lambda p: p[0].updated_at, reverse=True)
+    elif sort == "release":
+        shown.sort(key=lambda p: (release_year(p[1]) is None, -(release_year(p[1]) or 0)))
+    part = paginate(shown, page, RATINGS_PAGE_SIZE if view == "list" else POSTERS_PAGE_SIZE)
+
+    settings = {"view": view, "rating": rating, "decade": decade, "genre": genre, "sort": sort}
+
+    def url(**changes) -> str:
+        """This page with some settings changed; defaults are left out of the link."""
+        params = settings | {"page": part.page} | changes
+        defaults = {"view": "grid", "sort": "rating", "page": 1}
+        return "/ratings?" + urlencode({k: v for k, v in params.items() if v not in ("", None) and defaults.get(k) != v})
+
     return templates.TemplateResponse(
         request,
         "ratings.html",
         {
-            "rated": rated.shown,
-            "rated_total": rated.total,
-            "page": rated.page,
-            "pages": rated.pages,
+            "rated": part.shown,
+            "rated_total": len(rated),
+            "total": part.total,
+            "filtered": bool(rating or decade or genre),
+            "page": part.page,
+            "pages": part.pages,
             "here": current_url(request),
+            "url": url,
+            "decades": decades,
+            "genres": genres,
+            "sorts": RATINGS_SORTS,
+            "poster_url": poster_url,
+            "favorites": favorite_ids(session),
+            **settings,
         },
     )
 

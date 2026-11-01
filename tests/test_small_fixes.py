@@ -32,11 +32,12 @@ def test_my_ratings_is_paged_and_keeps_your_place_after_an_edit(client, session)
     for i in range(1, RATINGS_PAGE_SIZE + 6):
         add_game(session, i, f"Game {i:03}", minutes=600)
         diary.save_rating(session, i, 4.0)
-    first = client.get("/ratings").text
+    first = client.get("/ratings?view=list").text
     assert f'class="count">{RATINGS_PAGE_SIZE + 5}<' in first and "Page 1 of 2" in first
-    second = client.get("/ratings?page=2").text
+    second = client.get("/ratings?view=list&page=2").text
     assert "Page 2 of 2" in second and second.count('class="row"') == 5
-    assert 'name="next" value="/ratings?page=2#g' in second  # saving a rating returns to page 2
+    assert 'name="next" value="/ratings?view=list&amp;page=2#g' in second  # saving a rating returns to page 2
+    assert "Page 1 of" not in client.get("/ratings").text  # the poster grid fits them all on one page
 
 
 def test_empty_lists_point_to_buttons_not_commands(client, session):

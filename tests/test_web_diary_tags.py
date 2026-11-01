@@ -156,7 +156,7 @@ def test_the_library_sorts_by_most_recently_played_with_undated_games_last(clien
     ids = library_ids(html)
     assert ids[:2] == ["201", "200"] and set(ids[2:]) == {"202", "203"}
     assert "2026-05-01" in html and "2024-01-01" in html
-    assert 'value="recent" selected' in html
+    assert 'name="sort" value="recent"' in html
 
 
 def test_explore_can_be_filtered_by_tag(client, scenario):

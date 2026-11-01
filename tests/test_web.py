@@ -121,7 +121,7 @@ def test_the_recommended_filter_keeps_the_best_fit_candidates_only(client, scena
 
 
 def test_recommended_sorts_by_fit_automatically(client, scenario):
-    assert 'value="fit" selected' in client.get("/library?rec=50").text
+    assert 'name="sort" value="fit"' in client.get("/library?rec=50").text
 
 
 def test_library_search_is_case_insensitive_and_escaped(client, scenario):
@@ -199,7 +199,7 @@ def test_rating_a_game_that_does_not_exist_is_an_error(client, scenario):
 def test_the_ratings_page_lists_ratings_and_reviews_and_points_to_dismissed_games(client, scenario):
     post(client, "/game/20/rate", rating="4", review="a <b>bold</b> review")
     post(client, "/game/21/not-interested", value="1")
-    html = client.get("/ratings").text
+    html = client.get("/ratings?view=list").text
     assert "Backlog Stealth" in html and "Backlog Sports" not in html  # 21 is only dismissed: it is in the diary
     assert "&lt;b&gt;bold&lt;/b&gt;" in html and "<b>bold</b>" not in html  # reviews are escaped
     assert "Delete rating and review" in html and "/diary?show=not-interested" in html
@@ -411,3 +411,47 @@ def test_small_edits_are_marked_to_save_in_place(client, scenario):
 def test_a_marked_form_still_works_without_the_script(client, scenario):
     response = post(client, "/game/20/rate", rating="4", next="/library#g20")
     assert response.status_code == 303 and response.headers["location"] == "/library#g20"
+
+
+# ---- library columns ----
+
+
+def library_names(html):
+    return re.findall(r'<a href="/game/\d+">([^<]+)</a>\s*</div>', html)
+
+
+def test_clicking_a_column_sorts_by_it_and_clicking_again_turns_it_round(client, scenario):
+    html = client.get("/library").text
+    assert 'aria-sort="descending"' in html and "/library?" in html  # most played first by default
+    by_name = client.get("/library?sort=name").text
+    names = library_names(by_name)
+    assert names == sorted(names, key=str.lower) and "dir=desc" in by_name  # the Game column now offers Z to A
+    assert library_names(client.get("/library?sort=name&dir=desc").text) == names[::-1]
+
+
+def test_unrated_games_stay_last_whichever_way_ratings_are_sorted(client, scenario):
+    post(client, "/game/20/rate", rating="2")
+    post(client, "/game/21/rate", rating="4.5")
+    for direction in ("desc", "asc"):
+        names = library_names(client.get(f"/library?sort=rating&dir={direction}").text)
+        sports, stealth, unrated = (names.index(n) for n in ("Backlog Sports", "Backlog Stealth", "Family Stealth"))
+        assert (sports < stealth) == (direction == "desc")  # 4.5 above 2 from high to low, below it from low to high
+        assert unrated > max(sports, stealth)
+
+
+def test_a_sort_the_library_does_not_know_falls_back(client, scenario):
+    assert client.get("/library?sort=banana&dir=sideways").status_code == 200
+
+
+# ---- my ratings ----
+
+
+def test_my_ratings_shows_posters_and_filters_by_rating_decade_and_genre(client, session, scenario):
+    post(client, "/game/20/rate", rating="4", review="good")
+    post(client, "/game/21/rate", rating="2")
+    html = client.get("/ratings").text
+    assert "library_600x900.jpg" in html and 'class="posters"' in html
+    assert "\u2605\u2605\u2605\u2605" in html or "★★★★" in html
+    four = client.get("/ratings?rating=4").text
+    assert "Backlog Stealth" in four and "Backlog Sports" not in four and "Clear filters" in four
+    assert client.get("/ratings?rating=9&decade=abc&genre=nonsense").status_code == 200
