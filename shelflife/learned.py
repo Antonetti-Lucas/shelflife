@@ -37,7 +37,23 @@ _STOP = frozenset(
     get gets also only just like most some such then them these those there here been being were was had does did
     doing""".split()
 )
+# Store-page boilerplate: about the product page, the keyboard or the languages, not about the game.
+# Rare enough to look meaningful, so without this list two unrelated games can match on "esc" or "logo".
+_BOILERPLATE = frozenset(
+    """steam steamworks esc alt ctrl shift tab enter key keys keyboard mouse controller gamepad windows mac linux
+    logo fonts font version versions update updates patch dlc dlcs edition editions bundle purchase purchased
+    available includes include including included content contents feature features official copyright
+    trademark trademarks reserved rights inc ltd llc corp studio studios publisher developer developers
+    english chinese japanese korean russian german french spanish language languages subtitles translation
+    simplified traditional support supports supported store page click link visit follow twitter discord
+    facebook youtube website www http https com net org early access release released launch now
+    please note warning""".split()
+)
 _WORD = re.compile(r"[a-z][a-z'-]{2,}")
+MIN_GAMES_PER_WORD = 3  # a word only one or two games use says little about likeness
+MAX_SHARE_PER_WORD = 0.15  # a word in more than this share of games is too common to tell games apart
+MIN_TEXT_WORDS = 20  # fewer different words than this left (a text in another script, a two-line blurb): no text
+LARGE_LIBRARY = 100  # the share and the minimums are about many texts; a handful of games keeps every shared word
 
 Vector = dict[str, float]
 
@@ -62,19 +78,32 @@ def unit_tag_vectors(vectors: dict[int, Vector]) -> dict[int, Vector]:
 
 def text_vectors(texts: dict[int, str]) -> dict[int, Vector]:
     """A unit-length word vector for each text: how often a word is used (damped) times how
-    rare it is across the games. Words used by only one game say nothing about likeness."""
-    tokens = {i: [w for w in _WORD.findall(t.lower()) if w not in _STOP] for i, t in texts.items()}
+    rare it is across the games.
+
+    Only words that can tell games apart are kept: not common English, not store boilerplate,
+    used by at least MIN_GAMES_PER_WORD games and by at most MAX_SHARE_PER_WORD of them. A text
+    with fewer than MIN_TEXT_WORDS such words gets no vector (the game is compared on its tags
+    alone): what is left of a description in Chinese or Japanese is "steam", "esc" and "logo",
+    and a vector of three junk words matches anything that shares one of them. With fewer than
+    LARGE_LIBRARY texts the share and the minimums are not applied (too few games to judge)."""
+    tokens = {i: [w for w in _WORD.findall(t.lower()) if w not in _STOP and w not in _BOILERPLATE] for i, t in texts.items()}
     df: dict[str, int] = defaultdict(int)
     for words in tokens.values():
         for w in set(words):
             df[w] += 1
     n = len(tokens)
+    large = n >= LARGE_LIBRARY
+    fewest, most = (MIN_GAMES_PER_WORD, MAX_SHARE_PER_WORD * n) if large else (2, n)
     out: dict[int, Vector] = {}
     for i, words in tokens.items():
         tf: dict[str, int] = defaultdict(int)
         for w in words:
-            tf[w] += 1
-        out[i] = unit({w: (1 + math.log(c)) * math.log(n / df[w]) for w, c in tf.items() if df[w] >= 2})
+            if fewest <= df[w] <= most:
+                tf[w] += 1
+        if large and len(tf) < MIN_TEXT_WORDS:
+            out[i] = {}
+            continue
+        out[i] = unit({w: (1 + math.log(c)) * math.log(n / df[w]) for w, c in tf.items()})
     return out
 
 
