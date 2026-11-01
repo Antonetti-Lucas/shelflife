@@ -5,8 +5,8 @@
 <p class="lede">
   The profile behind your recommendations, from {{ taste.explicit_count }} games you rated{% if learn_from_play %}
   and {{ taste.implicit_count }} you played without rating{% endif %}. Tags are weighted by how much you liked
-  the games they came from. Your star ratings teach it; favorites, statuses and your wishlist never do,
-  and "not interested" only hides a game.
+  the games they came from. Your star ratings teach it; "not interested" hides a game and counts a little
+  against its close look-alikes; favorites, statuses and your wishlist never do.
 </p>
 
 <section id="learn">
@@ -57,6 +57,14 @@
     </ul>
     {% else %}
       <p class="empty">None yet.</p>
+    {% endif %}
+    {% if taste.dismissed %}
+    <h3>Games you're not interested in</h3>
+    <p class="meta">Each also pushes down only its close look-alikes, a little less than a 2-star rating would.
+      <a href="/diary?show=not-interested">Manage them in the Diary.</a></p>
+    <ul class="plain">
+      {% for game in taste.dismissed %}<li><a href="/game/{{ game.steam_app_id }}">{{ game.name }}</a></li>{% endfor %}
+    </ul>
     {% endif %}
   </section>
 </div>

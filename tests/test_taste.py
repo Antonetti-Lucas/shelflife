@@ -1,6 +1,6 @@
 """What teaches your taste, and nothing else: star ratings (a low one only against close
-look-alikes) and, if you choose, games you played but didn't rate (a likely like, as sure as your
-play). Favorites, statuses, the wishlist and "not interested" never do."""
+look-alikes), "not interested" (a weaker low rating) and, if you choose, games you played but didn't
+rate (a likely like, as sure as your play). Favorites, statuses and the wishlist never do."""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -66,6 +66,49 @@ def test_the_heads_up_names_the_game_you_rated_low(session, horror):
     watch = explain(session, horror, {}, 10).watch
     assert watch == ["Exit Corridor (rated 1.5)"]
     assert explain(session, horror, {}, 11).watch == []
+
+
+# ---- "not interested" ----
+
+LOVED = {2: 5.0}  # only the sci-fi horror you love; Exit Corridor (1) is not rated
+NOT_FOR_ME = {1: "Exit Corridor"}
+
+
+def test_not_interested_pushes_down_its_look_alikes(session, horror):
+    assert liking(session, LOVED, 10, NOT_FOR_ME) < liking(session, LOVED, 10)
+
+
+def test_not_interested_counts_less_than_a_two_star_rating(session, horror):
+    before = liking(session, LOVED, 10)
+    by_mark = before - liking(session, LOVED, 10, NOT_FOR_ME)
+    by_rating = before - liking(session, LOVED | {1: 2.0}, 10)
+    assert 0 < by_mark < by_rating
+
+
+def test_not_interested_says_little_about_its_genre(session, horror):
+    near = liking(session, LOVED, 10) - liking(session, LOVED, 10, NOT_FOR_ME)
+    far = liking(session, LOVED, 12) - liking(session, LOVED, 12, NOT_FOR_ME)
+    assert near > 3 * far
+
+
+def test_a_rating_wins_over_not_interested(session, horror):
+    assert liking(session, horror, 10, NOT_FOR_ME) == liking(session, horror, 10)
+    model = _build_model(session, horror, NOT_FOR_ME)
+    assert model.dismissed == set() and 1 in model.dislikes
+
+
+def test_a_game_you_played_then_dismissed_is_not_learned_as_liked(session, horror):
+    set_learn_from_play(session, True)
+    model = _build_model(session, LOVED, NOT_FOR_ME)
+    assert 1 in model.dismissed and 1 not in model.played
+
+
+def test_the_heads_up_names_a_game_you_are_not_interested_in(session, horror):
+    assert explain(session, LOVED, NOT_FOR_ME, 10).watch == ["Exit Corridor (not interested)"]
+
+
+def test_the_taste_page_lists_the_games_you_are_not_interested_in(session, horror):
+    assert [g.name for g in taste_profile(session, LOVED, NOT_FOR_ME).dismissed] == ["Exit Corridor"]
 
 
 def test_the_taste_page_lists_the_games_you_rated_low(session, horror):
@@ -149,7 +192,7 @@ def test_favorites_and_statuses_never_change_the_taste(session, library, action)
     assert taste_profile(session, library, {}).profile == before
 
 
-def test_not_interested_only_hides_the_game(session, library):
+def test_not_interested_hides_the_game_and_leaves_the_tag_profile_alone(session, library):
     before = taste_profile(session, library, {}).profile
     marked = {20: "Pool game"}
     assert taste_profile(session, library, marked).profile == before

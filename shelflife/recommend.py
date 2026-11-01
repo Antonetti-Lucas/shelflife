@@ -12,8 +12,13 @@ What teaches your taste, and nothing else:
   is. So such a game counts as the rating your played games usually get, with a confidence that
   grows with your play. Little play means "not sure", never "didn't like it".
 
-Favorites, statuses and the wishlist are diary records and never change your taste; "not
-interested" only hides a game. (Research behind this: PLANS.md, section 8b.)
+- **"Not interested"** hides a game, and counts as a weak "not this game": like a 2-star rating,
+  but less sure (`NOT_INTERESTED_CONFIDENCE`), since it can also mean "not now" or "too expensive".
+  So it pushes down only its close look-alikes, a little less than a 2-star rating would. A
+  rating you gave the game wins over it.
+
+Favorites, statuses and the wishlist are diary records and never change your taste. (Research
+behind this: PLANS.md, section 8b.)
 
 shelflife/learned.py does the learning: it predicts, from a game's tags and the words of its store
 text, how much you would like it, fitted to your games one by one. The tag profile (your liked
@@ -76,6 +81,14 @@ def rating_weight(rating: float) -> float:
     return (rating - NEUTRAL_RATING) / (5.0 - NEUTRAL_RATING)
 
 
+# A game you marked "not interested" (and didn't rate) counts as a 2-star rating held half as
+# sure: its ridge is RIDGE / NOT_INTERESTED_CONFIDENCE, so alone it pushes its look-alikes down a
+# bit over half as far as a 2-star rating does. Not measurable on the owner's games (none of the
+# marked games are rated); chosen to stay under a real rating.
+NOT_INTERESTED_WEIGHT = rating_weight(2.0)
+NOT_INTERESTED_CONFIDENCE = 0.5
+
+
 class _Lazy(Sequence):
     """A list worked out the first time it is read. The reasons behind a pick take a pass over
     your games each, and only the picks on screen are ever read."""
@@ -112,7 +125,7 @@ class Recommendation:
     quality: float
     because: Sequence[str]  # games you liked that pulled this one up
     tags: list[str]  # tags of this game that match your taste
-    watch: list[str]  # games you rated low that this one closely resembles
+    watch: list[str]  # games you rated low or aren't interested in that this one closely resembles
 
 
 @dataclass(frozen=True)
@@ -121,6 +134,7 @@ class Taste:
     explicit_count: int  # games learned from your ratings
     implicit_count: int  # games learned from your play alone
     disliked: list[tuple[Game, float]] = field(default_factory=list)  # (game, your rating), under 3 stars
+    dismissed: list[Game] = field(default_factory=list)  # marked "not interested", not rated
 
 
 @dataclass(frozen=True)
@@ -148,6 +162,7 @@ class _Model:
     scale: PlayScale | None = None  # percentiles of your play, for a game page
     likes: dict[int, float] = field(default_factory=dict)  # rated 3 stars or more: (rating - 3) / 2
     dislikes: dict[int, float] = field(default_factory=dict)  # rated under 3 stars
+    dismissed: set[int] = field(default_factory=set)  # marked "not interested", not rated
     played: dict[int, PlayScore] = field(default_factory=dict)  # played, not rated (learned from when the switch is on)
     rated_and_played: dict[int, float] = field(default_factory=dict)  # what the games you played and rated got
 
@@ -204,12 +219,15 @@ class _Model:
         return fit_cached(key, training, self.tag_units, self.text_units, self.beta, ridges=ridges)
 
     def narrow_alphas(self, skip: int | None = None) -> list[tuple[int, float]]:
-        """The dislikes, as (game id, weight) on the narrow likeness."""
-        ids = [i for i in self.dislikes if i != skip]
+        """The dislikes and the games you're not interested in, as (game id, weight) on the narrow
+        likeness."""
+        targets = {i: (NOT_INTERESTED_WEIGHT, RIDGE / NOT_INTERESTED_CONFIDENCE) for i in self.dismissed}
+        targets |= {i: (w, RIDGE) for i, w in self.dislikes.items()}
+        ids = [i for i in targets if i != skip]
         if not ids:
             return []
-        gram = [[self.kernel(a, b) ** LOOK_ALIKE_POWER + (RIDGE if x == y else 0.0) for y, b in enumerate(ids)] for x, a in enumerate(ids)]
-        return list(zip(ids, _solve(gram, [self.dislikes[i] for i in ids])))
+        gram = [[self.kernel(a, b) ** LOOK_ALIKE_POWER + (targets[a][1] if x == y else 0.0) for y, b in enumerate(ids)] for x, a in enumerate(ids)]
+        return list(zip(ids, _solve(gram, [targets[i][0] for i in ids])))
 
     @cached_property
     def narrow(self) -> list[tuple[int, float]]:
@@ -259,6 +277,17 @@ class _Model:
     @cached_property
     def disliked(self) -> list[tuple[Game, float]]:
         return sorted(((self.games_by_id[i], self.shown_ratings[i]) for i in self.dislikes), key=lambda gr: (gr[1], gr[0].name))
+
+    def why_low(self, app_id: int) -> str:
+        """How you said "not this game", for a heads-up."""
+        return f"rated {self.shown_ratings[app_id]:g}" if app_id in self.dislikes else "not interested"
+
+    @cached_property
+    def dismissed_games(self) -> list[Game]:
+        return sorted((self.games_by_id[i] for i in self.dismissed), key=lambda g: g.name.lower())
+
+    def taste(self) -> Taste:
+        return Taste(self.profile, self.explicit, self.implicit, self.disliked, self.dismissed_games)
 
 
 @dataclass(frozen=True)
@@ -310,7 +339,7 @@ def _build_model(
     session: Session, ratings: dict[int, float], not_interested: dict[int, str], learn_from_play: bool | None = None
 ) -> _Model:
     learn = get_learn_from_play(session) if learn_from_play is None else learn_from_play
-    # In your diary, so not recommended; none of these teach your taste.
+    # In your diary, so not recommended. Of these only "not interested" teaches anything (below).
     in_diary = set(not_interested) | favorite_ids(session) | tracked_ids(session)
 
     games = list(session.scalars(select(Game).where(Game.type == "game").options(selectinload(Game.library_entry))))
@@ -342,6 +371,8 @@ def _build_model(
             (model.likes if weight >= 0 else model.dislikes)[app_id] = weight
             if played:
                 model.rated_and_played[app_id] = weight
+        elif app_id in not_interested:  # over play: you played it, then said you're not interested
+            model.dismissed.add(app_id)
         elif played:
             score = scale.score(entry)
             if score is not None:
@@ -393,7 +424,7 @@ def _cached(session: Session, ratings: dict[int, float], not_interested: dict[in
         if _cache["key"] != key:
             with SessionLocal() as own:
                 model = _build_model(own, ratings, not_interested)
-                model.broad, model.narrow, model.profile, model.disliked  # noqa: B018  (worked out while the session is open)
+                model.broad, model.narrow, model.profile, model.disliked, model.dismissed_games  # noqa: B018  (worked out while the session is open)
                 scores = _score_everything(model)
                 model.session = None
             _cache.update(key=key, model=model, scores=scores)
@@ -440,7 +471,7 @@ def taste_profile(
     session: Session, ratings: dict[int, float], not_interested: dict[int, str]
 ) -> Taste:
     model, _ = _cached(session, ratings, not_interested)
-    return Taste(model.profile, model.explicit, model.implicit, model.disliked)
+    return model.taste()
 
 
 def explain(
@@ -509,11 +540,11 @@ def _because(cand: Game, model: _Model) -> list[str]:
 def _score(cand: Game, model: _Model) -> Recommendation:
     app_id = cand.steam_app_id
     vec = model.vectors[app_id]
-    # Below 0: it closely resembles a game you rated low, or is unlike your usual games.
+    # Below 0: it closely resembles a game you rated low or aren't interested in, or is unlike your usual games.
     similarity = min(model.liking(app_id) * MATCH_SCALE, 1.0)
     by_tag = sorted(((model.profile.get(t, 0.0) * v, t) for t, v in vec.items()), reverse=True)
     near_dislikes = sorted(
-        ((model.kernel(app_id, i), i) for i in model.dislikes if i != app_id), reverse=True
+        ((model.kernel(app_id, i), i) for i in (*model.dislikes, *model.dismissed) if i != app_id), reverse=True
     )[:1]
     quality = quality_factor(cand.reviews_positive, cand.reviews_negative)
     return Recommendation(
@@ -524,7 +555,7 @@ def _score(cand: Game, model: _Model) -> Recommendation:
         because=_Lazy(lambda: _because(cand, model)),
         tags=[t for c, t in by_tag[:3] if c > 0],
         watch=[
-            f"{model.games_by_id[i].name} (rated {model.shown_ratings[i]:g})"
+            f"{model.games_by_id[i].name} ({model.why_low(i)})"
             for sim, i in near_dislikes
             if sim >= WATCH_LIKENESS
         ],
@@ -594,6 +625,6 @@ def recommend(
         backlog=top(backlog),
         family=top(family),
         discover=top(discover),
-        taste=Taste(model.profile, model.explicit, model.implicit, model.disliked),
+        taste=model.taste(),
         wishlist=top(wishlist),
     )

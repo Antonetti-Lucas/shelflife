@@ -15,8 +15,8 @@ from shelflife.models import DiaryEntry, Game
 STATUSES = ("playing", "played", "dropped")
 STATUS_LABELS = {"playing": "Playing", "played": "Played", "dropped": "Dropped"}
 
-# Only star ratings (and, if you choose, your play) teach your taste. A favorite is a diary list,
-# "not interested" only hides a game, and a status says nothing about taste either: "dropped"
+# Only star ratings, "not interested" (a weak low rating) and, if you choose, your play teach your
+# taste (shelflife/recommend.py). A favorite is a diary list, and a status says nothing about taste: "dropped"
 # would mean a story game quit halfway as much as an endless multiplayer game you left after
 # 600 hours.
 

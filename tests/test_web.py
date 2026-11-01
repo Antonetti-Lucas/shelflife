@@ -33,6 +33,11 @@ def post(client, path, **data):
     return client.post(path, data=data, headers=SAME_SITE, follow_redirects=False)
 
 
+def titles(html):
+    """The game cards' titles, in the order shown."""
+    return re.findall(r'<h3><a href="/game/\d+">([^<]+)</a></h3>', html)
+
+
 def diary_entry(app_id):
     with SessionLocal() as s:
         return diary.get_entry(s, app_id)
@@ -135,9 +140,9 @@ def test_explore_shows_only_games_you_do_not_have(client, scenario):
 
 def test_explore_hides_dismissed_games(client, scenario):
     post(client, "/game/40/not-interested", value="1")
-    assert "Pool Stealth Good" not in client.get("/explore").text
+    assert "Pool Stealth Good" not in titles(client.get("/explore").text)
     post(client, "/game/40/not-interested", value="0")
-    assert "Pool Stealth Good" in client.get("/explore").text
+    assert "Pool Stealth Good" in titles(client.get("/explore").text)
 
 
 def test_a_rated_game_stays_in_explore_with_its_rating_shown(client, scenario):
@@ -191,19 +196,19 @@ def test_rating_a_game_that_does_not_exist_is_an_error(client, scenario):
     assert post(client, "/game/999999/rate", rating="4").status_code == 400
 
 
-def test_the_ratings_page_lists_ratings_reviews_and_dismissed_games(client, scenario):
+def test_the_ratings_page_lists_ratings_and_reviews_and_points_to_dismissed_games(client, scenario):
     post(client, "/game/20/rate", rating="4", review="a <b>bold</b> review")
     post(client, "/game/21/not-interested", value="1")
     html = client.get("/ratings").text
-    assert "Backlog Stealth" in html and "Backlog Sports" in html
+    assert "Backlog Stealth" in html and "Backlog Sports" not in html  # 21 is only dismissed: it is in the diary
     assert "&lt;b&gt;bold&lt;/b&gt;" in html and "<b>bold</b>" not in html  # reviews are escaped
-    assert "Delete rating and review" in html and "Undo" in html
+    assert "Delete rating and review" in html and "/diary?show=not-interested" in html
 
 
-def test_not_interested_hides_a_game_without_changing_the_taste_and_can_be_undone(client, scenario):
+def test_not_interested_hides_a_game_and_undoing_it_puts_everything_back(client, scenario):
     before = client.get("/taste").text
     post(client, "/game/40/not-interested", value="1")
-    assert "Pool Stealth Good" not in client.get("/").text
+    assert "Pool Stealth Good" not in titles(client.get("/").text)
     post(client, "/game/40/not-interested", value="0")
     assert client.get("/taste").text == before
 

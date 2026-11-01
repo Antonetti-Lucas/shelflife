@@ -38,7 +38,7 @@ Taken on demo data: popular Steam games with made-up playtime, ratings, diary en
 
 ![Wishlist](docs/screenshots/wishlist.jpg)
 
-**Diary**, one tab per status (playing, played, dropped, favorites) with your dates and reviews, and **Stats**:
+**Diary**, one tab per status (playing, played, dropped, favorites, not interested) with your dates and reviews, and **Stats**:
 
 ![Diary](docs/screenshots/diary.jpg)
 
@@ -126,12 +126,12 @@ The same steps exist as command-line scripts (below), for example `python -m scr
 - **Library:** your owned and family games with covers. Set a rating or a status, or type hours for family games, right in the row. Search by name, filter by tags or status, sort by most played or **recently played**, or use the **Recommended** filter to keep the unplayed games that fit you best (top 50%, 25% or 10%).
 - **Wishlist:** your Steam wishlist ranked by how well each game fits your taste, with your own rank and the date you added each one. Search, the tag picker and the best-fit cut work as in Explore, and you can sort by fit, your own order, newest added, reviews or name. It is read by Sync (the wishlist must be public on Steam) and only shows games whose store details have arrived. Wishlisted games also get a badge and an "only my wishlist" filter in Explore, a "From your wishlist" list on the home page (instead of in "To discover"), and a note on their game page. Wanting a game is not liking it, so a wishlist never changes your taste.
 - **Explore:** games you don't own, ranked by fit, with the same filter, search, tags and sorting. **Find more games** adds new ones for the genres or tags you pick (or the tags you like most), or with no tags at all (the best-reviewed games from SteamSpy's list of popular games), for a number of games you choose, and shows its progress. Every game page has **Games like this** (Explore ranked by how close games are to that one) and a button to search Steam for new games like it.
-- **Diary:** one tab each for playing, played, dropped and your favorites, newest first, paged, with search and a tag filter. Set a status, optional dates and a favorite on a game's page; dates are never filled in for you. "Played" means finished or played as much as you wanted, so it fits endless multiplayer games too.
+- **Diary:** one tab each for playing, played, dropped, your favorites and the games you marked "not interested" (with Undo), newest first, paged, with search and a tag filter. Set a status, optional dates and a favorite on a game's page; dates are never filled in for you. "Played" means finished or played as much as you wanted, so it fits endless multiplayer games too.
 - **Tags:** pick several tags in the Library, Explore or Diary, and choose whether a game needs all of them or any of them. Tags match whole and ignore case, a game "has" a tag if it is among its 20 most voted, and the box suggests the tags that exist. Put a minus in front of a tag (`-Horror`) to leave out the games that have it; in **Find more games** the search then sets aside games with that tag.
 - **Sync:** one button, seven steps: your library, wishlist, achievements, store details, game descriptions, review counts, and how long other players play each game you've played. A sync re-reads what could have changed: achievements for games you played since they were last read, or not read for 30 days; store details for new games, games that came back empty a week ago, and the 30 oldest when they are over 90 days old; descriptions once; review counts a month old; other players' hours every six months. **Check everything again** ignores those limits (slow, and the page says how long). It saves as it goes, needs `STEAM_API_KEY` and `STEAM_ID` in `.env`, and never runs at the same time as a game search.
 - **Stats:** games and hours in your library, your diary by status, games finished per year, how you rate, and your most played games.
 - **Game page:** why a game fits you, the closest games you liked, how you played it (and how much that play says you liked it, against your other games and the game's own players), your verdict, status and favorite.
-- **My ratings:** your ratings and reviews, paged, to edit or delete in place, and the games you marked "not interested".
+- **My ratings:** your ratings and reviews, paged, to edit or delete in place.
 - **My taste:** the tags your taste leans toward, the games you rated low, the switch **Also learn from games I played but didn't rate** (on by default), and **Hide games for adults** (on by default): games whose community tags are mostly about sexual content are left out of recommendations and Explore, while games that merely have adult scenes (Cyberpunk 2077, Baldur's Gate 3) stay. Your library, diary and wishlist page always show every game.
 
 ## Family Sharing (optional)
@@ -194,12 +194,13 @@ A game's play score is the average of the signals it has (a missing one is left 
 
 The older **engagement score** (`shelflife/score.py`: points for hours, achievements, rare achievements, current play and recency) is still shown in the Library and on game pages.
 
-**2. What your taste learns from** (`shelflife/recommend.py`). Only two things, each with one meaning:
+**2. What your taste learns from** (`shelflife/recommend.py`). Only three things, each with one meaning:
 
 - **Your star ratings.** A rating of 3 stars or more says how much you liked a game, `(rating − 3) / 2` from 0 to +1, and games like it rise. A rating under 3 stars says "not this game": it pushes down only games very like it (a sequel, a near-clone), never its whole genre. Disliking one horror game says nothing about horror.
+- **"Not interested"** hides a game and counts as a weaker 2-star rating: it pushes down only its close look-alikes, a little less than a real 2-star rating would, because it can also mean "not now" or "too expensive". A rating you give the game wins over it.
 - **Games you played but didn't rate**, while **Also learn from games I played but didn't rate** is on (the default). Playing a game says you probably liked it, so it counts as the rating your played games usually get; how much you played it (the play score above) says how sure that is. Little play means "not sure", never "didn't like it".
 
-Favorites, statuses (playing, played, dropped) and your wishlist are diary records: they never change your taste, and a game in your diary isn't recommended. "Not interested" only hides a game.
+Favorites, statuses (playing, played, dropped) and your wishlist are diary records: they never change your taste, and a game in your diary isn't recommended.
 
 **3. Learning your taste** (`shelflife/learned.py`). Every game is described two ways: by its tags, each counting by how relevant it is to the game (its votes relative to the game's top tag, squared, for the top 15 tags) and how rare it is in your library; and by the words of the store's "About this game" text that tell games apart (store boilerplate dropped; words used by at least 3 games and at most 15% of them; a description left with fewer than 20 such words, such as one written in another script, counts as none). Two games are as alike as those descriptions are, half tags and half words, so two games with different tags but the same story still match, and a sequel matches its original by the names they share. A ridge regression then learns, from every game you have a verdict on, which kinds of games you like, and predicts that for every other game. Because it is fitted to your games one by one, a game very close to a favourite stays close to it. Nothing is sent anywhere: it is a few hundred games of arithmetic, kept between pages until your data changes.
 

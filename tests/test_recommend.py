@@ -80,7 +80,7 @@ def test_a_game_marked_not_interested_is_not_recommended(session):
     assert [r.game.name for r in result.discover] == ["Pool Stealth Bad"]
 
 
-def test_not_interested_does_not_change_the_taste(session):
+def test_not_interested_does_not_change_the_tag_profile(session):
     ratings = build_scenario(session)
     before = taste_profile(session, ratings, {}).profile
     assert taste_profile(session, ratings, {40: "Pool Stealth Good"}).profile == before

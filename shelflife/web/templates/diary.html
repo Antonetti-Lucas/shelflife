@@ -2,13 +2,17 @@
 {% from "_tagbox.html" import tag_input, tag_note %}
 {% block title %}Diary · ShelfLife{% endblock %}
 {% block content %}
-{% set labels = {"playing": "Playing", "played": "Played", "dropped": "Dropped", "favorites": "★ Favorites"} %}
+{% set labels = {"playing": "Playing", "played": "Played", "dropped": "Dropped", "favorites": "★ Favorites", "not-interested": "Not interested"} %}
 
 <h2>Diary</h2>
 <p class="lede">
   Your games by status, newest first. Set a game's status or favorite on its page, or its status in the
   <a href="/library">Library</a>.
 </p>
+{% if show == "not-interested" %}
+<p class="meta">Games you marked "not interested" are hidden from recommendations and Explore, and push down
+  games very like them (a sequel, a near-clone), a little less than a 2-star rating would. Undo puts one back.</p>
+{% endif %}
 
 <nav class="tabs" aria-label="Diary sections">
   {% for key in tabs %}
@@ -37,6 +41,14 @@
         {% if e.favorite and show != "favorites" %}<small>★ favorite</small>{% endif %}
         {% if show == "favorites" and e.status %}<small>{{ STATUS_LABELS[e.status] }}</small>{% endif %}
         {% if e.rating is not none %}<small>rated {{ rating_text(e.rating) }}</small>{% endif %}</h3>
+      {% if show == "not-interested" %}
+      <form method="post" action="/game/{{ g.steam_app_id }}/not-interested" class="inline">
+        <input type="hidden" name="value" value="0">
+        <input type="hidden" name="next" value="{{ url() }}">
+        <span class="meta">marked {{ e.updated_at.strftime("%Y-%m-%d") }}</span>
+        <button class="ghost" type="submit">Undo</button>
+      </form>
+      {% else %}
       <p class="meta">
         {% if e.started_on %}started {{ e.started_on.isoformat() }}{% endif %}
         {% if e.started_on and e.finished_on %} · {% endif %}
@@ -44,6 +56,7 @@
         {% if not e.started_on and not e.finished_on %}no dates{% endif %}
         {% if g.library_entry and g.library_entry.playtime_total_min %} · {{ "%.1f"|format(g.library_entry.playtime_total_hours) }} hours{% endif %}
       </p>
+      {% endif %}
       {% if e.review %}<p class="review">{{ e.review }}</p>{% endif %}
     </div>
   </article>
@@ -56,6 +69,7 @@
     {% if show == "playing" %}Nothing yet. Pick "Playing" on a game's page when you start one.
     {% elif show == "played" %}Nothing yet. Pick "Played" when you finish a game or are done with an endless one, or on old games to log them.
     {% elif show == "dropped" %}Nothing dropped. Use it for games you stopped before the end.
+    {% elif show == "not-interested" %}Nothing marked. Use "Not interested" on a recommendation or a game's page.
     {% else %}No favorites yet. Add one from a game's page.{% endif %}
   </p>
 {% endif %}

@@ -46,24 +46,5 @@
   <p class="empty">Nothing rated yet. Rate games from the recommendations or a game's page.</p>
 {% endif %}
 
-<h2>Not interested <small>{{ marked|length }} games</small></h2>
-{% if marked %}
-<div class="rows">
-  {% for e, g in marked %}
-  <article class="row compact">
-    {{ thumb(g) }}
-    <div class="row-body">
-      <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a></h3>
-      <form method="post" action="/game/{{ g.steam_app_id }}/not-interested" class="inline">
-        <input type="hidden" name="value" value="0">
-        <input type="hidden" name="next" value="/ratings">
-        <button class="ghost" type="submit">Undo</button>
-      </form>
-    </div>
-  </article>
-  {% endfor %}
-</div>
-{% else %}
-  <p class="empty">Nothing marked. Games you mark are hidden from recommendations; it doesn't change your taste.</p>
-{% endif %}
+<p class="meta">Games you marked "not interested" are in the <a href="/diary?show=not-interested">Diary</a>.</p>
 {% endblock %}

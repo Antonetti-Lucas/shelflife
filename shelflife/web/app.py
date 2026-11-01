@@ -648,13 +648,12 @@ def ratings_page(request: Request, page: str = "1", session: Session = Depends(g
             "page": rated.page,
             "pages": rated.pages,
             "here": current_url(request),
-            "marked": [(e, g) for e, g in entries if e.not_interested],
         },
     )
 
 
 DIARY_PAGE_SIZE = 12
-DIARY_TABS = ("playing", "played", "dropped", "favorites")
+DIARY_TABS = ("playing", "played", "dropped", "favorites", "not-interested")
 
 
 @app.get("/diary")
@@ -667,11 +666,12 @@ def diary_page(
     page: str = "1",
     session: Session = Depends(get_session),
 ):
-    """Your games, one status at a time, newest first, with your favorites in a tab."""
+    """Your games, one status at a time, newest first, with your favorites and the games you're not
+    interested in each in a tab."""
     rows = session.execute(
         select(DiaryEntry, Game)
         .join(Game, Game.steam_app_id == DiaryEntry.steam_app_id)
-        .where(or_(DiaryEntry.status.is_not(None), DiaryEntry.favorite.is_(True)))
+        .where(or_(DiaryEntry.status.is_not(None), DiaryEntry.favorite.is_(True), DiaryEntry.not_interested.is_(True)))
     ).all()
 
     def newest_first(pair):
@@ -683,9 +683,11 @@ def diary_page(
         for status in diary.STATUSES
     }
     groups["favorites"] = sorted(((e, g) for e, g in rows if e.favorite), key=lambda p: p[1].name.lower())
+    # Most recently changed first, so a game you just dismissed by mistake is on top.
+    groups["not-interested"] = sorted(((e, g) for e, g in rows if e.not_interested), key=lambda p: p[0].updated_at, reverse=True)
     counts = {key: len(items) for key, items in groups.items()}
-    if show not in groups:  # no tab chosen: the first one with something in it
-        show = next((key for key in DIARY_TABS if counts[key]), "playing")
+    if show not in groups:  # no tab chosen: the first diary list with something in it
+        show = next((key for key in DIARY_TABS[:-1] if counts[key]), "playing")
 
     filters = ListFilter.read(q, tag, match)
     tag_index = TagIndex(g.tags for _, g in groups[show])

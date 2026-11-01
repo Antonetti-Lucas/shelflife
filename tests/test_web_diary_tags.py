@@ -216,3 +216,13 @@ def test_the_pagers_keep_the_all_or_any_choice(client, session):
 def test_the_picker_script_is_served(client):
     response = client.get("/static/tags.js")
     assert response.status_code == 200 and "data-tagpicker" in response.text
+
+
+def test_the_games_you_are_not_interested_in_have_their_own_tab_and_can_be_put_back(client, scenario):
+    post(client, "/game/40/not-interested", value="1")
+    assert 'class="on">Not interested' not in client.get("/diary").text  # never the tab you land on
+    html = client.get("/diary?show=not-interested").text
+    assert names_on(html) == ["Pool Stealth Good"] and "Undo" in html
+    assert names_on(client.get("/diary?show=not-interested&q=nothing").text) == []
+    post(client, "/game/40/not-interested", value="0")
+    assert names_on(client.get("/diary?show=not-interested").text) == []
