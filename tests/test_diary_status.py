@@ -188,6 +188,7 @@ def test_a_database_from_before_statuses_gains_the_new_columns_and_keeps_its_row
     with engine.begin() as conn:
         for column in new_columns:
             conn.execute(text(f"ALTER TABLE diary_entries DROP COLUMN {column}"))
+        conn.execute(text("DROP TABLE alembic_version"))  # databases from then had no migration version
     assert not {c["name"] for c in inspect(engine).get_columns("diary_entries")} & set(new_columns)
 
     init_db()  # what the app does at startup

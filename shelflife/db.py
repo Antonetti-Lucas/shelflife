@@ -28,28 +28,57 @@ class Base(DeclarativeBase):
     pass
 
 
+MIGRATIONS = Path(__file__).resolve().parent / "migrations"
+BASELINE = "0001"  # the schema as it was when migrations began (migrations/versions/0001_baseline.py)
+
+
+def _alembic(connection):
+    from alembic.config import Config
+
+    config = Config()
+    config.set_main_option("script_location", str(MIGRATIONS))
+    config.attributes["connection"] = connection
+    return config
+
+
 def init_db() -> None:
+    """Bring the database up to date with the code, by its migrations (shelflife/migrations).
+
+    - A new, empty database gets every table, marked as up to date.
+    - A database from before migrations (it has the tables but no version) is first brought to the
+      baseline the old way, adding any columns it lacks, then marked as the baseline and upgraded.
+    - Otherwise the migrations it hasn't had yet are applied.
+    """
+    from alembic import command
+
     from shelflife import models  # noqa: F401  (registers tables on Base)
 
-    Base.metadata.create_all(engine)
-    _add_missing_columns()
-
-
-def _add_missing_columns() -> None:
-    """create_all never alters existing tables; add columns new models gained.
-
-    Stand-in for real migrations until the move to PostgreSQL.
-    """
-    inspector = inspect(engine)
     with engine.begin() as conn:
-        for table in Base.metadata.sorted_tables:
-            existing = {c["name"] for c in inspector.get_columns(table.name)}
-            for column in table.columns:
-                if column.name not in existing:
-                    col_type = column.type.compile(engine.dialect)
-                    conn.execute(
-                        text(f'ALTER TABLE {table.name} ADD COLUMN {column.name} {col_type}')
-                    )
+        tables = set(inspect(conn).get_table_names())
+        config = _alembic(conn)
+        if "games" not in tables:
+            # Empty (or only a stale version left behind): build the current schema and mark it.
+            conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
+            Base.metadata.create_all(conn)
+            command.stamp(config, "head")
+            return
+        if "alembic_version" not in tables:
+            _add_missing_columns(conn)
+            command.stamp(config, BASELINE)
+        command.upgrade(config, "head")
+
+
+def _add_missing_columns(conn) -> None:
+    """How databases were kept up to date before migrations: create missing tables and add the
+    columns the models gained. Only used once, to bring an older database to the baseline."""
+    Base.metadata.create_all(conn)
+    inspector = inspect(conn)
+    for table in Base.metadata.sorted_tables:
+        existing = {c["name"] for c in inspector.get_columns(table.name)}
+        for column in table.columns:
+            if column.name not in existing:
+                col_type = column.type.compile(conn.dialect)
+                conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {column.name} {col_type}"))
 
 
 @contextmanager
