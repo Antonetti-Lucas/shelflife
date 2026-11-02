@@ -71,13 +71,14 @@ def import_family(
     for app in shared:
         game = session.get(Game, app.app_id)
         entry = session.get(LibraryEntry, app.app_id)
-        if entry is not None and not game.family_shared:
+        if entry is not None and not game.family_shared and not entry.platform:
             continue  # an owned game: the normal sync is the source of truth
         if game is None:
             name = app.name or names.get(app.app_id) or f"App {app.app_id}"
             game = Game(steam_app_id=app.app_id, name=name)
             session.add(game)
         if entry is not None:
+            game.family_shared = True  # a game you had from another platform is now in your family too
             already_known += 1
             continue
         game.family_shared = True
@@ -97,7 +98,7 @@ def import_family(
     )
     for game in stale:
         entry = session.get(LibraryEntry, game.steam_app_id)
-        if entry is not None:
+        if entry is not None and not entry.platform:  # one you played elsewhere stays, as from that platform
             session.delete(entry)
         game.family_shared = False
         pruned += 1

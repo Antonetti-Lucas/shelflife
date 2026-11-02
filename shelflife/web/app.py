@@ -117,9 +117,10 @@ def rating_text(rating: float | None) -> str:
 def source_label(game: Game) -> str:
     if game.library_entry is None:
         return "Not owned"
-    if game.library_entry.platform:
-        return game.library_entry.platform
-    return "Family" if game.family_shared else "Owned"
+    platform = game.library_entry.platform
+    if game.family_shared:
+        return f"Family · {platform}" if platform else "Family"
+    return platform or "Owned"
 
 
 def short_reviews(game: Game) -> str:
@@ -1195,15 +1196,17 @@ def add_game_page(request: Request, q: str = "", session: Session = Depends(get_
             error = "Steam is rate limiting searches right now; try again in a few minutes."
         except (requests.RequestException, ValueError):
             error = "Couldn't reach Steam to search. Check your connection and try again."
-    known = {}
+    known, family = {}, set()
     for f in found:
         game = session.get(Game, f.app_id)
-        if game is not None and game.library_entry is not None:
+        if otherplatforms.can_mark(game):
+            family.add(f.app_id)
+        elif game is not None and game.library_entry is not None:
             known[f.app_id] = otherplatforms.where_you_have_it(game)
     return templates.TemplateResponse(
         request,
         "add_game.html",
-        {"q": q, "found": found, "known": known, "error": error, "platforms": otherplatforms.PLATFORMS},
+        {"q": q, "found": found, "known": known, "family": family, "error": error, "platforms": otherplatforms.PLATFORMS},
     )
 
 

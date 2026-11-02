@@ -182,8 +182,8 @@
       <h3>How you played it</h3>
       <div class="stats-row">
         <div><strong>{{ "%.1f"|format(entry.playtime_total_hours) if entry.playtime_total_min else "—" }}</strong><span>hours</span></div>
-        {% if entry.achievements_total %}<div><strong>{{ entry.achievements_unlocked }}/{{ entry.achievements_total }}</strong><span>achievements</span></div>{% endif %}
-        {% if entry.last_played %}<div><strong>{{ entry.last_played.strftime("%b %Y") }}</strong><span>last played</span></div>{% endif %}
+        {% if entry.achievements_total and not entry.platform %}<div><strong>{{ entry.achievements_unlocked }}/{{ entry.achievements_total }}</strong><span>achievements</span></div>{% endif %}
+        {% if entry.last_played and not entry.platform %}<div><strong>{{ entry.last_played.strftime("%b %Y") }}</strong><span>last played</span></div>{% endif %}
         {% if play %}<div><strong>{{ "%.0f"|format(play.value * 100) }}%</strong><span>play score</span></div>{% endif %}
       </div>
       {% if game.family_shared or entry.platform %}
@@ -195,21 +195,24 @@
         </label>
         <button type="submit">Save hours</button>
       </form>
-      {% if entry.platform %}
       <form method="post" action="/game/{{ game.steam_app_id }}/platform" class="row-line" style="margin-top: 10px">
         <label class="meta">Played on
           <select name="platform" onchange="this.form.submit()">
+            {% if game.family_shared %}<option value="" {{ "selected" if not entry.platform }}>Steam, through Family Sharing</option>{% endif %}
             {% for p in platforms %}<option value="{{ p }}" {{ "selected" if p == entry.platform }}>{{ p }}</option>{% endfor %}
           </select>
         </label>
         <noscript><button type="submit" class="ghost small">Save</button></noscript>
       </form>
+      {% if entry.platform and not game.family_shared %}
       {% set msg = "Take " ~ game.name ~ " out of your library? Your rating, review and lists stay." %}
       <form method="post" action="/game/{{ game.steam_app_id }}/platform" class="inline" onsubmit='return confirm({{ msg|tojson }})' style="margin-top: 8px">
         <input type="hidden" name="remove" value="1">
         <button type="submit" class="ghost danger small">Remove from library</button>
       </form>
-      <p class="meta">Steam can't see what you play on {{ entry.platform }}: enter your hours if you know them.</p>
+      {% endif %}
+      {% if entry.platform %}
+      <p class="meta">Steam can't see what you play on {{ entry.platform }}: enter your hours{{ " (wherever you played)" if game.family_shared }} if you know them.</p>
       {% else %}
       <p class="meta">Steam doesn't report hours for family games: enter what your Steam client shows.</p>
       {% endif %}

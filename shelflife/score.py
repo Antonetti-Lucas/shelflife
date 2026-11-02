@@ -50,6 +50,8 @@ def engagement_score(entry: LibraryEntry) -> ScoreBreakdown:
     playtime = PLAYTIME_WEIGHT * math.log10(1 + entry.playtime_total_hours)
 
     achievements = rare = 0.0
+    if entry.platform:  # played on another platform: Steam's achievements and dates aren't that play
+        return ScoreBreakdown(playtime=playtime, achievements=0.0, rare=0.0, still_playing=0.0, recency=0.0)
     total = entry.achievements_total or 0
     if total >= MIN_ACHIEVEMENTS:
         achievements = ACHIEVEMENT_MAX * (entry.achievements_unlocked or 0) / total

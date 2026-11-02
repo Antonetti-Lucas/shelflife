@@ -264,7 +264,12 @@ def what_is_due(session: Session, with_due: bool = True) -> dict[str, int | obje
         .join(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
         .where(Game.family_shared.is_(True))
     )
-    other = session.scalar(select(func.count()).select_from(LibraryEntry).where(LibraryEntry.platform.is_not(None))) or 0
+    other = session.scalar(  # a family game played elsewhere counts as family
+        select(func.count())
+        .select_from(LibraryEntry)
+        .join(Game, Game.steam_app_id == LibraryEntry.steam_app_id)
+        .where(LibraryEntry.platform.is_not(None), Game.family_shared.is_not(True))
+    ) or 0
     counts = {"achievements": None, "tags": None, "details": None, "about": None, "reviews": None, "players": None, "length": None, "prices": None}
     minutes = full_minutes = None
     if with_due:

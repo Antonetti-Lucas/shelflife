@@ -7,6 +7,12 @@ game it has no Steam playtime or achievements: you type its hours. It counts as 
 added it because you did), so it is never recommended back to you; your rating or your hours
 teach your taste as they do for any game. If you later buy it on Steam, the next sync makes it
 an ordinary Steam game, with Steam's hours.
+
+A Family Sharing game you played somewhere else instead is marked the same way: it stays a
+family game, and the platform says where you really played it (your hours are for anywhere).
+Its Steam achievements are no longer read or counted, since they'd show your Steam play (often
+none), not your play there. If the family stops sharing it, it stays in your library as a game
+from that platform.
 """
 
 from datetime import datetime, timezone
@@ -31,11 +37,19 @@ def _check(platform: str, hours: float | None) -> None:
 
 
 def where_you_have_it(game: Game) -> str:
-    """"on Steam", "through Family Sharing" or "on PlayStation", for a game in your library."""
+    """"on Steam", "through Family Sharing", "on PlayStation" or "through Family Sharing, played on
+    PlayStation", for a game in your library."""
     entry = game.library_entry
-    if entry is not None and entry.platform:
-        return f"on {entry.platform}"
-    return "through Family Sharing" if game.family_shared else "on Steam"
+    platform = entry.platform if entry is not None else None
+    if game.family_shared:
+        return f"through Family Sharing, played on {platform}" if platform else "through Family Sharing"
+    return f"on {platform}" if platform else "on Steam"
+
+
+def can_mark(game: Game | None) -> bool:
+    """A Family Sharing game not yet marked as played elsewhere: it can be."""
+    entry = game.library_entry if game is not None else None
+    return entry is not None and bool(game.family_shared) and not entry.platform
 
 
 def add_game(session: Session, app_id: int, name: str, platform: str, hours: float | None = None) -> Game:
@@ -43,6 +57,12 @@ def add_game(session: Session, app_id: int, name: str, platform: str, hours: flo
     doesn't know the game yet; its store details come with the next fetch."""
     _check(platform, hours)
     game = session.get(Game, app_id)
+    if can_mark(game):  # in your family library, but you played it elsewhere
+        game.library_entry.platform = platform
+        if hours is not None:
+            game.library_entry.playtime_total_min = round(hours * 60)
+        session.commit()
+        return game
     if game is not None and game.library_entry is not None:
         raise ValueError(f"{game.name} is already in your library ({where_you_have_it(game)}).")
     if game is None:
@@ -65,19 +85,31 @@ def add_game(session: Session, app_id: int, name: str, platform: str, hours: flo
 
 def _entry(session: Session, app_id: int) -> LibraryEntry:
     entry = session.get(LibraryEntry, app_id)
-    if entry is None or not entry.platform:
-        raise ValueError("Only games you added from another platform can be changed or removed here.")
+    game = session.get(Game, app_id)
+    if entry is None or not (entry.platform or game.family_shared):
+        raise ValueError("Only family games and games added from another platform can be changed here.")
     return entry
 
 
 def set_platform(session: Session, app_id: int, platform: str) -> None:
-    _check(platform, None)
-    _entry(session, app_id).platform = platform
+    """Change where you played it. For a family game, no platform means you played it through
+    Family Sharing after all."""
+    entry = _entry(session, app_id)
+    if not platform and session.get(Game, app_id).family_shared:
+        entry.platform = None
+    else:
+        _check(platform, None)
+        entry.platform = platform
     session.commit()
 
 
 def remove_game(session: Session, app_id: int) -> None:
     """Take a game you added from another platform out of your library. The game stays known
-    (your rating and diary are kept), now as a game you don't have."""
-    session.delete(_entry(session, app_id))
+    (your rating and diary are kept), now as a game you don't have. A family game stays in your
+    library, only no longer marked as played elsewhere."""
+    entry = _entry(session, app_id)
+    if session.get(Game, app_id).family_shared:
+        entry.platform = None
+    else:
+        session.delete(entry)
     session.commit()

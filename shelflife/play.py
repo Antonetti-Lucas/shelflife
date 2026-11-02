@@ -78,10 +78,14 @@ def is_played(entry: LibraryEntry | None, family: bool) -> bool:
 
 
 def _signals(entry: LibraryEntry) -> dict[str, float]:
-    """The raw signals a game has (bigger = more engaged); a missing one is left out."""
+    """The raw signals a game has (bigger = more engaged); a missing one is left out. A game you
+    played on another platform has only your hours: Steam's achievements (a family game has some)
+    say nothing about play elsewhere."""
     out = {}
     if entry.playtime_total_min > 0:
         out["hours"] = float(entry.playtime_total_min)
+    if entry.platform:
+        return out
     if (entry.achievements_total or 0) >= MIN_ACHIEVEMENTS:
         out["completion"] = (entry.achievements_unlocked or 0) / entry.achievements_total
     if entry.rarest_unlocked_pct is not None:
@@ -132,6 +136,6 @@ class PlayScale:
             trust = game.player_hours_sample / (game.player_hours_sample + PLAYER_SAMPLE_TRUST)
             parts["hours"] = trust * players + (1 - trust) * parts["hours"]
         average = sum(WEIGHTS[n] * p for n, p in parts.items()) / sum(WEIGHTS[n] for n in parts)
-        activity = recency(entry).activity
+        activity = None if entry.platform else recency(entry).activity  # Steam's dates aren't when you played there
         shift = 0.0 if activity is None else RECENCY_SHIFT * (2 * activity - 1)
         return PlayScore(value=min(max(average + shift, 0.0), 1.0), parts=parts, recency=shift, players=players)

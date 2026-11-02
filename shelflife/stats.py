@@ -45,7 +45,7 @@ def compute_stats(session: Session) -> Stats:
     hours: list[tuple[Game, float]] = []
     for game, entry in rows:
         is_family = bool(game.family_shared)
-        is_other = bool(entry.platform)
+        is_other = bool(entry.platform) and not is_family  # a family game played elsewhere counts as family
         family += is_family
         other += is_other
         owned += not (is_family or is_other)

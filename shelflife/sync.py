@@ -101,7 +101,8 @@ def achievements_due(
     cutoff = now - timedelta(days=refresh_days)
     recent_cutoff = now - timedelta(hours=RECENT_REREAD_HOURS)
     played_or_family = or_(LibraryEntry.playtime_total_min > 0, Game.family_shared.is_(True))
-    conditions = [played_or_family, LibraryEntry.platform.is_(None)]  # Steam has no achievements for other platforms
+    # Steam's achievements say nothing about a game played on another platform (family games included).
+    conditions = [played_or_family, LibraryEntry.platform.is_(None)]
     if not everything:
         conditions.append(
             or_(

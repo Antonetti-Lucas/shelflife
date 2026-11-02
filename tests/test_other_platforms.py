@@ -46,9 +46,88 @@ def test_a_game_from_another_platform_joins_the_library_with_your_hours(session)
 def test_a_game_you_already_have_cant_be_added_again(session):
     add_game(session, 1, "Hades", minutes=600)
     add_game(session, 2, "Family Game", owned=False, family=True)
-    for app_id, where in ((1, "on Steam"), (2, "through Family Sharing")):
+    otherplatforms.add_game(session, 2, "x", "Xbox")
+    for app_id, where in ((1, "on Steam"), (2, "through Family Sharing, played on Xbox")):
         with pytest.raises(ValueError, match=where):
-            otherplatforms.add_game(session, app_id, "x", "Xbox")
+            otherplatforms.add_game(session, app_id, "x", "Mobile")
+
+
+# ---- a family game you played somewhere else ----
+
+
+def test_a_family_game_can_be_marked_as_played_elsewhere(session):
+    add_game(session, 2, "Family Game", owned=False, family=True)
+    otherplatforms.add_game(session, 2, "ignored", "PlayStation", 20)
+    game, entry = session.get(Game, 2), session.get(LibraryEntry, 2)
+    assert game.family_shared and entry.platform == "PlayStation" and entry.playtime_total_min == 1200
+    assert is_played(entry, True)
+    assert otherplatforms.where_you_have_it(game) == "through Family Sharing, played on PlayStation"
+
+
+def test_unmarking_a_family_game_keeps_it_in_the_library(session):
+    add_game(session, 2, "Family Game", owned=False, family=True)
+    otherplatforms.add_game(session, 2, "x", "Xbox", 5)
+    otherplatforms.set_platform(session, 2, "")  # "Steam, through Family Sharing" after all
+    assert session.get(LibraryEntry, 2).platform is None
+    otherplatforms.add_game(session, 2, "x", "Xbox")
+    otherplatforms.remove_game(session, 2)
+    assert session.get(LibraryEntry, 2) is not None and session.get(LibraryEntry, 2).platform is None
+
+
+def test_a_family_game_played_elsewhere_drops_its_steam_achievements_and_counts_as_family(session):
+    add_game(session, 2, "Family Game", owned=False, family=True)
+    assert [e.steam_app_id for e in achievements_due(session)] == [2]
+    otherplatforms.add_game(session, 2, "x", "Xbox", 5)
+    assert achievements_due(session) == []  # Steam's achievements aren't your Xbox play
+    stats = compute_stats(session)
+    assert (stats.family, stats.other) == (1, 0)
+    assert (what_is_due(session, with_due=False)["family"], what_is_due(session, with_due=False)["other"]) == (1, 0)
+
+
+def test_steam_achievements_and_dates_dont_count_for_play_elsewhere(session):
+    from shelflife.play import PlayScale
+    from shelflife.score import engagement_score
+
+    # A family game with 2 of 40 Steam achievements, last unlocked long ago, and 30 hours you played on Xbox.
+    add_game(session, 2, "Family Game", owned=False, family=True, achievements=(2, 40), rarest=50.0, unlock_times=[1_000_000])
+    entry = session.get(LibraryEntry, 2)
+    entry.playtime_total_min = 1800
+    session.commit()
+    scale = PlayScale([entry])
+    assert set(scale.score(entry).parts) == {"hours", "completion", "rarity"}
+    otherplatforms.set_platform(session, 2, "Xbox")
+    played = scale.score(entry)
+    assert set(played.parts) == {"hours"} and played.recency == 0.0
+    breakdown = engagement_score(entry)
+    assert (breakdown.achievements, breakdown.rare, breakdown.recency) == (0.0, 0.0, 0.0)
+
+
+def test_family_import_keeps_games_played_elsewhere(session):
+    from shelflife.family import FamilyApp, import_family
+
+    add_game(session, 2, "Played elsewhere", owned=False, family=True)
+    add_game(session, 3, "Only family", owned=False, family=True)
+    otherplatforms.add_game(session, 2, "x", "PlayStation", 8)
+    otherplatforms.add_game(session, 4, "PS game", "PlayStation")
+    import_family(session, [FamilyApp(4, ("765",), 0, "PS game")], {})  # 2 and 3 no longer shared; 4 now is
+    assert session.get(LibraryEntry, 3) is None
+    kept = session.get(Game, 2)
+    assert kept.library_entry.platform == "PlayStation" and not kept.family_shared  # now a PlayStation game
+    assert session.get(Game, 4).family_shared and session.get(LibraryEntry, 4).platform == "PlayStation"
+
+
+def test_the_add_page_offers_to_mark_a_family_game(client, session, monkeypatch):
+    add_game(session, 2, "Family Game", owned=False, family=True)
+    monkeypatch.setattr(store, "find_games", lambda term: [store.Found(2, "Family Game", 2020)])
+    monkeypatch.setattr(web_app, "enrich_one", lambda game: None)  # no store details in tests
+    page = client.get("/library/add?q=family").text
+    assert "In your family library. Played it somewhere else?" in page and "Mark as played there" in page
+    post(client, "/library/add", app_id="2", name="Family Game", platform="Nintendo Switch", hours="3")
+    library = client.get("/library?source=family").text
+    assert "Family · Nintendo Switch" in library
+    page = client.get("/game/2").text
+    assert "Steam, through Family Sharing" in page and "Remove from library" not in page
+    assert "achievements</span>" not in page
 
 
 def test_a_game_from_explore_or_set_aside_by_a_search_becomes_yours(session):

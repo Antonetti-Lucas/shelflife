@@ -5,7 +5,7 @@
 <div class="page-head">
   <h2>Add a game from another platform</h2>
 </div>
-<p class="lede">For games you played on a console, another PC store or anywhere else. The game has to be on Steam too, so its details, tags and reviews come from there. You type its hours, as for family games.</p>
+<p class="lede">For games you played on a console, another PC store or anywhere else, including family games you played somewhere other than Steam. The game has to be on Steam too, so its details, tags and reviews come from there. You type its hours, as for family games.</p>
 
 <form class="bar list-search" method="get" action="/library/add">
   <input type="search" name="q" value="{{ q }}" placeholder="Game name, or its Steam store link" aria-label="Game name or Steam store link" autofocus>
@@ -29,6 +29,7 @@
       {% if mine %}
         <p class="meta">Already in your library ({{ mine }}). <a href="/game/{{ f.app_id }}">Open it</a></p>
       {% else %}
+      {% if f.app_id in family %}<p class="meta">In your family library. Played it somewhere else? Say where:</p>{% endif %}
       <form method="post" action="/library/add" class="row-line">
         <input type="hidden" name="app_id" value="{{ f.app_id }}">
         <input type="hidden" name="name" value="{{ f.name }}">
@@ -37,7 +38,7 @@
           {% for p in platforms %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
         </select>
         <input type="number" name="hours" min="0" max="100000" step="0.1" placeholder="Hours" title="Hours played (optional)" aria-label="Hours played in {{ f.name }} (optional)">
-        <button type="submit" class="small">Add to library</button>
+        <button type="submit" class="small">{{ "Mark as played there" if f.app_id in family else "Add to library" }}</button>
       </form>
       {% endif %}
     </div>
