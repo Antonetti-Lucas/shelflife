@@ -74,6 +74,10 @@ REVIEWS_REFRESH_DAYS = 30  # review counts grow
 RECENT_REREAD_HOURS = 6  # a game played lately is read again, but not minutes after it was read
 PLAYER_HOURS_REFRESH_DAYS = 180  # how long a game's players play changes slowly
 LENGTH_PAGES = 1  # a game you haven't played: 100 reviews are enough to estimate its length
+# Prices matter for games you don't own: your wishlist's on every sync (a sale shows within a day),
+# the rest of the pool and Family Sharing games' every week. Games you own aren't refreshed.
+WISHLIST_PRICE_HOURS = 20
+OTHER_PRICE_DAYS = 7
 
 
 def achievements_due(
@@ -372,6 +376,59 @@ def sync_player_hours(
         done += 1
         if on_progress:
             on_progress(i, len(pending), game)
+    return done
+
+
+def prices_due(session: Session, everything: bool = False) -> list[Game]:
+    """Games you don't own (wishlist, discovery pool, Family Sharing) whose price is due: your
+    wishlist's after WISHLIST_PRICE_HOURS, the others' after OTHER_PRICE_DAYS. Wishlist first."""
+    now = _now()
+    wished = WishlistItem.steam_app_id.is_not(None)
+    query = (
+        select(Game)
+        .outerjoin(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
+        .outerjoin(WishlistItem, WishlistItem.steam_app_id == Game.steam_app_id)
+        .where(Game.type == "game", or_(LibraryEntry.steam_app_id.is_(None), Game.family_shared.is_(True)))
+        .order_by(WishlistItem.steam_app_id.is_(None), Game.steam_app_id)
+    )
+    if not everything:
+        query = query.where(
+            or_(
+                Game.price_fetched_at.is_(None),
+                and_(wished, Game.price_fetched_at < now - timedelta(hours=WISHLIST_PRICE_HOURS)),
+                and_(not_(wished), Game.price_fetched_at < now - timedelta(days=OTHER_PRICE_DAYS)),
+            )
+        )
+    return list(session.scalars(query))
+
+
+def sync_prices(
+    session: Session,
+    on_progress: Callable[[int, int, Game], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+    everything: bool = False,
+) -> int:
+    """Refresh the prices `prices_due` lists, store.PRICE_BATCH games per store call. Saves batch
+    by batch. Returns the number of games whose price was read."""
+    pending = prices_due(session, everything=everything)
+    done = 0
+    for start in range(0, len(pending), store.PRICE_BATCH):
+        if should_stop is not None and should_stop():
+            break
+        batch = pending[start : start + store.PRICE_BATCH]
+        prices = store.fetch_prices([g.steam_app_id for g in batch])
+        now = _now()
+        for game in batch:
+            if game.steam_app_id not in prices:
+                continue  # the store didn't answer for it: try again next time
+            price = prices[game.steam_app_id]
+            if price or game.price != {"free": True}:  # a game known to be free stays free
+                game.price = price
+            game.price_fetched_at = now
+            done += 1
+        session.commit()
+        if on_progress:
+            on_progress(min(start + len(batch), len(pending)), len(pending), batch[-1])
     return done
 
 

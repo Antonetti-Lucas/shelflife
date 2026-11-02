@@ -109,3 +109,68 @@ def test_your_country_sets_the_currency(monkeypatch, country, cc):
     monkeypatch.setattr(store.store_throttle, "wait", lambda: None)
     assert store.fetch_store_details(1) is None
     assert asked.get("cc") == cc
+
+
+
+# ---- keeping prices fresh: many at a time, for games you don't own ----
+
+
+def test_prices_are_due_for_games_you_dont_own_wishlist_every_sync_the_rest_weekly(session):
+    from datetime import timedelta
+
+    from shelflife.wishlist import WishlistEntry, import_wishlist
+
+    now = datetime.now().replace(tzinfo=None)
+    add_game(session, 1, "Owned", minutes=600)
+    add_game(session, 2, "Wished, read yesterday", owned=False)
+    add_game(session, 3, "Pool, read yesterday", owned=False)
+    add_game(session, 4, "Pool, read last month", owned=False)
+    add_game(session, 5, "Family, never read", owned=False, family=True)
+    import_wishlist(session, [WishlistEntry(2, 0, None)])
+    for app_id, age in ((1, timedelta(days=60)), (2, timedelta(days=1)), (3, timedelta(days=1)), (4, timedelta(days=30))):
+        session.get(Game, app_id).price_fetched_at = now - age
+    session.commit()
+    assert [g.steam_app_id for g in sync.prices_due(session)] == [2, 4, 5]  # owned games never
+    assert [g.steam_app_id for g in sync.prices_due(session, everything=True)] == [2, 3, 4, 5]
+
+
+def test_the_step_stores_the_prices_and_keeps_a_known_free_game_free(session, monkeypatch):
+    add_game(session, 1, "On sale", owned=False)
+    add_game(session, 2, "Free", owned=False)
+    add_game(session, 3, "Unknown to the store", owned=False)
+    session.get(Game, 2).price = {"free": True}
+    session.commit()
+    asked = []
+    monkeypatch.setattr(store, "fetch_prices", lambda ids: asked.append(list(ids)) or {
+        1: {"currency": "BRL", "initial": 7499, "final": 1874, "discount": 75}, 2: {}})
+    assert sync.sync_prices(session) == 2
+    assert asked == [[1, 2, 3]]  # one call for all of them
+    assert session.get(Game, 1).price["discount"] == 75 and session.get(Game, 2).price == {"free": True}
+    assert session.get(Game, 3).price_fetched_at is None  # not answered: tried again next time
+
+
+def test_prices_are_asked_a_hundred_at_a_time(monkeypatch):
+    calls = []
+
+    class Answer:
+        status_code = 200
+
+        def __init__(self, ids):
+            self.ids = ids
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {i: {"success": True, "data": {"price_overview": {"currency": "BRL", "initial": 100, "final": 100, "discount_percent": 0}}}
+                    for i in self.ids}
+
+    def fake_get(url, params=None, **kwargs):
+        calls.append(params)
+        return Answer(params["appids"].split(","))
+
+    monkeypatch.setattr(store.requests, "get", fake_get)
+    monkeypatch.setattr(store.store_throttle, "wait", lambda: None)
+    prices = store.fetch_prices(list(range(1, 251)))
+    assert len(calls) == 3 and all(c["filters"] == "price_overview" for c in calls)
+    assert len(prices) == 250 and prices[1] == {"currency": "BRL", "initial": 100, "final": 100, "discount": 0}

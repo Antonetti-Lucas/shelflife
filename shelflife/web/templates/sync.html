@@ -37,8 +37,8 @@
     {% if due.last_synced %}Last synced {{ due.last_synced.strftime("%Y-%m-%d %H:%M") }} (UTC).{% else %}Not synced yet.{% endif %}
     {{ due.library }} games in your library{% if due.family %} ({{ due.owned }} owned, {{ due.family }} from Family Sharing){% endif %}{% if due.wishlist %}, {{ due.wishlist }} on your wishlist{% endif %}.
     {% if due.minutes is none %}
-    {% elif due.achievements or due.details or due.about or due.reviews or due.players or due.length %}
-      Due now: achievements for {{ due.achievements }}, store details for {{ due.details }}{% if due.about %}, descriptions, languages and prices for {{ due.about }}{% endif %}, review counts for {{ due.reviews }}{% if due.players %}, how long players play {{ due.players }} games{% endif %}{% if due.length %}, lengths of {{ due.length }} games you haven't played{% endif %}
+    {% elif due.achievements or due.details or due.about or due.reviews or due.players or due.length or due.prices %}
+      Due now: achievements for {{ due.achievements }}, store details for {{ due.details }}{% if due.about %}, descriptions, languages and prices for {{ due.about }}{% endif %}, review counts for {{ due.reviews }}{% if due.players %}, how long players play {{ due.players }} games{% endif %}{% if due.length %}, lengths of {{ due.length }} games you haven't played{% endif %}{% if due.prices %}, prices of {{ due.prices }} games{% endif %}
       (about {{ due.minutes }} minute{{ "" if due.minutes == 1 else "s" }}).
       {% if due.achievements %}Steam sometimes cannot give a few games' achievements, so a handful can stay on this list.{% endif %}
     {% else %}Nothing is due: you are up to date.{% endif %}
@@ -55,6 +55,7 @@
   <li><strong>{{ steps[4][1] }}.</strong> The store's "About this game" text, which recommendations compare along with tags. New games get it with their details; this step catches up the games read before it was kept (one store call each, about 1.6 seconds a game, so the first catch-up takes a while).</li>
   <li><strong>{{ steps[5][1] }}.</strong> Every library and wishlist game, played or not, that has no counts yet or whose counts are a month old.</li>
   <li><strong>{{ steps[6][1] }}.</strong> For each game you've played, how long the people who reviewed it have played it (up to 500 reviews, about 5 seconds a game), so your hours are measured against that game's own length: two hours of a short game can mean you loved it, a hundred of an endless one may be ordinary. For games you haven't played, a lighter sample (100 reviews, about a second a game) gives their length, shown as "~12 h" and used by the length filter. Only a few numbers per game are kept, never who wrote a review. Read once, then every six months.</li>
+  <li><strong>{{ steps[7][1] }}.</strong> Prices of the games you don't own, from the store: your wishlist's every sync, so a sale shows within a day; the rest of Explore and your Family Sharing games every week. A hundred games per request, so it takes seconds. Set <code>STEAM_COUNTRY</code> in <code>.env</code> to get them in your currency.</li>
 </ol>
 <p>A sync saves as it goes: if you stop it, or Steam turns it away, the next one carries on.
   <strong>Check everything again</strong> ignores these limits and re-reads every game, which is slow. A sync never changes

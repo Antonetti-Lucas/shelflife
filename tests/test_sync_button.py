@@ -74,6 +74,12 @@ def steam(monkeypatch):
     monkeypatch.setattr(sync_job, "fetch_wishlist", fetch_wishlist)
     monkeypatch.setattr(sync, "fetch_achievements", fetch_achievements)
     monkeypatch.setattr(sync, "enrich_one", enrich_one)
+
+    def fetch_prices(app_ids):
+        state.order.append("prices")
+        return {i: {"currency": "BRL", "initial": 1000, "final": 500, "discount": 50} for i in app_ids}
+
+    monkeypatch.setattr(sync.store, "fetch_prices", fetch_prices)
     def fetch_player_hours(app_id, positive=None, negative=None, pages=5):
         state.order.append("players")
         state.players.append(app_id)
@@ -522,7 +528,7 @@ def test_while_syncing_the_page_shows_the_step_and_a_stop_button(client, configu
     assert len(client.held) == 1  # handed to the background
     html = client.get("/sync").text
     assert '<meta http-equiv="refresh"' in html and "<progress" in html
-    assert "Step 1 of 7: Reading your library" in html
+    assert "Step 1 of 8: Reading your library" in html
     assert 'action="/sync/stop"' in html and 'action="/sync/start"' not in html
     post(client, "/sync/stop")
     assert web_app.sync_job._stop.is_set()

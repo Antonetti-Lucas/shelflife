@@ -46,17 +46,51 @@ def clean_store_text(raw: str | None) -> str:
     return " ".join(_LINK.sub(" ", text).split())
 
 
+def _store_params(**params) -> dict:
+    """The store call's parameters. The store answers in the currency of where the request seems
+    to come from (a VPN changes it); STEAM_COUNTRY in .env (e.g. "BR") asks for that country's."""
+    params = {"l": "english", **params}
+    if country := os.getenv("STEAM_COUNTRY", "").strip():
+        params["cc"] = country.lower()
+    return params
+
+
+PRICE_BATCH = 100  # the store gives this many games' prices in one call
+
+
+def fetch_prices(app_ids: list[int], timeout: float = 30) -> dict[int, dict]:
+    """Current prices (parse_price) of many games, PRICE_BATCH per store call. A game the store
+    doesn't know is left out; one it knows but sells no more, or that is free, gets {} (asked for
+    the price alone, the store doesn't say "free": callers keep a "free" they already know)."""
+    out: dict[int, dict] = {}
+    for start in range(0, len(app_ids), PRICE_BATCH):
+        chunk = app_ids[start : start + PRICE_BATCH]
+        store_throttle.wait()
+        resp = requests.get(
+            STORE_URL,
+            params=_store_params(appids=",".join(map(str, chunk)), filters="price_overview"),
+            headers=HEADERS,
+            timeout=timeout,
+        )
+        if resp.status_code in (403, 429):
+            raise RateLimited("Steam store is rate limiting us; try again in a few minutes.")
+        resp.raise_for_status()
+        answers = resp.json() or {}
+        for app_id in chunk:
+            entry = answers.get(str(app_id)) or {}
+            if not entry.get("success"):
+                continue
+            data = entry.get("data")
+            out[app_id] = parse_price(data if isinstance(data, dict) else {})
+    return out
+
+
 def fetch_store_details(app_id: int, timeout: float = 15) -> StoreDetails | None:
     """Return store info, or None when the store has no page for this app."""
     store_throttle.wait()
-    params = {"appids": app_id, "l": "english"}
-    # The store answers in the currency of where the request seems to come from (a VPN changes
-    # it); STEAM_COUNTRY in .env (e.g. "BR") asks for that country's prices instead.
-    if country := os.getenv("STEAM_COUNTRY", "").strip():
-        params["cc"] = country.lower()
     resp = requests.get(
         STORE_URL,
-        params=params,
+        params=_store_params(appids=app_id),
         headers=HEADERS,
         timeout=timeout,
     )
