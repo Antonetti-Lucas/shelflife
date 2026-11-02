@@ -72,22 +72,26 @@ def test_the_home_page_shows_all_three_lists(client, scenario):
         assert name in html
 
 
-def test_the_recommendation_lists_are_paged(client, scenario, session):
+def test_for_you_shows_each_list_as_one_row_with_a_link_to_all_of_it(client, scenario, session):
     for i in range(100, 120):
         add_game(session, i, f"Extra {i}", tags={"Stealth": 100}, owned=False, reviews=(9000, 500))
-    first = client.get("/?size=6").text
-    # 6 of the 22 discover games, plus the 2 backlog and 1 family candidates
-    assert len(re.findall(r'class="card"', first)) == 6 + 2 + 1
-    page_two = client.get("/?size=6&dp=2").text
-    assert 'href="/?size=6&amp;bp=1&amp;fp=1&amp;wp=1&amp;dp=1#discover"' in page_two  # "Previous" keeps the other lists' pages
-    assert client.get("/?size=7&bp=999&fp=-3&dp=2").status_code == 200  # odd values are tolerated
+    html = client.get("/").text
+    discover = html[html.index('id="discover"'):]
+    assert len(re.findall(r'class="card"', discover)) == 12  # the best 12 of 22, side by side
+    assert 'class="strip"' in html and 'href="/?list=discover"' in html and "See all 22" in html
+    assert 'href="/?list=backlog"' not in html  # nothing more to see: no link
 
 
-def test_a_card_remembers_which_page_to_return_to(client, scenario, session):
-    for i in range(100, 120):
+def test_see_all_shows_one_list_in_full_and_paged(client, scenario, session):
+    for i in range(100, 130):
         add_game(session, i, f"Extra {i}", tags={"Stealth": 100}, owned=False, reviews=(9000, 500))
-    html = client.get("/?size=6&dp=2").text
-    assert "dp=2#discover" in html
+    html = client.get("/?list=discover").text
+    assert len(re.findall(r'class="card"', html)) == 24 and "Page 1 of 2" in html
+    assert 'id="backlog"' not in html and "← For you" in html
+    page_two = client.get("/?list=discover&page=2").text
+    assert len(re.findall(r'class="card"', page_two)) == 32 - 24
+    assert 'name="next" value="/?list=discover&amp;page=2"' in page_two  # rating or dismissing comes back here
+    assert client.get("/?list=nonsense&size=7&page=-3").status_code == 200  # odd values fall back to For you
 
 
 # ---- library ----

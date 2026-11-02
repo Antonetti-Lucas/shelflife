@@ -1,48 +1,75 @@
 {% extends "base.html" %}
 {% from "_card.html" import card %}
 {% from "_pager.html" import pager with context %}
-{% block title %}For you · ShelfLife{% endblock %}
+{% block title %}{% if only %}{{ lists[only][0] }} · {% endif %}For you · ShelfLife{% endblock %}
 {% block content %}
-{% macro section(key, title, hint) %}
-<section id="{{ key }}">
-  <div class="section-head">
-    <h2>{{ title }}</h2><span class="count">{{ sections[key].total }}</span><span class="hint">{{ hint }}</span>
-  </div>
-  {% if sections[key].recs %}
-    <div class="grid">{% for r in sections[key].recs %}{{ card(r, page_url(key), ratings.get(r.game.steam_app_id)) }}{% endfor %}</div>
-    {{ pager(key) }}
-  {% else %}
-    {{ caller() }}
-  {% endif %}
-</section>
-{% endmacro %}
+{% set empty = {
+  "backlog": "Nothing to suggest from your backlog yet.",
+  "family": "No family games yet. They come from a file you export in your browser (see \"Family Sharing\" in the README).",
+  "wishlist": "Nothing from your wishlist yet. <a href=\"/sync\">Sync</a> reads it.",
+  "discover": "No games to discover yet. Use <a href=\"/explore#find\">Find more games</a> on Explore.",
+} %}
 
+{% if only %}
+{# ---- one list, in full ---- #}
+{% set s = sections[only] %}
+<p class="meta"><a href="/">← For you</a></p>
 <div class="page-head">
-  <p class="meta">
-    {% if taste_mode == "play" %}Learned from how you played {{ taste.implicit_count }} games (play only).
-    {% elif taste_mode == "ratings" %}Learned from {{ taste.explicit_count }} ratings (ratings only).
-    {% else %}Learned from {{ taste.explicit_count }} ratings and {{ taste.implicit_count }} games you played.{% endif %}
-    <a href="/taste">Your taste</a>
-  </p>
+  <h2>{{ lists[only][0] }}<span class="count">{{ s.total }}</span></h2>
   <p class="sizes">Show
-    {% for s in sizes %}{% if s == size %}<strong>{{ s }}</strong>{% else %}<a href="/?size={{ s }}">{{ s }}</a>{% endif %}{% endfor %}
+    {% for n in sizes %}{% if n == size %}<strong>{{ n }}</strong>{% else %}<a href="/?{{ {'list': only, 'size': n}|urlencode }}">{{ n }}</a>{% endif %}{% endfor %}
   </p>
 </div>
+<p class="lede">{{ lists[only][1]|capitalize }}, best fit first.</p>
+{% if s.recs %}
+  <div class="grid">{% for r in s.recs %}{{ card(r, here, ratings.get(r.game.steam_app_id)) }}{% endfor %}</div>
+  {{ pager(only) }}
+{% else %}
+  <p class="empty">{{ empty[only]|safe }}</p>
+{% endif %}
+
+{% else %}
+{# ---- every list, one row each ---- #}
+<p class="meta">
+  {% if taste_mode == "play" %}Learned from how you played {{ taste.implicit_count }} games (play only).
+  {% elif taste_mode == "ratings" %}Learned from {{ taste.explicit_count }} ratings (ratings only).
+  {% else %}Learned from {{ taste.explicit_count }} ratings and {{ taste.implicit_count }} games you played.{% endif %}
+  <a href="/taste">Your taste</a>
+</p>
 {% if taste.explicit_count + taste.implicit_count == 0 %}<p class="warn">Nothing to learn from yet, so these picks are not based on your taste.</p>{% endif %}
 
-{% call section("backlog", "From your backlog", "owned, barely played") %}
-  <p class="empty">Nothing to suggest from your backlog yet.</p>
-{% endcall %}
-
-{% call section("family", "From your family library", "free to play") %}
-  <p class="empty">No family games yet. They come from a file you export in your browser (see "Family Sharing" in the README).</p>
-{% endcall %}
-
-{% call section("wishlist", "From your wishlist", "on Steam, not yours yet") %}
-  <p class="empty">Nothing from your wishlist yet. <a href="/sync">Sync</a> reads it.</p>
-{% endcall %}
-
-{% call section("discover", "To discover", "not in your library") %}
-  <p class="empty">No games to discover yet. Use <a href="/explore#find">Find more games</a> on Explore.</p>
-{% endcall %}
+{% for key, (title, hint) in lists.items() %}
+{% set s = sections[key] %}
+<section id="{{ key }}">
+  <div class="section-head">
+    <h2>{{ title }}</h2><span class="count">{{ s.total }}</span><span class="hint">{{ hint }}</span>
+    {% if s.total > s.recs|length %}<a class="see-all" href="{{ page_url(key) }}">See all {{ s.total }} →</a>{% endif %}
+  </div>
+  {% if s.recs %}
+  <div class="strip-wrap">
+    <button type="button" class="strip-arrow prev" aria-label="Scroll {{ title }} back" hidden>‹</button>
+    <div class="strip">{% for r in s.recs %}{{ card(r, "/#" ~ key, ratings.get(r.game.steam_app_id)) }}{% endfor %}</div>
+    <button type="button" class="strip-arrow next" aria-label="Scroll {{ title }} on" hidden>›</button>
+  </div>
+  {% else %}
+    <p class="empty">{{ empty[key]|safe }}</p>
+  {% endif %}
+</section>
+{% endfor %}
+<script>
+  // The arrows beside each row scroll it by about a screen; each shows only when there is more that way.
+  document.querySelectorAll(".strip-wrap").forEach(function (wrap) {
+    var strip = wrap.querySelector(".strip"), prev = wrap.querySelector(".prev"), next = wrap.querySelector(".next");
+    function update() {
+      prev.hidden = strip.scrollLeft <= 4;
+      next.hidden = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 4;
+    }
+    prev.addEventListener("click", function () { strip.scrollBy({ left: -strip.clientWidth * 0.9, behavior: "smooth" }); });
+    next.addEventListener("click", function () { strip.scrollBy({ left: strip.clientWidth * 0.9, behavior: "smooth" }); });
+    strip.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    update();
+  });
+</script>
+{% endif %}
 {% endblock %}

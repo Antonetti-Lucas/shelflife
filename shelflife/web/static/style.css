@@ -402,3 +402,24 @@ select option, select optgroup { background: var(--surface); color: var(--text);
 .starrate.saved-flash .star-fill { animation: star-saved 0.6s ease; }
 @keyframes star-saved { 0% { filter: brightness(1.6); } 100% { filter: none; } }
 a.poster:hover { text-decoration: none; }
+
+/* ---- For you: one row per list ---- */
+.see-all { margin-left: auto; font-size: 0.88rem; font-weight: 600; white-space: nowrap; }
+.strip-wrap { position: relative; }
+.strip {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 262px; gap: 16px;
+  overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding: 0 2px;
+  padding: 4px 2px 14px; scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}
+.strip > .card { scroll-snap-align: start; }
+.strip-arrow {
+  position: absolute; top: 64px; z-index: 2; width: 38px; height: 38px; padding: 0; border-radius: 50%;
+  display: grid; place-items: center; font-size: 1.5rem; line-height: 1;
+  background: var(--surface); color: var(--text); border: 1px solid var(--line); box-shadow: var(--shadow);
+}
+.strip-arrow:hover { background: var(--surface-2); border-color: var(--accent); color: var(--text); }
+.strip-arrow.prev { left: -14px; }
+.strip-arrow.next { right: -14px; }
+.strip-arrow[hidden] { display: none; }
+@media (hover: none) { .strip-arrow { display: none; } }
+@media (max-width: 560px) { .strip { grid-auto-columns: 82%; } }

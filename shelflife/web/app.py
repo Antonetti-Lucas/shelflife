@@ -12,7 +12,7 @@ from datetime import date
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request
+from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -171,58 +171,61 @@ def wishlist_note(item: WishlistItem | None, game: Game) -> str | None:
     return " · ".join(bits)
 
 
-REC_PAGE_SIZES = (6, 12, 24, 48)
-REC_PAGE_PARAMS = {"backlog": "bp", "family": "fp", "wishlist": "wp", "discover": "dp"}
+REC_PAGE_SIZES = (12, 24, 48)  # one list on its own page ("See all")
+STRIP_SIZE = 12  # the best picks of each list, side by side on For you
+REC_LISTS = {
+    "backlog": ("From your backlog", "owned, barely played"),
+    "family": ("From your family library", "free to play"),
+    "wishlist": ("From your wishlist", "on Steam, not yours yet"),
+    "discover": ("To discover", "not in your library"),
+}
 
 
 @app.get("/")
 def home(
     request: Request,
-    size: str = "12",
-    bp: str = "1",
-    fp: str = "1",
-    dp: str = "1",
-    wp: str = "1",
+    which: str = Query("", alias="list"),
+    size: str = "24",
+    page: str = "1",
     session: Session = Depends(get_session),
 ):
-    size = whole(size, 12)
-    size = size if size in REC_PAGE_SIZES else 12
+    """For you: each list as one row of its best picks, or with `list`, one list in full, paged."""
+    size = whole(size, 24)
+    size = size if size in REC_PAGE_SIZES else 24
     ratings = diary.load_ratings(session)
     result = recommend(
         session,
         ratings,
         diary.load_not_interested(session),
-        limit=100_000,  # everything; the page shows `size` at a time
+        limit=100_000,  # everything; the page shows a part
         wishlist_ids=wishlist_by_id(session).keys(),
     )
+    lists = {"backlog": result.backlog, "family": result.family, "wishlist": result.wishlist, "discover": result.discover}
+    only = which if which in REC_LISTS else None
 
-    wanted = {"backlog": bp, "family": fp, "wishlist": wp, "discover": dp}
     sections = {}
-    for key, recs in (
-        ("backlog", result.backlog),
-        ("family", result.family),
-        ("wishlist", result.wishlist),
-        ("discover", result.discover),
-    ):
-        part = paginate(recs, wanted[key], size)
+    for key, recs in lists.items():
+        if only and key != only:
+            continue
+        part = paginate(recs, page, size) if only else paginate(recs, 1, STRIP_SIZE)
         # "recs", not "items": that clashes with dict.items in Jinja
         sections[key] = {"recs": part.shown, "total": part.total, "page": part.page, "pages": part.pages}
 
     def page_url(key: str, page: int | None = None) -> str:
-        """Link to this page with one list moved to `page`, keeping the others."""
-        params = {"size": size}
-        for k, param in REC_PAGE_PARAMS.items():
-            params[param] = sections[k]["page"]
-        if page is not None:
-            params[REC_PAGE_PARAMS[key]] = page
-        return f"/?{urlencode(params)}#{key}"
+        """Link to one list on its own page (the strips link here with "See all")."""
+        params = {"list": key} | ({"size": size} if size != 24 else {}) | ({"page": page} if page and page > 1 else {})
+        return f"/?{urlencode(params)}"
 
+    here = page_url(only, sections[only]["page"]) if only else "/"
     return templates.TemplateResponse(
         request,
         "recommendations.html",
         {
             "taste": result.taste,
             "sections": sections,
+            "lists": REC_LISTS,
+            "only": only,
+            "here": here,
             "page_url": page_url,
             "size": size,
             "sizes": REC_PAGE_SIZES,
