@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_stars.html" import star_rating %}
 {% from "_pager.html" import link_pager %}
 {% from "_tagbox.html" import tag_input, tag_note %}
 {% block title %}My ratings · ShelfLife{% endblock %}
@@ -45,18 +46,18 @@
 {% if rated and view == "grid" %}
 <div class="posters">
   {% for e, g in rated %}
-  <a class="poster-item" href="/game/{{ g.steam_app_id }}" title="{{ g.name }}{% if e.review %} · reviewed{% endif %}">
-    <span class="poster">
+  <div class="poster-item">
+    <a class="poster" href="/game/{{ g.steam_app_id }}" title="{{ g.name }}{% if e.review %} · reviewed{% endif %}">
       <img src="{{ poster_url(g) }}" loading="lazy" alt="{{ g.name }}"
            onerror='this.onerror = null; this.closest(".poster").classList.add("wide"); {% if g.cover_url %}this.src = {{ g.cover_url|tojson }};{% else %}this.remove();{% endif %}'>
       <span class="poster-name">{{ g.name }}</span>
-    </span>
+    </a>
     <span class="poster-meta">
-      {% if e.rating is not none %}<span class="stars-text">{{ stars(e.rating) }}</span>{% endif %}
+      {{ star_rating(g, e.rating, here, "small") }}
       {% if g.steam_app_id in favorites %}<span class="fav" title="One of your favorites">♥</span>{% endif %}
       {% if e.review %}<span class="has-review" title="You reviewed it">≡</span>{% endif %}
     </span>
-  </a>
+  </div>
   {% endfor %}
 </div>
 {% elif rated %}
@@ -66,13 +67,10 @@
   <article class="row" id="g{{ g.steam_app_id }}">
     {{ thumb(g) }}
     <div class="row-body">
-      <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a> {% if e.rating is not none %}<small class="stars-text">{{ stars(e.rating) }}</small>{% endif %}<small>updated {{ e.updated_at.strftime("%Y-%m-%d") }}</small></h3>
+      <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a> <small>updated {{ e.updated_at.strftime("%Y-%m-%d") }}</small></h3>
+      {{ star_rating(g, e.rating, here ~ "#g" ~ g.steam_app_id) }}
       <form method="post" action="/game/{{ g.steam_app_id }}/rate" class="edit" data-inline>
         <input type="hidden" name="next" value="{{ here }}#g{{ g.steam_app_id }}">
-        <select name="rating" class="stars" aria-label="Rating for {{ g.name }}">
-          <option value="">Not rated</option>
-          {% for o in RATING_OPTIONS %}<option value="{{ o }}" {{ "selected" if e.rating == o }}>{{ stars(o) }} {{ "%g"|format(o) }}</option>{% endfor %}
-        </select>
         <textarea name="review" rows="2" placeholder="Add a review" aria-label="Review of {{ g.name }}">{{ e.review or "" }}</textarea>
         <button type="submit">Save</button>
       </form>

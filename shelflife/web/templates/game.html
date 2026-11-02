@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_stars.html" import star_rating %}
 {% block title %}{{ game.name }} · ShelfLife{% endblock %}
 {% block content %}
 <div class="hero-band">
@@ -24,19 +25,12 @@
   <div>
     <section class="panel">
       <h3>Your verdict</h3>
-      <form method="post" action="/game/{{ game.steam_app_id }}/rate" class="stack" data-inline>
-        <label>Rating
-          <select name="rating" class="stars {{ 'unrated' if not (diary and diary.rating is not none) }}">
-            <option value="">Not rated</option>
-            {% for o in RATING_OPTIONS %}
-              <option value="{{ o }}" {{ "selected" if diary and diary.rating == o }}>{{ stars(o) }} {{ "%g"|format(o) }}</option>
-            {% endfor %}
-          </select>
-        </label>
+      {{ star_rating(game, diary.rating if diary else none, "/game/" ~ game.steam_app_id, "large") }}
+      <form method="post" action="/game/{{ game.steam_app_id }}/rate" class="stack" data-inline style="margin-top: 12px">
         <label>Review
           <textarea name="review" rows="3" placeholder="Optional notes">{{ diary.review if diary and diary.review else "" }}</textarea>
         </label>
-        <button type="submit">Save</button>
+        <button type="submit">Save review</button>
       </form>
       <div class="row-line" style="margin-top: 14px">
         <form method="post" action="/game/{{ game.steam_app_id }}/favorite" class="inline">

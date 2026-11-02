@@ -93,14 +93,15 @@ def _finish(session: Session, entry: DiaryEntry) -> None:
 
 
 def save_rating(
-    session: Session, app_id: int, rating: float | None, review: str | None = None
+    session: Session, app_id: int, rating: float | None | object, review: str | None = None
 ) -> None:
-    """Set (or clear, with None) a game's rating. review=None leaves the review as is;
-    pass "" to clear it."""
-    if rating is not None and not (0.5 <= rating <= 5 and (rating * 2).is_integer()):
+    """Set (or clear, with None) a game's rating; KEEP leaves it as is. review=None leaves the
+    review as is; pass "" to clear it."""
+    if rating is not KEEP and rating is not None and not (0.5 <= rating <= 5 and (rating * 2).is_integer()):
         raise ValueError(f"Rating must be 0.5 to 5 in half steps, got {rating}")
     entry = _entry(session, app_id)
-    entry.rating = rating
+    if rating is not KEEP:
+        entry.rating = rating
     if review is not None:
         entry.review = review.strip() or None
     _finish(session, entry)

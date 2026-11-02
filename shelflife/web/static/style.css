@@ -303,7 +303,7 @@ tr:target td { background: var(--accent-soft); }
 .row-body form { margin: 0; }
 .row-body .review { margin: 0; color: var(--muted); white-space: pre-wrap; font-size: 0.92rem; }
 .stars-text { color: var(--star); letter-spacing: 1px; }
-.edit { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: start; }
+.edit { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: start; }
 .edit textarea { width: 100%; resize: vertical; min-height: 40px; }
 button.ghost.danger:hover { color: var(--bad); border-color: var(--bad); }
 
@@ -383,3 +383,22 @@ th.sortable.on .arrow { opacity: 1; }
 select option, select optgroup { background: var(--surface); color: var(--text); text-transform: none; letter-spacing: normal; font-weight: 400; }
 .bar .tagpicker { flex: 0 1 300px; min-width: 200px; display: flex; }
 .bar .tagpicker .tagbox, .bar .tagpicker.enhanced { font-size: 0.85rem; }
+
+/* ---- star rating control (templates/_stars.html, static/stars.js) ---- */
+.starrate { display: inline-flex; align-items: center; gap: 2px; margin: 0; --star-size: 1.15rem; }
+.starrate.small { --star-size: 0.95rem; }
+.starrate.large { --star-size: 1.7rem; }
+.star-box { position: relative; display: inline-block; }
+.star-track { position: relative; display: block; font-size: var(--star-size); line-height: 1; color: var(--line); white-space: nowrap; letter-spacing: 0; }
+.star-fill { position: absolute; left: 0; top: 0; overflow: hidden; width: var(--hover, var(--value)); color: var(--star); transition: width 0.06s; }
+.starrate[style*="--hover"] .star-fill { color: var(--accent); }
+.star-hit { position: absolute; inset: 0; display: flex; }
+.star-hit button { all: unset; flex: 1; cursor: pointer; }
+.star-hit button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
+.starrate .star-clear { all: unset; cursor: pointer; color: var(--muted); font-size: calc(var(--star-size) * 0.8); line-height: 1; padding: 0 3px; opacity: 0; }
+.starrate:hover .star-clear, .starrate .star-clear:focus-visible { opacity: 0.8; }
+.starrate .star-clear:hover { color: var(--bad); }
+.starrate[data-rating=""] .star-clear { visibility: hidden; }  /* keeps its space, so rows line up */
+.starrate.saved-flash .star-fill { animation: star-saved 0.6s ease; }
+@keyframes star-saved { 0% { filter: brightness(1.6); } 100% { filter: none; } }
+a.poster:hover { text-decoration: none; }

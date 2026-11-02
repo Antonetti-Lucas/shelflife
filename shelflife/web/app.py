@@ -906,13 +906,18 @@ async def rate(
     app_id: int,
     session: Session = Depends(get_session),
 ):
-    # Read the raw form: FastAPI turns an empty field into "missing", but here
-    # "" means "clear the review" and a missing field means "leave it alone".
+    # Read the raw form: FastAPI turns an empty field into "missing", but here "" means
+    # "clear it" and a missing field means "leave it alone" (the stars and the review are
+    # separate forms on some pages).
     form = await request.form()
-    rating = str(form.get("rating") or "").strip()
     review = str(form["review"]) if "review" in form else None
     try:
-        diary.save_rating(session, app_id, float(rating) if rating else None, review)
+        if "rating" in form:
+            raw = str(form["rating"]).strip()
+            rating = float(raw) if raw else None
+        else:
+            rating = diary.KEEP
+        diary.save_rating(session, app_id, rating, review)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return RedirectResponse(

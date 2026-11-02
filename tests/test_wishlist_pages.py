@@ -114,7 +114,7 @@ def test_a_family_game_on_the_wishlist_says_you_can_already_play_it(client, sess
 def test_a_rating_you_gave_a_wishlisted_game_shows_on_its_card(client, session, scenario):
     wish(session, 40)
     post(client, "/game/40/rate", rating="3.5")
-    assert re.search(r'<option value="3.5" selected', client.get("/wishlist").text)
+    assert 'data-rating="3.5"' in client.get("/wishlist").text
 
 
 def test_the_wishlist_pages_keep_your_filters(client, session):

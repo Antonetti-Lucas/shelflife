@@ -104,10 +104,10 @@ def test_only_family_rows_have_an_hours_box(client, scenario):
     assert client.get("/library?source=family").text.count('name="hours"') == 1
 
 
-def test_every_row_has_a_rating_dropdown_with_the_current_rating_selected(client, scenario):
+def test_every_row_has_stars_showing_the_current_rating(client, scenario):
     html = client.get("/library?q=Stealth+Hero").text
-    assert 'name="rating"' in html
-    assert re.search(r'<option value="5.0" selected', html)
+    assert 'class="starrate small"' in html and 'data-rating="5"' in html
+    assert re.search(r'name="rating" value="5"[^>]*aria-pressed="true"', html)
 
 
 def test_the_recommended_filter_keeps_the_best_fit_candidates_only(client, scenario, session):
@@ -149,7 +149,7 @@ def test_a_rated_game_stays_in_explore_with_its_rating_shown(client, scenario):
     post(client, "/game/40/rate", rating="3.5")
     html = client.get("/explore").text
     assert "Pool Stealth Good" in html
-    assert re.search(r'<option value="3.5" selected', html)
+    assert 'data-rating="3.5"' in html
 
 
 def test_explore_orders_by_fit_and_can_be_searched_and_filtered(client, scenario):
@@ -401,7 +401,8 @@ def test_the_stats_page_shows_your_numbers(client, scenario):
 def test_small_edits_are_marked_to_save_in_place(client, scenario):
     home = client.get("/").text
     assert '<script src="/static/inline.js" defer>' in home
-    assert re.search(r'action="/game/\d+/rate" data-inline>', home)
+    assert re.search(r'action="/game/\d+/rate" data-inline\s', home)
+    assert '<script src="/static/stars.js" defer>' in home
     assert re.search(r'action="/game/\d+/not-interested" data-inline="hide">', home)
     library = client.get("/library").text
     assert "this.form.submit()" not in library and library.count("data-inline") >= 3  # hours, rating, status
@@ -458,3 +459,26 @@ def test_my_ratings_shows_posters_and_filters_by_rating_decade_and_tag(client, s
     stealth = client.get("/ratings?tag=Stealth").text
     assert "Backlog Stealth" in stealth and "Backlog Sports" not in stealth
     assert "Backlog Stealth" not in client.get("/ratings?tag=-Stealth").text  # a minus leaves it out
+
+
+# ---- the star control ----
+
+
+def test_each_star_has_two_halves_and_a_way_to_remove_the_rating(client, scenario):
+    html = client.get("/game/1").text
+    for value in ("0.5", "1", "2.5", "4.5", "5"):
+        assert f'name="rating" value="{value}"' in html
+    assert 'class="star-clear"' in html and 'class="starrate large"' in html
+
+
+def test_saving_a_review_on_its_own_keeps_the_rating(client, scenario):
+    post(client, "/game/20/rate", rating="4")
+    post(client, "/game/20/rate", review="still good")  # the review form has no rating field
+    entry = diary_entry(20)
+    assert (entry.rating, entry.review) == (4.0, "still good")
+
+
+def test_my_ratings_rates_from_under_each_poster(client, scenario):
+    post(client, "/game/20/rate", rating="2.5")
+    html = client.get("/ratings").text
+    assert 'class="starrate small"' in html and 'data-rating="2.5"' in html

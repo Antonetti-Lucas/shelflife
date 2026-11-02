@@ -1,0 +1,16 @@
+{# Five stars you click to rate: the left half of a star gives a half star. Clicking your current
+   rating again (or ×) removes it. static/stars.js previews on hover and static/inline.js saves
+   in place; without them each half star is a plain submit button. `size` is "", "small" or "large". #}
+{% macro star_rating(g, rating, next_url, size="") %}
+<form class="starrate {{ size }}" method="post" action="/game/{{ g.steam_app_id }}/rate" data-inline
+      data-rating="{{ '%g'|format(rating) if rating is not none else '' }}" style="--value: {{ (rating or 0) * 20 }}%">
+  <input type="hidden" name="next" value="{{ next_url }}">
+  <span class="star-box">
+    <span class="star-track" aria-hidden="true">★★★★★<span class="star-fill">★★★★★</span></span>
+    <span class="star-hit" role="group" aria-label="Your rating of {{ g.name }}">
+      {%- for o in RATING_OPTIONS %}<button type="submit" name="rating" value="{{ '%g'|format(o) }}" title="{{ '%g'|format(o) }} out of 5" aria-label="{{ '%g'|format(o) }} stars" aria-pressed="{{ 'true' if rating == o else 'false' }}"></button>{% endfor -%}
+    </span>
+  </span>
+  <button type="submit" name="rating" value="" class="star-clear" title="Remove rating" aria-label="Remove your rating of {{ g.name }}">×</button>
+</form>
+{% endmacro %}

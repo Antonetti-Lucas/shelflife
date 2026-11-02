@@ -1,13 +1,15 @@
 // Saves small edits (a rating, a status, hours, "not interested") without reloading the page.
 // A form marked data-inline is sent in the background and the page stays where it is:
-//   data-inline         shows "Saved" next to the form
+//   data-inline         shows "Saved" next to the form (a star rating shows its new stars)
 //   data-inline="hide"  hides the card or row it is in, with an Undo
 //   data-inline="remove" removes the card or row it is in
 // Without this script, or if the background request fails to reach the app, the form is sent
 // the normal way and the page reloads.
 (function () {
-  function send(form, extra) {
+  function send(form, extra, submitter) {
     var body = new URLSearchParams(new FormData(form));
+    // The button that sent the form carries a value too (each half star is one).
+    if (submitter && submitter.name) body.set(submitter.name, submitter.value);
     Object.keys(extra || {}).forEach(function (k) { body.set(k, extra[k]); });
     // "manual": the app answers a saved form with a redirect to the page; there is no need to load it.
     return fetch(form.action, { method: "POST", body: body, redirect: "manual", credentials: "same-origin" });
@@ -34,6 +36,18 @@
       function (data) { return typeof data.detail === "string" ? data.detail : "Couldn't save"; },
       function () { return "Couldn't save"; }
     );
+  }
+
+  // form.submit() leaves out the button that was pressed, so copy its value into the form first.
+  function withValue(form, submitter) {
+    if (submitter.name) {
+      var field = document.createElement("input");
+      field.type = "hidden";
+      field.name = submitter.name;
+      field.value = submitter.value;
+      form.appendChild(field);
+    }
+    return form;
   }
 
   function holder(form) {
@@ -78,9 +92,10 @@
     if (!form.matches || !form.matches("form[data-inline]") || event.defaultPrevented) return;
     event.preventDefault();
     var how = form.getAttribute("data-inline");
+    var submitter = event.submitter;
     var controls = Array.prototype.slice.call(form.elements);
     controls.forEach(function (c) { c.setAttribute("aria-busy", "true"); });
-    send(form).then(function (response) {
+    send(form, null, submitter).then(function (response) {
       controls.forEach(function (c) { c.removeAttribute("aria-busy"); });
       if (!ok(response)) {
         return whyNot(response).then(function (text) { note(form, text, true); });
@@ -88,10 +103,13 @@
       var item = holder(form);
       if (how === "hide" && item) hide(form, item);
       else if (how === "remove" && item) item.remove();
+      else if (form.matches(".starrate") && window.shelflifeStars) window.shelflifeStars(form, submitter ? submitter.value : "");
       else note(form, "Saved");
       form.querySelectorAll("select.stars").forEach(function (s) { s.classList.toggle("unrated", !s.value); });
     }).catch(function () {
-      form.submit();  // the app could not be reached in the background: send it the normal way
+      // The app could not be reached in the background: send it the normal way.
+      if (submitter) withValue(form, submitter);
+      form.submit();
     });
   });
 })();

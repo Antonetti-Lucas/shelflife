@@ -1,14 +1,7 @@
 {# One recommendation. `next_url` is where to return after rating or dismissing;
    `rating` is your current rating of the game, if any. #}
-{% macro rating_select(g, next_url, rating) %}
-<form method="post" action="/game/{{ g.steam_app_id }}/rate" data-inline>
-  <input type="hidden" name="next" value="{{ next_url }}">
-  <select name="rating" class="stars {{ 'unrated' if rating is none }}" onchange="this.form.requestSubmit()" aria-label="Rate {{ g.name }}">
-    <option value="">{{ "☆ Rate" if rating is none else "Not rated" }}</option>
-    {% for o in RATING_OPTIONS %}<option value="{{ o }}" {{ "selected" if rating == o }}>{{ stars(o) }} {{ "%g"|format(o) }}</option>{% endfor %}
-  </select>
-</form>
-{% endmacro %}
+{% from "_stars.html" import star_rating %}
+{% macro rating_select(g, next_url, rating) %}{{ star_rating(g, rating, next_url) }}{% endmacro %}
 
 {% macro card(r, next_url, rating=none, similar_to=none, note=none) %}
 {% set g = r.game %}
