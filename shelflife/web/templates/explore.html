@@ -73,6 +73,10 @@
   {% if ref %}<input type="hidden" name="like" value="{{ ref.steam_app_id }}">{% endif %}
   <input type="search" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
   {{ tag_input(tag, tag_options, match) }}
+  <select name="length" aria-label="Length" title="Estimated from how long each game's reviewers played it">
+    <option value="">Any length</option>
+    {% for key, (label, low, high) in length_bands.items() %}<option value="{{ key }}" {{ "selected" if length == key }}>{{ label }}</option>{% endfor %}
+  </select>
   <select name="wishlist" aria-label="Wishlist">
     <option value="all" {{ "selected" if wishlist == "all" }}>Any game</option>
     <option value="only" {{ "selected" if wishlist == "only" }}>Only my wishlist</option>
@@ -100,6 +104,6 @@
   <p class="empty">No games match. Try a different search or filter.</p>
 {% endif %}
 
-{% set base = "/explore?q=" ~ (q|urlencode) ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&wishlist=" ~ wishlist ~ "&rec=" ~ rec ~ "&sort=" ~ sort ~ ("&like=" ~ ref.steam_app_id if ref else "") ~ "&page=" %}
+{% set base = "/explore?q=" ~ (q|urlencode) ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&length=" ~ length ~ "&wishlist=" ~ wishlist ~ "&rec=" ~ rec ~ "&sort=" ~ sort ~ ("&like=" ~ ref.steam_app_id if ref else "") ~ "&page=" %}
 {{ link_pager(page, pages, base) }}
 {% endblock %}

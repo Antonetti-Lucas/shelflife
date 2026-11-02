@@ -14,6 +14,8 @@
         {% if game.release_date %}<span>{{ game.release_date }}</span>{% endif %}
         {% if game.genres %}<span>{{ game.genres|join(", ") }}</span>{% endif %}
         <span>{{ reviews_text(game) }}</span>
+        {% set length = length_of(game) %}
+        {% if length %}<span title="Estimated from how long {{ game.player_hours_sample }} of its reviewers played it">{{ length.text }}</span>{% endif %}
         {% if game.languages %}
         {% set audio = game.languages|dictsort|selectattr(1, "equalto", "audio")|map(attribute=0)|list %}
         <span title="{% for name, kind in game.languages|dictsort %}{{ name }}{{ ' (full audio)' if kind == 'audio' }}{{ ', ' if not loop.last }}{% endfor %}">{{ game.languages|length }} language{{ "" if game.languages|length == 1 else "s" }}{% if audio %} · audio in {{ audio|length }}{% endif %}</span>

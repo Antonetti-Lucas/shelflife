@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 import requests
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, not_, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from shelflife import store
@@ -73,6 +73,7 @@ DETAILS_REFRESH_BATCH = 30  # at most this many stale games per sync (about a mi
 REVIEWS_REFRESH_DAYS = 30  # review counts grow
 RECENT_REREAD_HOURS = 6  # a game played lately is read again, but not minutes after it was read
 PLAYER_HOURS_REFRESH_DAYS = 180  # how long a game's players play changes slowly
+LENGTH_PAGES = 1  # a game you haven't played: 100 reviews are enough to estimate its length
 
 
 def achievements_due(
@@ -209,6 +210,7 @@ def enrich_one(game: Game, spy: store.SpyDetails | None = None) -> None:
         game.cover_url = details.cover_url
         game.about_text = details.about_text
         game.languages = details.languages
+        game.price, game.price_fetched_at = details.price, _now()
     game.details_fetched_at = _now()
     _fill_tags(game, spy)
 
@@ -311,21 +313,49 @@ def player_hours_due(session: Session, everything: bool = False) -> list[Game]:
     return list(session.scalars(query))
 
 
+def length_due(session: Session, everything: bool = False) -> list[Game]:
+    """Games you haven't played whose players' hours were never read or are PLAYER_HOURS_REFRESH_DAYS
+    old: only to estimate how long they are (shelflife/length.py), so a light sample. Your wishlist
+    first, then your library, then the rest of the pool, most reviewed first. A game you start
+    playing keeps its light sample until its next refresh."""
+    played = or_(
+        LibraryEntry.playtime_total_min >= 60,
+        and_(Game.family_shared.is_(True), func.coalesce(LibraryEntry.achievements_unlocked, 0) > 0),
+    )
+    query = (
+        select(Game)
+        .outerjoin(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
+        .outerjoin(WishlistItem, WishlistItem.steam_app_id == Game.steam_app_id)
+        .where(Game.type == "game", or_(LibraryEntry.steam_app_id.is_(None), not_(played)))
+        .order_by(
+            WishlistItem.steam_app_id.is_(None),
+            LibraryEntry.steam_app_id.is_(None),
+            (func.coalesce(Game.reviews_positive, 0) + func.coalesce(Game.reviews_negative, 0)).desc(),
+        )
+    )
+    if not everything:
+        cutoff = _now() - timedelta(days=PLAYER_HOURS_REFRESH_DAYS)
+        query = query.where(or_(Game.player_hours_fetched_at.is_(None), Game.player_hours_fetched_at < cutoff))
+    return list(session.scalars(query))
+
+
 def sync_player_hours(
     session: Session,
     on_progress: Callable[[int, int, Game], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     everything: bool = False,
 ) -> int:
-    """Read how long each due game's reviewers played it (up to five pages of reviews each).
-    Saves game by game. Returns the number read."""
-    pending = player_hours_due(session, everything=everything)
+    """Read how long each due game's reviewers played it: up to five pages of reviews for a game
+    you played (your hours are measured against them), one page for one you haven't (for its
+    length). Saves game by game. Returns the number read."""
+    pending = [(g, reviews.PLAYER_PAGES) for g in player_hours_due(session, everything=everything)]
+    pending += [(g, LENGTH_PAGES) for g in length_due(session, everything=everything)]
     done = failures = 0
-    for i, game in enumerate(pending, start=1):
+    for i, (game, pages) in enumerate(pending, start=1):
         if should_stop is not None and should_stop():
             break
         try:
-            hours = reviews.fetch_player_hours(game.steam_app_id, game.reviews_positive, game.reviews_negative)
+            hours = reviews.fetch_player_hours(game.steam_app_id, game.reviews_positive, game.reviews_negative, pages=pages)
             failures = 0
         except RateLimited:
             raise
@@ -345,19 +375,19 @@ def sync_player_hours(
 
 
 def about_due(session: Session) -> list[Game]:
-    """Games that have their store details but were read before the "About this game" text or
-    the languages were kept: yours first, most played first, then your wishlist, then the rest
-    of the pool. Languages only matter for a game that could be recommended, so a game you have
-    played is due only for a missing text."""
+    """Games that have their store details but were read before the "About this game" text, the
+    languages or the price were kept: yours first, most played first, then your wishlist, then
+    the rest of the pool. Languages only matter for a game that could be recommended, so a game
+    you have played is due only for a missing text or price."""
     rows = session.execute(
-        select(Game, Game.about_text.is_(None))
+        select(Game, or_(Game.about_text.is_(None), Game.price_fetched_at.is_(None)))
         .options(selectinload(Game.library_entry))
         .outerjoin(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
         .outerjoin(WishlistItem, WishlistItem.steam_app_id == Game.steam_app_id)
         .where(
             Game.type == "game",
             Game.details_fetched_at.is_not(None),
-            or_(Game.about_text.is_(None), Game.languages.is_(None)),
+            or_(Game.about_text.is_(None), Game.languages.is_(None), Game.price_fetched_at.is_(None)),
         )
         .order_by(
             LibraryEntry.steam_app_id.is_(None),
@@ -365,7 +395,7 @@ def about_due(session: Session) -> list[Game]:
             LibraryEntry.playtime_total_min.desc().nulls_last(),
         )
     ).all()
-    return [g for g, no_text in rows if no_text or not is_played(g.library_entry, bool(g.family_shared))]
+    return [g for g, missing in rows if missing or not is_played(g.library_entry, bool(g.family_shared))]
 
 
 def sync_about(
@@ -373,8 +403,8 @@ def sync_about(
     on_progress: Callable[[int, int, Game], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
 ) -> int:
-    """Read the "About this game" text and the languages for the games `about_due` lists (one
-    store call each, nothing else is touched). Saves game by game. Returns the number read."""
+    """Read the "About this game" text, the languages and the price for the games `about_due`
+    lists (one store call each, nothing else is touched). Saves game by game. Returns the number read."""
     pending = about_due(session)
     done = failures = 0
     for i, game in enumerate(pending, start=1):
@@ -392,6 +422,7 @@ def sync_about(
             continue
         game.about_text = details.about_text if details is not None else ""
         game.languages = details.languages if details is not None else {}
+        game.price, game.price_fetched_at = (details.price if details is not None else {}), _now()
         session.commit()
         done += 1
         if on_progress:

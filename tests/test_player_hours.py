@@ -187,7 +187,7 @@ def test_the_step_keeps_the_percentiles_and_marks_games_with_too_few_reviewers(s
     add_game(session, 2, minutes=600)
     asked = []
 
-    def fetch(app_id, positive=None, negative=None):
+    def fetch(app_id, positive=None, negative=None, pages=5):
         asked.append((app_id, positive, negative))
         return PlayerHours([1, 2, 3, 4, 5], 300) if app_id == 1 else None
 

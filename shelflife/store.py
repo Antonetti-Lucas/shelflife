@@ -31,6 +31,7 @@ class StoreDetails:
     name: str | None = None
     about_text: str = ""  # "About this game", as plain text
     languages: dict[str, str] = field(default_factory=dict)  # {"English": "audio", ...}
+    price: dict = field(default_factory=dict)  # parse_price: {} when the store shows none
 
 
 _MARKUP = re.compile(r"<[^>]*>")
@@ -69,7 +70,25 @@ def fetch_store_details(app_id: int, timeout: float = 15) -> StoreDetails | None
         name=data.get("name"),
         about_text=clean_store_text(data.get("about_the_game")),
         languages=parse_languages(data.get("supported_languages")),
+        price=parse_price(data),
     )
+
+
+def parse_price(data: dict) -> dict:
+    """The price the store shows, in the currency of the country the request comes from:
+    {"free": True} for a free game; {"currency": "BRL", "initial": 5999, "final": 2999, "discount": 50}
+    (in cents) otherwise; {} when there's none (not released yet, or not sold any more)."""
+    if data.get("is_free"):
+        return {"free": True}
+    overview = data.get("price_overview") or {}
+    if not overview.get("currency") or overview.get("final") is None:
+        return {}
+    return {
+        "currency": overview["currency"],
+        "initial": overview.get("initial", overview["final"]),
+        "final": overview["final"],
+        "discount": overview.get("discount_percent", 0),
+    }
 
 
 def fetch_store_page_tags(app_id: int, timeout: float = 15) -> dict[str, int]:

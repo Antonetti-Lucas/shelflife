@@ -35,6 +35,7 @@ from shelflife.sync import (
     details_due,
     enrich_games,
     reviews_due,
+    length_due,
     sync_about,
     player_hours_due,
     sync_achievements,
@@ -50,7 +51,7 @@ STEPS = (
     ("wishlist", "Reading your wishlist"),
     ("achievements", "Reading your achievements"),
     ("details", "Fetching store details for new games"),
-    ("about", "Reading game descriptions and languages"),
+    ("about", "Reading descriptions, languages and prices"),
     ("reviews", "Counting reviews"),
     ("players", "Reading how long other players play"),
 )
@@ -59,6 +60,7 @@ SECONDS_PER_ACHIEVEMENT = 1  # a game's achievements: two quick calls
 SECONDS_PER_REVIEW = 1.2
 SECONDS_PER_ABOUT = 1.6  # one store call for a game's description
 SECONDS_PER_PLAYERS = 5.5  # up to five pages of reviews
+SECONDS_PER_LENGTH = 1.2  # one page of reviews, for a game you haven't played
 
 
 @dataclass
@@ -191,7 +193,7 @@ def summarize_sync(result: SyncResult) -> JobSnapshot:
     if result.details:
         parts.append(f"store details for {result.details} games")
     if result.about:
-        parts.append(f"descriptions and languages for {result.about} games")
+        parts.append(f"descriptions, languages and prices for {result.about} games")
     if result.reviews:
         parts.append(f"review counts for {result.reviews} games")
     if result.players:
@@ -225,7 +227,7 @@ def what_is_due(session: Session, with_due: bool = True) -> dict[str, int | obje
         .join(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
         .where(Game.family_shared.is_(True))
     )
-    counts = {"achievements": None, "details": None, "about": None, "reviews": None, "players": None}
+    counts = {"achievements": None, "details": None, "about": None, "reviews": None, "players": None, "length": None}
     minutes = full_minutes = None
     if with_due:
         counts = {
@@ -234,6 +236,7 @@ def what_is_due(session: Session, with_due: bool = True) -> dict[str, int | obje
             "about": len(about_due(session)),
             "reviews": len(reviews_due(session)),
             "players": len(player_hours_due(session)),
+            "length": len(length_due(session)),
         }
         full = {
             "achievements": len(achievements_due(session, everything=True)),
@@ -241,6 +244,7 @@ def what_is_due(session: Session, with_due: bool = True) -> dict[str, int | obje
             "about": 0,  # a full re-read of the details brings the text with it
             "reviews": len(reviews_due(session, everything=True)),
             "players": len(player_hours_due(session, everything=True)),
+            "length": len(length_due(session, everything=True)),
         }
         estimate = lambda c: _minutes(  # noqa: E731
             c["achievements"] * SECONDS_PER_ACHIEVEMENT
@@ -248,6 +252,7 @@ def what_is_due(session: Session, with_due: bool = True) -> dict[str, int | obje
             + c["about"] * SECONDS_PER_ABOUT
             + c["reviews"] * SECONDS_PER_REVIEW
             + c["players"] * SECONDS_PER_PLAYERS
+            + c["length"] * SECONDS_PER_LENGTH
         )
         minutes, full_minutes = estimate(counts), estimate(full)
     return {

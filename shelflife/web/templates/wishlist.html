@@ -15,6 +15,10 @@
 <form class="filters" method="get" action="/wishlist">
   <input type="search" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
   {{ tag_input(tag, tag_options, match) }}
+  <select name="length" aria-label="Length" title="Estimated from how long each game's reviewers played it">
+    <option value="">Any length</option>
+    {% for key, (label, low, high) in length_bands.items() %}<option value="{{ key }}" {{ "selected" if length == key }}>{{ label }}</option>{% endfor %}
+  </select>
   <select name="rec" aria-label="Recommended">
     {% for value, label in [("all", "All games"), ("50", "Best fit: top 50%"), ("25", "Best fit: top 25%"), ("10", "Best fit: top 10%")] %}
       <option value="{{ value }}" {{ "selected" if rec == value }}>{{ label }}</option>
@@ -44,7 +48,7 @@
   <p class="empty">No games match. Try a different search or filter.</p>
 {% endif %}
 
-{% set base = "/wishlist?q=" ~ (q|urlencode) ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&rec=" ~ rec ~ "&sort=" ~ sort ~ "&page=" %}
+{% set base = "/wishlist?q=" ~ (q|urlencode) ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&length=" ~ length ~ "&rec=" ~ rec ~ "&sort=" ~ sort ~ "&page=" %}
 {{ link_pager(page, pages, base) }}
 {% endif %}
 {% endblock %}

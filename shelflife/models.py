@@ -40,6 +40,10 @@ class Game(Base):
     # Languages it can be played in, {"English": "audio", "Polish": "text"} (shelflife/languages.py);
     # {} when the store lists none, None when never read.
     languages: Mapped[dict[str, str] | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+    # The store price when last read (store.parse_price): {} when it shows none, None when never read.
+    # Prices change with sales, so price_fetched_at says how old it is.
+    price: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+    price_fetched_at: Mapped[datetime | None]
     cover_url: Mapped[str | None]
     details_fetched_at: Mapped[datetime | None]
     tags_fetched_at: Mapped[datetime | None]

@@ -3,6 +3,8 @@ cutting a list into pages, the search box and tag filter, and the "recommended" 
 
 from dataclasses import dataclass, field
 
+from shelflife.length import BANDS as LENGTH_BANDS
+from shelflife.length import estimate, in_band
 from shelflife.models import Game
 from shelflife.tagfilter import TagIndex, matches, parse_match, parse_tags
 
@@ -33,24 +35,31 @@ def paginate(items: list, page: str | int | None, size: int) -> Page:
 
 @dataclass
 class ListFilter:
-    """The search box and tag filter a list page has, as typed (`q`, `tag`) and as understood."""
+    """The search box, tag filter and length band a list page has, as typed (`q`, `tag`) and as
+    understood."""
 
     q: str
     tag: str
     match: str  # "all" or "any" of the tags
     wanted: list[str] = field(default_factory=list)
     needle: str = ""
+    length: str = ""  # a key of length.BANDS, or "" for any length
 
     @classmethod
-    def read(cls, q: str, tag: str, match: str) -> "ListFilter":
-        return cls(q, tag, parse_match(match), parse_tags(tag), q.strip().lower())
+    def read(cls, q: str, tag: str, match: str, length: str = "") -> "ListFilter":
+        length = length if length in LENGTH_BANDS else ""
+        return cls(q, tag, parse_match(match), parse_tags(tag), q.strip().lower(), length)
 
     @property
     def active(self) -> bool:
-        return bool(self.needle or self.wanted)
+        return bool(self.needle or self.wanted or self.length)
 
     def keeps(self, game: Game) -> bool:
-        return (not self.needle or self.needle in game.name.lower()) and matches(game.tags, self.wanted, self.match)
+        return (
+            (not self.needle or self.needle in game.name.lower())
+            and matches(game.tags, self.wanted, self.match)
+            and (not self.length or in_band(estimate(game), self.length))
+        )
 
     def context(self, tag_index: TagIndex) -> dict:
         """What the search box and tag box need to show it again. `tag_index` holds the tags of
@@ -61,6 +70,8 @@ class ListFilter:
             "match": self.match,
             "tag_options": tag_index.popular(),
             "unknown_tags": tag_index.unknown(self.wanted),
+            "length": self.length,
+            "length_bands": LENGTH_BANDS,
         }
 
 

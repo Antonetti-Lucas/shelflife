@@ -12,6 +12,10 @@
 <form class="filters" method="get" action="/library">
   <input type="search" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
   {{ tag_input(tag, tag_options, match) }}
+  <select name="length" aria-label="Length" title="Estimated from how long each game's reviewers played it">
+    <option value="">Any length</option>
+    {% for key, (label, low, high) in length_bands.items() %}<option value="{{ key }}" {{ "selected" if length == key }}>{{ label }}</option>{% endfor %}
+  </select>
   <select name="source" aria-label="Source">
     {% for value, label in [("all", "Owned and family"), ("owned", "Owned"), ("family", "Family")] %}
       <option value="{{ value }}" {{ "selected" if source == value }}>{{ label }}</option>

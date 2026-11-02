@@ -60,7 +60,7 @@ def steam(monkeypatch):
         if "details" in state.fail:
             raise state.fail["details"]
         game.type, game.tags, game.details_fetched_at, game.about_text = "game", {"Stealth": 10}, datetime.now(), ""  # fetched just now
-        game.languages = {"English": "audio"}
+        game.languages, game.price, game.price_fetched_at = {"English": "audio"}, {"free": True}, datetime.now()
 
     def fetch_review_counts(app_id):
         state.order.append("reviews")
@@ -73,7 +73,7 @@ def steam(monkeypatch):
     monkeypatch.setattr(sync_job, "fetch_wishlist", fetch_wishlist)
     monkeypatch.setattr(sync, "fetch_achievements", fetch_achievements)
     monkeypatch.setattr(sync, "enrich_one", enrich_one)
-    def fetch_player_hours(app_id, positive=None, negative=None):
+    def fetch_player_hours(app_id, positive=None, negative=None, pages=5):
         state.order.append("players")
         state.players.append(app_id)
         if "players" in state.fail:
@@ -361,7 +361,7 @@ def test_a_network_error_is_reported_not_raised(session, steam):
     "result, state, fragments",
     [
         (SyncResult(games=300, new_games=4, achievements=4, details=4, reviews=2), "done", ["300 owned games (4 new)", "achievements for 4 games", "store details for 4 games", "review counts for 2 games"]),
-        (SyncResult(games=300, about=7), "done", ["descriptions and languages for 7 games"]),
+        (SyncResult(games=300, about=7), "done", ["descriptions, languages and prices for 7 games"]),
         (SyncResult(games=300), "done", ["300 owned games."]),
         (SyncResult(games=300, details=2, stopped=True), "stopped", ["Stopped.", "Sync again to carry on"]),
         (SyncResult(games=300, aborted="Steam is rate limiting us."), "error", ["Stopped early: Steam is rate limiting us.", "Progress is saved"]),
@@ -562,6 +562,7 @@ def test_a_page_with_everything_up_to_date_says_so(client, session):
     game = session.get(Game, 1)
     game.details_fetched_at = game.reviews_fetched_at = datetime.now()
     game.about_text, game.languages = "", {"English": "text"}
+    game.price, game.price_fetched_at, game.player_hours_fetched_at = {}, datetime.now(), datetime.now()
     session.commit()
     assert "Nothing is due: you are up to date" in client.get("/sync").text
 
@@ -632,7 +633,7 @@ def test_a_sync_reads_the_text_of_games_that_have_details_but_no_text(session, s
     assert result.about == 2 and sorted(asked) == [1, 2]
     assert 5 in steps and steps == sorted(steps)
     assert session.get(Game, 1).about_text == "text of 1" and session.get(Game, 2).about_text == "text of 2"
-    assert "descriptions and languages for 2 games" in summarize_sync(result).message
+    assert "descriptions, languages and prices for 2 games" in summarize_sync(result).message
 
 
 def test_stopping_before_the_descriptions_step_skips_it_and_the_ones_after(session, steam, monkeypatch):

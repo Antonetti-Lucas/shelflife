@@ -13,7 +13,8 @@
   </a>
   <div class="card-body">
     <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a></h3>
-    <p class="meta">{{ short_reviews(g) }}</p>
+    {% set length = length_of(g) %}
+    <p class="meta">{{ short_reviews(g) }}{% if length %} · <span title="{{ length.text }} (from how long its reviewers played)">{{ length.short_text }}{{ " played" if length.endless }}</span>{% endif %}</p>
     {% if note %}<p class="wish" title="{{ note }}">★ {{ note }}</p>{% endif %}
     {% if r.because %}<p class="why" title="{{ r.because|join('; ') }}">Like {% for b in r.because %}<b>{{ game_of(b) }}</b>{{ ", " if not loop.last }}{% endfor %}</p>{% endif %}
     {% if r.tags %}<p class="tags">{% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}</p>{% endif %}

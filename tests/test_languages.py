@@ -115,6 +115,7 @@ def test_the_game_page_says_when_a_game_is_not_in_your_languages(client, session
 def details_read(session, app_id, text="", languages=None):
     game = session.get(Game, app_id)
     game.details_fetched_at, game.about_text, game.languages = datetime(2026, 1, 1), text, languages
+    game.price_fetched_at = datetime(2026, 1, 1)  # these tests are about languages
     session.commit()
 
 

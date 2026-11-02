@@ -51,6 +51,7 @@ from shelflife.sync_job import what_is_due
 from shelflife.tagfilter import TagIndex, parse_tags, split_excluded
 from shelflife.languages import COMMON as COMMON_LANGUAGES
 from shelflife.languages import fits
+from shelflife.length import estimate as estimate_length
 from shelflife.tags import is_adult
 from shelflife.web.lists import ListFilter, paginate, recommended, whole
 from shelflife.wishlist import order_key, rank_label
@@ -151,6 +152,7 @@ templates.env.globals.update(
     fit_level=fit_level,
     game_of=game_of,
     fits_languages=fits,
+    length_of=estimate_length,
 )
 
 
@@ -275,13 +277,14 @@ def library(
     status: str = "all",
     tag: str = "",
     match: str = "all",
+    length: str = "",
     page: str = "1",
     session: Session = Depends(get_session),
 ):
     """Your games as a table; click a column's name to sort by it, again to turn the order round."""
     ratings = diary.load_ratings(session)
     entries = diary.load_entries(session)
-    filters = ListFilter.read(q, tag, match)
+    filters = ListFilter.read(q, tag, match, length)
     status = status if status in (*diary.STATUSES, "none") else "all"
     scores = score_all(session, ratings, diary.load_not_interested(session))
     scope = scores.backlog | scores.family  # what "recommended" means in the library
@@ -340,7 +343,7 @@ def library(
     rows = sorted(known, key=value, reverse=dir == "desc") + [r for r in rows if value(r) is None]  # blanks last
 
     part = paginate(rows, page, PAGE_SIZE)
-    settings = {"q": q, "source": source, "tag": tag, "match": filters.match, "status": status, "rec": rec, "sort": sort, "dir": dir}
+    settings = {"q": q, "source": source, "tag": tag, "match": filters.match, "length": filters.length, "status": status, "rec": rec, "sort": sort, "dir": dir}
 
     def url(**changes) -> str:
         return "/library?" + urlencode({k: v for k, v in (settings | changes).items() if v not in ("", None)})
@@ -380,6 +383,7 @@ def explore(
     rec: str = "all",
     tag: str = "",
     match: str = "all",
+    length: str = "",
     like: str = "",
     wishlist: str = "all",
     page: str = "1",
@@ -387,7 +391,7 @@ def explore(
 ):
     """Games you don't own: the discovery pool, ranked by how well they fit you, or by
     how like one game (`like`) they are."""
-    filters = ListFilter.read(q, tag, match)
+    filters = ListFilter.read(q, tag, match, length)
     wishlist = wishlist if wishlist in EXPLORE_WISHLIST else "all"
     wished = wishlist_by_id(session)
     ratings = diary.load_ratings(session)
@@ -567,11 +571,12 @@ def wishlist_page(
     rec: str = "all",
     tag: str = "",
     match: str = "all",
+    length: str = "",
     page: str = "1",
     session: Session = Depends(get_session),
 ):
     """Your Steam wishlist, ranked by how well each game fits your taste."""
-    filters = ListFilter.read(q, tag, match)
+    filters = ListFilter.read(q, tag, match, length)
     sort = sort if sort in WISHLIST_SORTS else "fit"
     items = wishlist_by_id(session)
     games = {g.steam_app_id: g for g in session.scalars(select(Game).where(Game.steam_app_id.in_(list(items))))} if items else {}

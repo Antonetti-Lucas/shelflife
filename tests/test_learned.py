@@ -24,7 +24,7 @@ def with_text(session, app_id, text, details=True):
     game = session.get(Game, app_id)
     game.about_text = text
     if details:
-        game.details_fetched_at = NOW
+        game.details_fetched_at = game.price_fetched_at = NOW  # these tests are about the text
     session.commit()
 
 
