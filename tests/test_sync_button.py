@@ -33,7 +33,7 @@ def owned(app_id, minutes=0, recent=0, name=None):
 @pytest.fixture
 def steam(monkeypatch):
     """A Steam that owns whatever `steam.library` says, and records what was asked of it."""
-    state = SimpleNamespace(library=[], wishlist=[], achievements=[], details=[], reviews=[], players=[], fail={}, order=[])
+    state = SimpleNamespace(library=[], wishlist=[], achievements=[], tags=[], details=[], reviews=[], players=[], fail={}, order=[])
 
     def fetch_owned(api_key, steam_id):
         state.order.append("library")
@@ -54,7 +54,14 @@ def steam(monkeypatch):
             raise state.fail["achievements"]
         return AchievementStats(10, 2, 5.0, datetime(2020, 1, 1), datetime(2021, 1, 1), (100, 200))
 
-    def enrich_one(game, spy=None):
+    def fetch_steam_tags(app_ids, timeout=60):
+        state.order.append("tags")
+        state.tags.extend(app_ids)
+        if "tags" in state.fail:
+            raise state.fail["tags"]
+        return {i: {"Stealth": 10} for i in app_ids}
+
+    def enrich_one(game):
         state.order.append("details")
         state.details.append(game.steam_app_id)
         if "details" in state.fail:
@@ -74,6 +81,7 @@ def steam(monkeypatch):
     monkeypatch.setattr(sync_job, "fetch_wishlist", fetch_wishlist)
     monkeypatch.setattr(sync, "fetch_achievements", fetch_achievements)
     monkeypatch.setattr(sync, "enrich_one", enrich_one)
+    monkeypatch.setattr(sync.store, "fetch_steam_tags", fetch_steam_tags)
 
     def fetch_prices(app_ids):
         state.order.append("prices")
@@ -102,7 +110,7 @@ def test_a_sync_runs_all_the_steps_in_order_and_saves_everything(session, steam)
     assert (result.games, result.new_games) == (2, 2)
     assert (result.achievements, result.details, result.reviews) == (1, 2, 2)  # every game gets review counts
     assert result.aborted is None and not result.stopped
-    assert sorted(dict.fromkeys(steps)) == [1, 2, 3, 4, 6, 7] and steps == sorted(steps)  # never goes back; step 5 (descriptions) says nothing when none are due
+    assert sorted(dict.fromkeys(steps)) == [1, 2, 3, 4, 5, 7, 8] and steps == sorted(steps)  # never goes back; step 6 (descriptions) says nothing when none are due
     assert session.get(LibraryEntry, 1).playtime_total_min == 600
 
 
@@ -110,7 +118,7 @@ def test_the_steps_happen_in_this_order_and_each_finishes_before_the_next_begins
     steam.library = [owned(1, minutes=600), owned(2, minutes=600), owned(3, minutes=0)]
     run_sync(session, "key", "id")
     firsts = list(dict.fromkeys(steam.order))
-    assert firsts == ["library", "wishlist", "achievements", "details", "reviews", "players"]
+    assert firsts == ["library", "wishlist", "achievements", "tags", "details", "reviews", "players"]
     runs = [key for i, key in enumerate(steam.order) if i == 0 or key != steam.order[i - 1]]
     assert runs == firsts  # no step comes back after the next one has started
 
@@ -431,7 +439,7 @@ def test_progress_updates_the_step_and_the_text(session, steam):
     original = job._set
     job._set = lambda **kw: (seen.append(kw), original(**kw))[1]
     job.start("k", "i")
-    assert {kw["step"] for kw in seen} == {1, 2, 3, 4, 6, 7}
+    assert {kw["step"] for kw in seen} == {1, 2, 3, 4, 5, 7, 8}
     assert any("Store details for Game 1" in kw["text"] for kw in seen)
 
 
@@ -528,7 +536,7 @@ def test_while_syncing_the_page_shows_the_step_and_a_stop_button(client, configu
     assert len(client.held) == 1  # handed to the background
     html = client.get("/sync").text
     assert '<meta http-equiv="refresh"' in html and "<progress" in html
-    assert "Step 1 of 8: Reading your library" in html
+    assert "Step 1 of 9: Reading your library" in html
     assert 'action="/sync/stop"' in html and 'action="/sync/start"' not in html
     post(client, "/sync/stop")
     assert web_app.sync_job._stop.is_set()
@@ -561,7 +569,7 @@ def test_the_page_says_what_is_due_and_roughly_how_long(client, session):
         add_game(session, i, minutes=60)
     html = " ".join(client.get("/sync").text.split())
     assert "20 games in your library." in html
-    assert "Due now: achievements for 20, store details for 20, review counts for 20, how long players play 20 games (about 4 minutes)" in html
+    assert "Due now: achievements for 20, tags for 20, store details for 20, review counts for 20, how long players play 20 games (about 4 minutes)" in html
 
 
 def test_a_page_with_everything_up_to_date_says_so(client, session):
@@ -570,7 +578,7 @@ def test_a_page_with_everything_up_to_date_says_so(client, session):
     game.details_fetched_at = game.reviews_fetched_at = datetime.now()
     game.about_text, game.languages = "", {"English": "text"}
     game.price, game.price_fetched_at, game.player_hours_fetched_at = {}, datetime.now(), datetime.now()
-    game.store_info = {}
+    game.store_info, game.tags_fetched_at = {}, datetime.now()
     session.commit()
     assert "Nothing is due: you are up to date" in client.get("/sync").text
 
@@ -639,7 +647,7 @@ def test_a_sync_reads_the_text_of_games_that_have_details_but_no_text(session, s
     steps = []
     result = run_sync(session, "key", "id", on_progress=lambda step, *a: steps.append(step))
     assert result.about == 2 and sorted(asked) == [1, 2]
-    assert 5 in steps and steps == sorted(steps)
+    assert 6 in steps and steps == sorted(steps)
     assert session.get(Game, 1).about_text == "text of 1" and session.get(Game, 2).about_text == "text of 2"
     assert "descriptions, languages and prices for 2 games" in summarize_sync(result).message
 

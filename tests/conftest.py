@@ -7,6 +7,7 @@ like data/ratings.csv stay inside it), and no test makes a network call.
 
 import os
 import tempfile
+import time
 from pathlib import Path
 
 # This has to happen before shelflife is imported anywhere: db.py reads
@@ -62,8 +63,17 @@ def no_waiting(monkeypatch):
         appnames.app_list_throttle,
         achievements.steam_throttle,
         store.steamspy_all_throttle,
+        store.steam_api_throttle,
     ):
         monkeypatch.setattr(throttle, "min_interval", 0)
+
+
+@pytest.fixture(autouse=True)
+def steam_tags_unknown(monkeypatch):
+    """By default Steam's tag API knows no tags and no games, so code under test falls back to
+    SteamSpy's fakes. Tests about Steam's tags set `store._tag_names` and fake its answers."""
+    monkeypatch.setattr(store, "_tag_names", (time.monotonic(), {}))
+    monkeypatch.setattr(store, "fetch_steam_tags", lambda app_ids, timeout=60: {})
 
 
 @pytest.fixture

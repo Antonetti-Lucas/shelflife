@@ -6,7 +6,8 @@ from fastapi.testclient import TestClient
 
 from shelflife.recommend import recommend, score_all
 from shelflife.settings import get_hide_adult, set_hide_adult
-from shelflife.tags import is_adult
+from shelflife.models import Game
+from shelflife.tags import is_adult, is_adult_game
 from shelflife.web.app import app
 from tests.factories import add_game
 
@@ -34,6 +35,35 @@ def tags(*names):
 )
 def test_what_counts_as_a_game_for_adults(game, adult):
     assert is_adult(game) is adult
+
+
+JOKE = tags("Simulation", "Indie", "Casual", "Psychological Horror", "Hentai")  # Tree Simulator 2020
+
+
+@pytest.mark.parametrize(
+    "game, labels, adult",
+    [
+        (JOKE, None, True),  # labels not read yet: the tags decide
+        (JOKE, [], False),  # a joke tag on a game that declares no sexual content
+        (JOKE, [5], False),  # only "general mature content"
+        (tags("Anime", "Cute", "Casual", "Hentai"), [1, 5], True),  # declares sexual content
+        (tags("Horror", "RPG", "Survival"), [1, 2, 3, 4, 5], True),  # Steam labels it adult only
+        (tags("Visual Novel", "Dating Sim", "Sexual Content"), [], True),  # the tags alone are clear
+        (tags("Open World", "RPG", "Nudity", "Sci-fi"), [1, 2, 5], False),  # Cyberpunk 2077
+    ],
+)
+def test_the_stores_content_labels(game, labels, adult):
+    assert is_adult(game, labels) is adult
+
+
+def test_a_games_labels_are_unknown_until_its_store_details_are_read(session):
+    add_game(session, 1, tags=JOKE)
+    game = session.get(Game, 1)
+    assert game.store_info is None and is_adult_game(game)
+    game.store_info = {}
+    assert not is_adult_game(game)
+    game.store_info = {"content_descriptors": [1, 5]}
+    assert is_adult_game(game)
 
 
 @pytest.fixture

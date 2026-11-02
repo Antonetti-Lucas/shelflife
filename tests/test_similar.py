@@ -12,7 +12,7 @@ from shelflife.discover_job import DiscoverJob, JobSnapshot, summarize
 from shelflife.discovery import FindResult, find_games
 from shelflife.models import Game
 from shelflife.similar import MIN_SIMILARITY, SEARCH_TAGS, search_tags, similar_to, tag_idf
-from shelflife.store import SpyDetails, SpyListing
+from shelflife.store import SpyDetails, Listing
 from shelflife.tags import tag_vector
 from shelflife.web import app as web_app
 from shelflife.settings import set_taste_mode
@@ -215,7 +215,7 @@ def test_a_game_that_cannot_be_compared_says_why(client, session, world, monkeyp
 
 def test_a_finished_like_search_links_to_its_results(client, session, world, fakes):
     lists, details, enriched = fakes
-    lists["Stealth"] = [SpyListing(300, "New Stealth Game", 900, 100)]
+    lists["Stealth"] = [Listing(300, "New Stealth Game", 900, 100)]
     details[300] = SpyDetails({"Stealth": 100, "Assassin": 90, "Comedy": 40}, 900, 100)
     post(client, "/explore/find", like="1", count="10")
     client.held[0]()
@@ -251,7 +251,7 @@ def test_only_games_close_to_the_reference_are_kept(session, fakes):
     lists, details, enriched = fakes
     idf = {f"Other {i}": 1.0 for i in range(20)} | {"Stealth": 1.0, "Action": 1.0}
     reference = tag_vector({"Stealth": 100, "Action": 60}, idf)
-    lists["Stealth"] = [SpyListing(1, "Close", 5000, 0), SpyListing(2, "Far", 4000, 0)]
+    lists["Stealth"] = [Listing(1, "Close", 5000, 0), Listing(2, "Far", 4000, 0)]
     details[1] = about("Stealth", "Action")
     # Stealth is in its top 10 (so it passes the tag check) but a minor tag: nothing like the reference.
     details[2] = SpyDetails({**{f"Other {i}": 1000 for i in range(9)}, "Stealth": 200}, 900, 100)
@@ -262,7 +262,7 @@ def test_only_games_close_to_the_reference_are_kept(session, fakes):
 
 def test_without_a_reference_the_same_far_game_is_kept(session, fakes):
     lists, details, enriched = fakes
-    lists["Stealth"] = [SpyListing(2, "Far", 4000, 0)]
+    lists["Stealth"] = [Listing(2, "Far", 4000, 0)]
     details[2] = SpyDetails({**{f"Other {i}": 1000 for i in range(9)}, "Stealth": 200}, 900, 100)
     assert find_games(session, ["Stealth"], 5).added == 1
 
@@ -275,7 +275,7 @@ def test_the_closeness_line_is_exactly_where_it_is_documented(session, fakes, vo
     lists, details, enriched = fakes
     assert MIN_SIMILARITY == 0.15
     idf = {"A": 1.0, "B": 1.0}
-    lists["A"] = [SpyListing(1, "Maybe", 5000, 0)]
+    lists["A"] = [Listing(1, "Maybe", 5000, 0)]
     details[1] = SpyDetails({"A": votes_for_a, "B": 1000}, 900, 100)
     result = find_games(session, ["A"], 5, like=({"A": 1.0}, idf))
     assert (result.added == 1) is kept
@@ -289,7 +289,7 @@ def test_a_like_search_remembers_the_game_in_its_state_and_its_message(session, 
     for i, tag in enumerate(["Puzzle", "Racing", "Farming", "Chess"], start=10):
         add_game(session, i, f"Filler {tag}", tags={tag: 100})  # so that tags have some rarity
     ref = add_game(session, 1, "Ref", tags={"Stealth": 100, "Action": 60})
-    lists["Stealth"] = [SpyListing(7, "New", 5000, 0)]
+    lists["Stealth"] = [Listing(7, "New", 5000, 0)]
     details[7] = about("Stealth", "Action")
     job = DiscoverJob(spawn=lambda fn: fn())
     job.start(["Stealth"], 5, 300, like=(1, "Ref"))

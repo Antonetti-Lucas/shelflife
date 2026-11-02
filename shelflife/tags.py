@@ -70,18 +70,33 @@ def cosine(a: dict[str, float], b: dict[str, float]) -> float:
     return dot / (na * nb) if na and nb else 0.0
 
 
-# Games for adults: the community tags say what a game is about. Steam's own content labels do
-# not tell them apart (Atomic Heart and Cyberpunk 2077 carry the same ones, and the Steam
-# version of NEKOPARA none), and one strong tag is not enough either (Cyberpunk's "Nudity" is
-# its third tag; Atomic Heart's first is a joke "Sexual Content"). So a game counts as adult
-# when an adult tag is among its top three AND a second sign is among its top five, or when
-# "Hentai" is among its top ten.
-ADULT_TAGS = frozenset({"Sexual Content", "Hentai", "NSFW"})
+# Games for adults: the community tags say what a game is about. Steam's own content labels
+# mostly don't tell them apart (Cyberpunk 2077, Atomic Heart and Baldur's Gate 3 carry the
+# same ones as NEKOPARA: some nudity or sexual content, general mature content), and one strong
+# tag is not enough either (Cyberpunk's "Nudity" is its third tag; Atomic Heart's "Sexual
+# Content" its second). So a game counts as adult when Steam labels it adult only, or when an
+# adult tag is among its top three AND a second sign is among its top five, or when "Hentai"
+# is among its top ten and the game declares sexual content: players add "Hentai" as a joke
+# to games that declare none (Tree Simulator 2020, Cat Bait).
+ADULT_TAGS = frozenset({"Sexual Content", "Hentai", "NSFW"})  # NSFW: SteamSpy's, retired on Steam
 ADULT_SIGNS = frozenset({"Sexual Content", "Hentai", "NSFW", "Nudity", "Visual Novel", "Dating Sim"})
+ADULT_ONLY_LABEL = 3  # the store's "adult only sexual content"
+SEXUAL_LABELS = frozenset({1, 3, 4})  # some, adult only, or frequent nudity or sexual content
 
 
-def is_adult(tags: dict[str, int] | None) -> bool:
+def is_adult(tags: dict[str, int] | None, labels: list[int] | None = None) -> bool:
+    """`labels`: the store's content descriptor ids, or None when they haven't been read."""
+    if labels and ADULT_ONLY_LABEL in labels:
+        return True
     ranked = sorted((tags or {}).items(), key=lambda kv: kv[1], reverse=True)
     names = [t for t, _ in ranked]
     core = ADULT_TAGS & set(names[:3])
-    return bool(core and (ADULT_SIGNS - core) & set(names[:5])) or "Hentai" in names[:10]
+    if core and (ADULT_SIGNS - core) & set(names[:5]):
+        return True
+    return "Hentai" in names[:10] and (labels is None or bool(SEXUAL_LABELS & set(labels)))
+
+
+def is_adult_game(game) -> bool:
+    """is_adult with the game's store labels (unknown until its store details are read)."""
+    info = game.store_info
+    return is_adult(game.tags, None if info is None else info.get("content_descriptors", []))

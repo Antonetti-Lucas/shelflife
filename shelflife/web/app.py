@@ -54,7 +54,7 @@ from shelflife.languages import fits
 from shelflife.length import estimate as estimate_length
 from shelflife import prices as price_view
 from shelflife import store
-from shelflife.tags import is_adult
+from shelflife.tags import is_adult_game
 from shelflife.web.lists import ListFilter, paginate, recommended, whole
 from shelflife.wishlist import order_key, rank_label
 
@@ -410,7 +410,7 @@ def explore(
     )
     games = list(session.scalars(query))
     if get_hide_adult(session):
-        games = [g for g in games if not is_adult(g.tags)]
+        games = [g for g in games if not is_adult_game(g)]
     if my_languages := get_languages(session):
         games = [g for g in games if fits(g.languages, my_languages)]
     tag_index = TagIndex(g.tags for g in games)

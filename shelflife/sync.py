@@ -68,7 +68,7 @@ MAX_CONSECUTIVE_FAILURES = 3
 # again" ignores these and re-reads it all.
 ACHIEVEMENTS_REFRESH_DAYS = 30  # catches achievements a developer added, and family games
 DETAILS_RETRY_DAYS = 7  # a game the store had no page for, or a game with no tags: try again (DLC and software never have tags)
-DETAILS_REFRESH_DAYS = 90  # tags and descriptions drift; refreshed a few at a time
+DETAILS_REFRESH_DAYS = 90  # descriptions drift; refreshed a few at a time
 DETAILS_REFRESH_BATCH = 30  # at most this many stale games per sync (about a minute and a half)
 REVIEWS_REFRESH_DAYS = 30  # review counts grow
 RECENT_REREAD_HOURS = 6  # a game played lately is read again, but not minutes after it was read
@@ -78,6 +78,9 @@ LENGTH_PAGES = 1  # a game you haven't played: 100 reviews are enough to estimat
 # the rest of the pool and Family Sharing games' every week. Games you own aren't refreshed.
 WISHLIST_PRICE_HOURS = 20
 OTHER_PRICE_DAYS = 7
+# Tags drift as players vote. Steam gives 200 games' tags per call, so every game is read again monthly.
+TAGS_REFRESH_DAYS = 30
+STEAM_TAGS_SINCE = datetime(2026, 11, 2, 12)  # tags read before this came from SteamSpy: read once more from Steam
 
 
 def achievements_due(
@@ -162,42 +165,50 @@ def sync_achievements(
     return done
 
 
-def _fill_tags(game: Game, spy: store.SpyDetails | None = None) -> None:
-    """SteamSpy first; if it has no tags, fall back to the store page's tag votes.
-
-    Tags are best effort: a failure here shouldn't lose the store data. SteamSpy
-    also supplies review counts when we don't have any yet. Pass `spy` when its
-    details were already fetched, to avoid asking twice.
-    """
-    if spy is None:
-        try:
-            spy = store.fetch_spy_details(game.steam_app_id)
-        except RateLimited:
-            raise
-        except (requests.RequestException, ValueError):
-            spy = None
-
+def _fallback_tags(game: Game) -> dict[str, int]:
+    """Tags for a game Steam's API has none for: SteamSpy's (named as Steam names them now), or
+    the store page's tag votes as a last resort. Best effort: {} when neither answers. SteamSpy
+    also supplies review counts when we don't have any yet."""
+    try:
+        spy = store.fetch_spy_details(game.steam_app_id)
+    except RateLimited:
+        raise
+    except (requests.RequestException, ValueError):
+        spy = None
+    tags: dict[str, int] = {}
     if spy is not None:
-        if spy.tags:
-            game.tags = spy.tags
+        tags = store.steam_names(spy.tags)
         if game.reviews_fetched_at is None and spy.positive is not None:
             game.reviews_positive = spy.positive
             game.reviews_negative = spy.negative or 0
             game.reviews_fetched_at = _now()
-
-    if not game.tags:
+    if not tags:
         try:
-            game.tags = store.fetch_store_page_tags(game.steam_app_id)
+            tags = store.fetch_store_page_tags(game.steam_app_id)
         except RateLimited:
             raise
         except (requests.RequestException, ValueError):
             pass
+    return tags
+
+
+def _fill_tags(game: Game) -> None:
+    """Steam's tags first, then the fallbacks. Tags are best effort: a failure here shouldn't
+    lose the store data."""
+    try:
+        tags = store.fetch_steam_tags([game.steam_app_id]).get(game.steam_app_id, {})
+    except RateLimited:
+        raise
+    except (requests.RequestException, ValueError):
+        tags = {}
+    if tags := tags or _fallback_tags(game):
+        game.tags = tags
     game.tags_fetched_at = _now()
 
 
-def enrich_one(game: Game, spy: store.SpyDetails | None = None) -> None:
-    """Fetch store details and tags for one game (no commit). `spy`: SteamSpy details
-    already in hand."""
+def enrich_one(game: Game) -> None:
+    """Fetch store details for one game (no commit), and its tags when it has none yet (a sync's
+    tag step keeps them current, and a search brings them with the game)."""
     details = store.fetch_store_details(game.steam_app_id)
     if details is None:
         if not game.type:  # a game that was fine before keeps what it had: the store may just have hiccuped
@@ -217,7 +228,8 @@ def enrich_one(game: Game, spy: store.SpyDetails | None = None) -> None:
         game.price, game.price_fetched_at = details.price, _now()
         game.store_info = details.info
     game.details_fetched_at = _now()
-    _fill_tags(game, spy)
+    if not game.tags:
+        _fill_tags(game)
 
 
 def _fetch_reviews(
@@ -488,6 +500,50 @@ def sync_about(
         done += 1
         if on_progress:
             on_progress(i, len(pending), game)
+    return done
+
+
+def tags_due(session: Session, everything: bool = False, refresh_days: int = TAGS_REFRESH_DAYS) -> list[Game]:
+    """Every game whose tags a sync should read from Steam: never read, read from SteamSpy before
+    ShelfLife switched to Steam's (STEAM_TAGS_SINCE), or read more than `refresh_days` ago.
+    `everything` lists them all. Games set aside by a search count too: their tags decide whether
+    a later search keeps them."""
+    query = select(Game).order_by(Game.tags_fetched_at.asc().nulls_first(), Game.steam_app_id)
+    if not everything:
+        cutoff = max(_now() - timedelta(days=refresh_days), STEAM_TAGS_SINCE)
+        query = query.where(or_(Game.tags_fetched_at.is_(None), Game.tags_fetched_at < cutoff))
+    return list(session.scalars(query))
+
+
+def sync_tags(
+    session: Session,
+    on_progress: Callable[[int, int, Game], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+    everything: bool = False,
+) -> int:
+    """Read the tags of the games `tags_due` lists from Steam, store.TAGS_BATCH games a call. A game
+    Steam has none for keeps the tags it has, named as Steam names them; one with none at all (and
+    that may be a game) gets SteamSpy's or the store page's. Saved batch by batch. Returns the number
+    of games read."""
+    pending = tags_due(session, everything=everything)
+    done = 0
+    for start in range(0, len(pending), store.TAGS_BATCH):
+        if should_stop is not None and should_stop():
+            break
+        chunk = pending[start : start + store.TAGS_BATCH]
+        found = store.fetch_steam_tags([g.steam_app_id for g in chunk])
+        for game in chunk:
+            if tags := found.get(game.steam_app_id):
+                game.tags = tags
+            elif game.tags:
+                game.tags = store.steam_names(game.tags)
+            elif game.type in (None, "game"):
+                game.tags = _fallback_tags(game) or game.tags
+            game.tags_fetched_at = _now()
+        session.commit()
+        done += len(chunk)
+        if on_progress:
+            on_progress(done, len(pending), chunk[-1])
     return done
 
 

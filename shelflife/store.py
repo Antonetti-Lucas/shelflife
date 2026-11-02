@@ -1,4 +1,4 @@
-"""Steam store details (per-app) and SteamSpy community tags."""
+"""Steam store details (per-app), Steam's community tags, and SteamSpy's as a fallback."""
 
 import html
 import json
@@ -14,12 +14,14 @@ from shelflife.throttle import RateLimited, Throttle
 
 STORE_URL = "https://store.steampowered.com/api/appdetails"
 STEAMSPY_URL = "https://steamspy.com/api.php"
+STEAM_API_URL = "https://api.steampowered.com"
 HEADERS = {"User-Agent": "ShelfLife/0.1 (personal game diary project)"}
 
 # The store allows roughly 200 requests / 5 min; SteamSpy asks for 1 request/second.
 store_throttle = Throttle(1.6)
 steamspy_throttle = Throttle(1.1)
 steamspy_all_throttle = Throttle(61)  # SteamSpy asks for one request a minute for its full list
+steam_api_throttle = Throttle(1.0)  # Steam's tag calls: no published limit, so one a second
 
 
 @dataclass(frozen=True)
@@ -171,8 +173,154 @@ def parse_price(data: dict) -> dict:
     }
 
 
+# ---- Steam's own tags ----
+# Steam's API names its tags (IStoreService/GetTagList), gives games' tags (IStoreBrowseService/
+# GetItems, TAGS_BATCH games a call) and lists the games under a tag (IStoreQueryService/Query).
+# No key is needed. Valve's public docs don't describe the last two (the store itself uses them),
+# so SteamSpy stays as the fallback. A game's tag weights aren't raw votes (about a sixth of
+# SteamSpy's counts) but come in the same order, and tags.tag_weights only uses each tag's share
+# of the top one.
+TAGS_BATCH = 200  # games per GetItems call (500 is refused)
+TAGS_PER_GAME = 20
+TAG_NAMES_HOURS = 24
+# The tag query's order. 30 is Steam's popularity order (undocumented; measured on 2026-11-02, the
+# closest to "most reviewed first"); pages are read until one brings fewer than TAG_QUERY_ENOUGH
+# games with enough reviews, at most TAG_QUERY_PAGES of TAG_QUERY_PAGE (about 2 seconds each).
+TAG_QUERY_SORT = 30
+TAG_QUERY_PAGE = 1000
+TAG_QUERY_PAGES = 5
+TAG_QUERY_ENOUGH = 20
+# SteamSpy's old names -> Steam's (other differences are only letter case; the rest Steam retired)
+SPY_RENAMED = {
+    "rogue-like": "Roguelike",
+    "rogue-lite": "Roguelite",
+    "puzzle-platformer": "Puzzle Platformer",
+    "base-building": "Base Building",
+    "e-sports": "eSports",
+}
+_tag_names: tuple[float, dict[int, str]] | None = None
+
+
+def _country() -> str:
+    """The country Steam's tag calls ask as (they need one): STEAM_COUNTRY, or the US."""
+    return (os.getenv("STEAM_COUNTRY", "").strip() or "US").upper()
+
+
+def _steam_get(method: str, params: dict, timeout: float) -> dict:
+    steam_api_throttle.wait()
+    resp = requests.get(f"{STEAM_API_URL}/{method}/v1/", params=params, headers=HEADERS, timeout=timeout)
+    if resp.status_code in (403, 429):
+        raise RateLimited("Steam is rate limiting us; try again in a few minutes.")
+    resp.raise_for_status()
+    return (resp.json() or {}).get("response") or {}
+
+
+def _steam_query(method: str, body: dict, timeout: float) -> dict:
+    return _steam_get(method, {"input_json": json.dumps(body)}, timeout)
+
+
+def steam_tag_names(timeout: float = 30) -> dict[int, str]:
+    """Steam's tags, id -> English name; read once a day."""
+    global _tag_names
+    if _tag_names is not None and time.monotonic() - _tag_names[0] < TAG_NAMES_HOURS * 3600:
+        return _tag_names[1]
+    answer = _steam_get("IStoreService/GetTagList", {"language": "english"}, timeout)
+    names = {t["tagid"]: t["name"] for t in answer.get("tags") or [] if t.get("tagid") and t.get("name")}
+    if names:
+        _tag_names = (time.monotonic(), names)
+    return names
+
+
+def steam_tag_id(name: str) -> int | None:
+    """Steam's id for a tag name (any letter case; SteamSpy's old names too), or None."""
+    wanted = SPY_RENAMED.get(name.strip().lower(), name.strip()).lower()
+    return next((i for i, n in steam_tag_names().items() if n.lower() == wanted), None)
+
+
+def steam_names(tags: dict[str, int]) -> dict[str, int]:
+    """Tags named as Steam names them now: SteamSpy's old names renamed, Steam's letter case, and
+    tags Steam has retired ("Mature", "NSFW", "Drama"...) dropped. When Steam's list can't be read,
+    only the renaming is done."""
+    try:
+        known = {n.lower(): n for n in steam_tag_names().values()}
+    except (RateLimited, requests.RequestException, ValueError):
+        known = {}
+    out: dict[str, int] = {}
+    for name, votes in tags.items():
+        name = SPY_RENAMED.get(name.lower(), name)
+        if known:
+            name = known.get(name.lower())
+            if name is None:
+                continue
+        out[name] = max(votes, out.get(name, 0))
+    return out
+
+
+def _item_tags(item: dict, names: dict[int, str]) -> dict[str, int]:
+    return {names[t["tagid"]]: t.get("weight", 0) for t in item.get("tags") or [] if t.get("tagid") in names}
+
+
+def fetch_steam_tags(app_ids: list[int], timeout: float = 60) -> dict[int, dict[str, int]]:
+    """Games' tags from Steam, TAGS_BATCH games a call: app id -> {name: weight}. Games Steam has
+    no tags for, or doesn't sell in your country, are left out."""
+    names = steam_tag_names()
+    wanted = set(app_ids)
+    out: dict[int, dict[str, int]] = {}
+    for start in range(0, len(app_ids), TAGS_BATCH):
+        body = {
+            "ids": [{"appid": a} for a in app_ids[start : start + TAGS_BATCH]],
+            "context": {"language": "english", "country_code": _country()},
+            "data_request": {"include_tag_count": TAGS_PER_GAME},
+        }
+        for item in _steam_query("IStoreBrowseService/GetItems", body, timeout).get("store_items") or []:
+            app_id = item.get("appid")
+            # A game Steam has moved answers under its new id: that one wasn't asked for.
+            if app_id in wanted and item.get("success") == 1 and (tags := _item_tags(item, names)):
+                out[app_id] = tags
+    return out
+
+
+def _steam_listing(item: dict, names: dict[int, str]) -> Listing:
+    summary = (item.get("reviews") or {}).get("summary_filtered") or {}
+    count = summary.get("review_count") or 0
+    positive = round(count * (summary.get("percent_positive") or 0) / 100)
+    app_id = item["appid"]
+    return Listing(app_id, item.get("name") or f"App {app_id}", positive, count - positive, _item_tags(item, names))
+
+
+def fetch_steam_tag_games(tag_id: int, min_reviews: int = 0, timeout: float = 90) -> list[Listing]:
+    """The released games Steam lists under a tag, with their review counts and tags, in Steam's
+    popularity order. Reads pages until one brings few games with `min_reviews` (see
+    TAG_QUERY_ENOUGH), so a huge tag like Indie isn't read to the end."""
+    names = steam_tag_names()
+    out: list[Listing] = []
+    for page in range(TAG_QUERY_PAGES):
+        body = {
+            "query": {
+                "start": page * TAG_QUERY_PAGE,
+                "count": TAG_QUERY_PAGE,
+                "sort": TAG_QUERY_SORT,
+                "filters": {
+                    "released_only": True,
+                    "type_filters": {"include_games": True},
+                    "tagids_must_match": [{"tagids": [tag_id]}],
+                },
+            },
+            "context": {"language": "english", "country_code": _country()},
+            "data_request": {"include_basic_info": True, "include_reviews": True, "include_tag_count": TAGS_PER_GAME},
+        }
+        answer = _steam_query("IStoreQueryService/Query", body, timeout)
+        listings = [_steam_listing(item, names) for item in answer.get("store_items") or [] if item.get("appid")]
+        out.extend(listings)
+        total = (answer.get("metadata") or {}).get("total_matching_records") or 0
+        enough = sum(g.positive + g.negative >= min_reviews for g in listings)
+        if len(listings) < TAG_QUERY_PAGE or len(out) >= total or enough < TAG_QUERY_ENOUGH:
+            break
+    return out
+
+
 def fetch_store_page_tags(app_id: int, timeout: float = 15) -> dict[str, int]:
-    """Fallback for apps SteamSpy has no tags for: read the store page's tag votes."""
+    """Last resort for apps neither Steam's API nor SteamSpy has tags for: read the store page's tag votes."""
     store_throttle.wait()
     resp = requests.get(
         f"https://store.steampowered.com/app/{app_id}/",
@@ -200,11 +348,15 @@ class SpyDetails:
 
 
 @dataclass(frozen=True)
-class SpyListing:
+class Listing:
+    """A game in a list of games (under a tag, or by popularity) with its review counts, and its
+    tags when the list brings them (Steam's does, SteamSpy's doesn't)."""
+
     app_id: int
     name: str
     positive: int
     negative: int
+    tags: dict[str, int] | None = field(default=None, compare=False, hash=False)
 
 
 def _spy_get(params: dict, timeout: float) -> dict:
@@ -249,7 +401,7 @@ def spy_tag_spellings(tag: str) -> list[str]:
     return [c for i, c in enumerate(candidates) if c and c not in candidates[:i]]
 
 
-def fetch_spy_tag_games(tag: str, timeout: float = 90) -> list[SpyListing]:
+def fetch_spy_tag_games(tag: str, timeout: float = 90) -> list[Listing]:
     """The games SteamSpy lists under a tag, trying the spellings it might know it by.
     Empty when none of them is a tag it recognises."""
     spellings = [_spy_spellings[tag]] if tag in _spy_spellings else spy_tag_spellings(tag)
@@ -261,14 +413,14 @@ def fetch_spy_tag_games(tag: str, timeout: float = 90) -> list[SpyListing]:
     return []
 
 
-def fetch_spy_tag_list(tag: str, timeout: float = 90) -> list[SpyListing]:
+def fetch_spy_tag_list(tag: str, timeout: float = 90) -> list[Listing]:
     """Games SteamSpy lists under a tag, with review counts (can be thousands)."""
     return _listings(_spy_get({"request": "tag", "tag": tag}, timeout))
 
 
-def _listings(data: dict) -> list[SpyListing]:
+def _listings(data: dict) -> list[Listing]:
     return [
-        SpyListing(
+        Listing(
             app_id=g["appid"],
             name=g.get("name", f"App {g['appid']}"),
             positive=g.get("positive", 0),
@@ -281,10 +433,10 @@ def _listings(data: dict) -> list[SpyListing]:
 # SteamSpy's full list comes most popular first, 1,000 games a page (page 0: the top
 # 1,000). Its "top 100" lists all return the same games now, so they are not used.
 PAGE_CACHE_SECONDS = 6 * 3600
-_pages: dict[int, tuple[float, list[SpyListing]]] = {}
+_pages: dict[int, tuple[float, list[Listing]]] = {}
 
 
-def fetch_spy_page(page: int, timeout: float = 120) -> list[SpyListing]:
+def fetch_spy_page(page: int, timeout: float = 120) -> list[Listing]:
     """One page of SteamSpy's full list of games with their review counts, most popular
     first. Waits as SteamSpy asks (one such request a minute) and remembers a page for a
     few hours, so a second search does not wait again."""

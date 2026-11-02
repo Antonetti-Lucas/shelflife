@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from shelflife import discovery, store
 from shelflife.discovery import find_games
-from shelflife.store import SpyDetails, SpyListing
+from shelflife.store import SpyDetails, Listing
 from shelflife.tagfilter import TagIndex, matches, parse_tags, split_excluded
 from shelflife.web import app as web_app
 from tests.factories import add_game
@@ -53,7 +53,7 @@ def test_the_library_leaves_out_games_with_the_tag(client, session):
 
 
 def test_the_search_for_new_games_sets_aside_games_with_a_left_out_tag(session, monkeypatch):
-    listings = [SpyListing(10, "Quiet Thief", 9000, 100), SpyListing(11, "Scary Thief", 9000, 100)]
+    listings = [Listing(10, "Quiet Thief", 9000, 100), Listing(11, "Scary Thief", 9000, 100)]
     tags = {10: STEALTH, 11: STEALTH_HORROR}
     monkeypatch.setattr(store, "fetch_spy_tag_games", lambda tag: listings)
     monkeypatch.setattr(store, "fetch_spy_details", lambda app_id: SpyDetails(tags[app_id], 9000, 100))

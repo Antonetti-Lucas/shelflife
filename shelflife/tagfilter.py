@@ -8,15 +8,21 @@ A tag written with a minus in front ("-Horror") leaves out the games that have i
 from collections import Counter
 from collections.abc import Iterable
 
+from shelflife.store import SPY_RENAMED
+
 TOP_TAGS = 20
 
 
 def parse_tags(raw: str | None) -> list[str]:
-    """"Roguelike, co-op" -> ["Roguelike", "co-op"]: comma separated, no repeats."""
+    """"Roguelike, co-op" -> ["Roguelike", "co-op"]: comma separated, no repeats. SteamSpy's old
+    names, which games' tags used before they came from Steam, become Steam's ("Rogue-like" ->
+    "Roguelike"), so a filter saved back then still works."""
     seen: set[str] = set()
     out: list[str] = []
     for part in (raw or "").split(","):
         name = part.strip()
+        minus, base = ("-", name[1:].strip()) if name.startswith("-") else ("", name)
+        name = minus + SPY_RENAMED.get(base.lower(), base)
         if name and name.lower() not in seen:
             seen.add(name.lower())
             out.append(name)

@@ -10,7 +10,7 @@ from shelflife import discovery, store
 from shelflife.discover_job import DiscoverJob, JobSnapshot, summarize
 from shelflife.discovery import POPULAR_PAGES, FindResult, find_games
 from shelflife.models import Game
-from shelflife.store import SpyListing
+from shelflife.store import Listing
 from shelflife.throttle import RateLimited
 from shelflife.web import app as web_app
 from tests.conftest import FakeResponse
@@ -21,7 +21,7 @@ ALL_PAGES_INTERVAL = store.steamspy_all_throttle.min_interval  # before any test
 
 
 def listing(app_id, positive=900, negative=100, name=None):
-    return SpyListing(app_id, name or f"Game {app_id}", positive, negative)
+    return Listing(app_id, name or f"Game {app_id}", positive, negative)
 
 
 # ---- fetching a page of SteamSpy's full list ----

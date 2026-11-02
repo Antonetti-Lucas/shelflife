@@ -35,7 +35,7 @@ def summarize(
         parts.append(f"{result.failed} could not be fetched and will be retried next time")
     if result.empty_tags:
         names = ", ".join(f"“{t}”" for t in result.empty_tags)
-        parts.append(f"SteamSpy lists no games for {names} (it does not know that tag name; a related tag may work)")
+        parts.append(f"no games were found for {names} (neither Steam nor SteamSpy knows that tag name; a related tag may work)")
     message = "; ".join(parts) + "."
     if result.aborted:
         message = f"Stopped early: {result.aborted} Progress is saved; try again later. " + message

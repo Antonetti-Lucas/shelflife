@@ -3,7 +3,7 @@
 import pytest
 
 from shelflife import store
-from shelflife.store import SpyListing, UNKNOWN_TAG_LIST_SIZE, fetch_spy_tag_games, spy_tag_spellings
+from shelflife.store import Listing, UNKNOWN_TAG_LIST_SIZE, fetch_spy_tag_games, spy_tag_spellings
 
 
 @pytest.fixture(autouse=True)
@@ -12,7 +12,7 @@ def fresh_memory(monkeypatch):
 
 
 def games(n, start=1):
-    return [SpyListing(start + i, f"Game {start + i}", 900, 100) for i in range(n)]
+    return [Listing(start + i, f"Game {start + i}", 900, 100) for i in range(n)]
 
 
 @pytest.fixture

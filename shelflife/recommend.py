@@ -60,7 +60,7 @@ from shelflife.models import Game
 from shelflife.play import BACKLOG_MAX_MIN, PlayScale, PlayScore, is_played
 from shelflife.quality import quality_factor
 from shelflife.settings import get_hide_adult, get_languages, get_taste_mode
-from shelflife.tags import compute_idf, is_adult, tag_vector
+from shelflife.tags import compute_idf, is_adult_game, tag_vector
 
 __all__ = ["BACKLOG_MAX_MIN", "is_played"]  # also imported from here by other modules
 
@@ -583,7 +583,7 @@ def _classify(model: _Model) -> tuple[list[Game], list[Game], list[Game]]:
         base = _base_name(cand.name)
         if (
             base in model.played_titles
-            or (model.hide_adult and is_adult(cand.tags))
+            or (model.hide_adult and is_adult_game(cand))
             or not fits(cand.languages, model.languages)
         ):
             continue

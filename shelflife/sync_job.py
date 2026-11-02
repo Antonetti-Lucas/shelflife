@@ -4,15 +4,16 @@
 2. your wishlist (a game id, your rank and the date you added it; a wishlist Steam cannot
    give does not stop the rest);
 3. your achievements (official API, quick);
-4. store details and tags for new games and wishlist games (slow: about 3 seconds a game, so
-   the very first sync takes a while), plus games that came back empty last time and a few of
-   the oldest;
-5. the store's "About this game" text for games that have their details but not the text yet
-   (a one-time catch-up for games read before the text was kept; new games get it in step 4);
-6. review counts for every game that has none or whose counts are a month old;
-7. how long other players play each game you have played (from up to 500 of its reviews), the
+4. tags from Steam for new games and every game read more than a month ago, 200 games per call
+   (SteamSpy's or the store page's for a game Steam has none for);
+5. store details for new games and wishlist games (slow: about 3 seconds a game, so the very
+   first sync takes a while), plus games that came back empty last time and a few of the oldest;
+6. the store's "About this game" text for games that have their details but not the text yet
+   (a one-time catch-up for games read before the text was kept; new games get it in step 5);
+7. review counts for every game that has none or whose counts are a month old;
+8. how long other players play each game you have played (from up to 500 of its reviews), the
    yardstick your own hours are measured against; read once, then every six months;
-8. prices of games you don't own: your wishlist's every sync, the rest every week, 100 games
+9. prices of games you don't own: your wishlist's every sync, the rest every week, 100 games
    per store call.
 
 Each step re-reads only what could have changed (see the rules in shelflife/sync.py);
@@ -45,6 +46,8 @@ from shelflife.sync import (
     sync_all_reviews,
     sync_player_hours,
     sync_prices,
+    sync_tags,
+    tags_due,
     upsert_library,
 )
 from shelflife.throttle import RateLimited
@@ -54,13 +57,15 @@ STEPS = (
     ("library", "Reading your library"),
     ("wishlist", "Reading your wishlist"),
     ("achievements", "Reading your achievements"),
+    ("tags", "Reading tags from Steam"),
     ("details", "Fetching store details for new games"),
     ("about", "Reading descriptions, languages, prices and more store details"),
     ("reviews", "Counting reviews"),
     ("players", "Reading how long other players play"),
     ("prices", "Updating prices"),
 )
-SECONDS_PER_GAME = 3  # store details and tags, for the time estimate
+SECONDS_PER_GAME = 3  # store details, for the time estimate
+SECONDS_PER_TAGS = 1.5 / 200  # one call for two hundred games' tags
 SECONDS_PER_ACHIEVEMENT = 1  # a game's achievements: two quick calls
 SECONDS_PER_REVIEW = 1.2
 SECONDS_PER_ABOUT = 1.6  # one store call for a game's description
@@ -77,7 +82,8 @@ class SyncResult:
     wishlist_added: int = 0  # of those, how many are new since the last sync
     wishlist_note: str | None = None  # why the wishlist could not be updated (private, or Steam failed)
     achievements: int = 0  # games whose achievements were fetched
-    details: int = 0  # games whose store details and tags were fetched
+    tags: int = 0  # games whose tags were read
+    details: int = 0  # games whose store details were fetched
     about: int = 0  # games whose description text was read
     reviews: int = 0  # backlog games whose review counts were fetched
     players: int = 0  # games whose players' hours were read
@@ -90,7 +96,7 @@ class SyncResult:
 def run_sync(
     session: Session, api_key: str, steam_id: str, on_progress=None, should_stop=None, full: bool = False
 ) -> SyncResult:
-    """Run the eight steps. on_progress(step, text, done, total): `step` counts from 1.
+    """Run the nine steps. on_progress(step, text, done, total): `step` counts from 1.
     `full` re-reads everything (all achievements, all store details, all review counts)
     instead of only what is due.
 
@@ -140,9 +146,19 @@ def run_sync(
             result.stopped = True
             return result
 
+        result.tags = sync_tags(
+            session,
+            on_progress=lambda i, n, game: report(4, "Tags", i, n),
+            should_stop=stop,
+            everything=full,
+        )
+        if stop():
+            result.stopped = True
+            return result
+
         result.details = enrich_games(
             session,
-            on_progress=lambda i, n, game: report(4, f"Store details for {game.name}", i, n),
+            on_progress=lambda i, n, game: report(5, f"Store details for {game.name}", i, n),
             should_stop=stop,
             refresh=True,
             everything=full,
@@ -153,7 +169,7 @@ def run_sync(
 
         result.about = sync_about(
             session,
-            on_progress=lambda i, n, game: report(5, f"Description of {game.name}", i, n),
+            on_progress=lambda i, n, game: report(6, f"Description of {game.name}", i, n),
             should_stop=stop,
         )
         if stop():
@@ -162,7 +178,7 @@ def run_sync(
 
         result.reviews = sync_all_reviews(
             session,
-            on_progress=lambda i, n, game: report(6, f"Review counts for {game.name}", i, n),
+            on_progress=lambda i, n, game: report(7, f"Review counts for {game.name}", i, n),
             should_stop=stop,
             everything=full,
         )
@@ -172,7 +188,7 @@ def run_sync(
 
         result.players = sync_player_hours(
             session,
-            on_progress=lambda i, n, game: report(7, f"How long players play {game.name}", i, n),
+            on_progress=lambda i, n, game: report(8, f"How long players play {game.name}", i, n),
             should_stop=stop,
             everything=full,
         )
@@ -182,7 +198,7 @@ def run_sync(
 
         result.prices = sync_prices(
             session,
-            on_progress=lambda i, n, game: report(8, "Prices", i, n),
+            on_progress=lambda i, n, game: report(9, "Prices", i, n),
             should_stop=stop,
             everything=full,
         )
@@ -207,6 +223,8 @@ def summarize_sync(result: SyncResult) -> JobSnapshot:
         parts.append(f"your wishlist: {result.wishlist_note}")
     if result.achievements:
         parts.append(f"achievements for {result.achievements} games")
+    if result.tags:
+        parts.append(f"tags for {result.tags} games")
     if result.details:
         parts.append(f"store details for {result.details} games")
     if result.about:
@@ -246,11 +264,12 @@ def what_is_due(session: Session, with_due: bool = True) -> dict[str, int | obje
         .join(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
         .where(Game.family_shared.is_(True))
     )
-    counts = {"achievements": None, "details": None, "about": None, "reviews": None, "players": None, "length": None, "prices": None}
+    counts = {"achievements": None, "tags": None, "details": None, "about": None, "reviews": None, "players": None, "length": None, "prices": None}
     minutes = full_minutes = None
     if with_due:
         counts = {
             "achievements": len(achievements_due(session)),
+            "tags": len(tags_due(session)),
             "details": len(details_due(session)),
             "about": len(about_due(session)),
             "reviews": len(reviews_due(session)),
@@ -260,6 +279,7 @@ def what_is_due(session: Session, with_due: bool = True) -> dict[str, int | obje
         }
         full = {
             "achievements": len(achievements_due(session, everything=True)),
+            "tags": len(tags_due(session, everything=True)),
             "details": len(details_due(session, everything=True)),
             "about": 0,  # a full re-read of the details brings the text with it
             "reviews": len(reviews_due(session, everything=True)),
@@ -269,6 +289,7 @@ def what_is_due(session: Session, with_due: bool = True) -> dict[str, int | obje
         }
         estimate = lambda c: _minutes(  # noqa: E731
             c["achievements"] * SECONDS_PER_ACHIEVEMENT
+            + c["tags"] * SECONDS_PER_TAGS
             + c["details"] * SECONDS_PER_GAME
             + c["about"] * SECONDS_PER_ABOUT
             + c["reviews"] * SECONDS_PER_REVIEW

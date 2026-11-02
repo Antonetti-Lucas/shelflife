@@ -19,7 +19,7 @@ from shelflife.discovery import (
     turns,
 )
 from shelflife.models import Game
-from shelflife.store import SpyDetails, SpyListing
+from shelflife.store import SpyDetails, Listing
 from shelflife.throttle import RateLimited
 from shelflife.web import app as web_app
 from tests.factories import add_game, build_scenario
@@ -28,7 +28,7 @@ SAME_SITE = {"Origin": "http://testserver"}
 
 
 def listing(app_id, positive=900, negative=100, name=None):
-    return SpyListing(app_id, name or f"Game {app_id}", positive, negative)
+    return Listing(app_id, name or f"Game {app_id}", positive, negative)
 
 
 def about(*names, extra=0):
@@ -120,18 +120,17 @@ def details(monkeypatch):
 @pytest.fixture(autouse=True)
 def enrich(monkeypatch):
     """A stand-in for fetching store details: marks the game as fetched."""
-    log, spies, fail = [], {}, {}
+    log, fail = [], {}
 
-    def fake(game, spy=None):
+    def fake(game):
         if game.steam_app_id in fail:
             raise fail[game.steam_app_id]
         log.append(game.steam_app_id)
-        spies[game.steam_app_id] = spy
         game.type = "game"
         game.details_fetched_at = discovery._now()
 
     monkeypatch.setattr(discovery, "enrich_one", fake)
-    fake.log, fake.spies, fake.fail = log, spies, fail
+    fake.log, fake.fail = log, fail
     return fake
 
 
@@ -146,7 +145,10 @@ def test_finding_games_keeps_them_and_fetches_their_details(session, lists, deta
     assert (result.added, result.enriched, result.failed, result.skipped) == (6, 6, 0, 0)
     assert result.aborted is None and not result.stopped and result.empty_tags == []
     assert session.query(Game).filter(Game.details_fetched_at.is_not(None)).count() == 6
-    assert [s[0] for s in steps if s[0] == "lists"] == ["lists", "lists"]
+    assert [s[3] for s in steps if s[0] == "lists"] == [  # the tests' Steam knows no tags, so SteamSpy is asked
+        "Looking up “Stealth” on Steam", "Looking up “Stealth” on SteamSpy",
+        "Looking up “RPG” on Steam", "Looking up “RPG” on SteamSpy",
+    ]
     assert {"check", "details"} <= {s[0] for s in steps} and steps[-1][0] == "done"
     assert any(s[0] == "check" and "Checking Game" in s[3] for s in steps)
 
@@ -208,7 +210,7 @@ def test_a_set_aside_game_is_kept_when_a_later_search_is_about_it_without_asking
     result = find_games(session, ["Pizza"], 1)
     assert result.added == 1 and details.calls == []  # its saved tags were enough
     assert enrich.log == [1] and session.get(Game, 1).type == "game"  # now a normal pool game
-    assert enrich.spies[1].tags == about("Pizza", "Cooking").tags  # and no second SteamSpy request
+    assert session.get(Game, 1).tags == about("Pizza", "Cooking").tags
 
 
 def test_set_aside_games_are_not_counted_as_games_you_have(session, lists, details, enrich):
@@ -251,12 +253,13 @@ def test_tags_take_turns_when_finding_games(session, lists, details, enrich):
     assert details.calls == [1, 11, 2, 12]
 
 
-def test_the_steamspy_details_already_fetched_are_reused_for_the_store_step(session, lists, details, enrich):
+def test_the_tags_read_in_the_check_are_kept_for_the_store_step(session, lists, details, enrich):
     lists.data["Stealth"] = [listing(1)]
     details.data[1] = about("Stealth", "Cats")
     find_games(session, ["Stealth"], 1)
     assert details.calls == [1]  # asked once, in the check
-    assert enrich.spies[1] is details.data[1]
+    game = session.get(Game, 1)
+    assert game.tags == details.data[1].tags and game.tags_fetched_at is not None
 
 
 def test_a_tag_with_no_games_is_reported_and_the_others_still_work(session, lists, details, enrich):
@@ -270,7 +273,7 @@ def test_games_left_over_from_an_interrupted_run_are_finished_too(session, lists
     lists.data["Tag"] = [listing(1), listing(2)]
     result = find_games(session, ["Tag"], 1)
     assert result.added == 1 and result.enriched == 2
-    assert 99 in enrich.log and enrich.spies[99] is None
+    assert 99 in enrich.log
 
 
 # ---- stopping and failing ----
@@ -304,7 +307,7 @@ def test_a_rate_limited_tag_lookup_adds_nothing_and_says_why(session, lists, det
 def test_a_network_error_on_a_tag_lookup_is_reported_not_raised(session, lists, details, enrich):
     lists.data["Tag"] = requests.ConnectionError("down")
     result = find_games(session, ["Tag"], 5)
-    assert result.added == 0 and "Could not reach SteamSpy" in result.aborted
+    assert result.added == 0 and "Could not reach Steam or SteamSpy" in result.aborted
 
 
 def test_rate_limiting_while_reading_game_tags_stops_but_keeps_what_was_found(session, lists, details, enrich):
@@ -402,7 +405,7 @@ def test_a_new_search_can_start_after_one_finished(inline_job, lists, session):
         (FindResult(), "done", "No new games found"),
         (FindResult(added=2, enriched=2, checked=9, skipped=7), "done", "looked at 9 and set aside 7"),
         (FindResult(added=2, enriched=2, failed=1), "done", "1 could not be fetched"),
-        (FindResult(empty_tags=["Typo"]), "done", "no games for “Typo” (it does not know that tag name"),
+        (FindResult(empty_tags=["Typo"]), "done", "no games were found for “Typo” (neither Steam nor SteamSpy knows that tag name"),
         (FindResult(added=2, enriched=1, aborted="rate limited."), "error", "Stopped early: rate limited."),
         (FindResult(added=2, enriched=1, stopped=True), "stopped", "Stopped."),
     ],
