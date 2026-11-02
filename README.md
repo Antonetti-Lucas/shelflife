@@ -15,6 +15,7 @@ It runs entirely on your own computer: nothing is hosted, and your diary never l
 
 - **Steam import:** your library, playtime, achievements and wishlist, plus Family Sharing games if you want them.
 - **A diary:** half-star ratings, reviews, statuses with dates (playing, played, dropped), favorites and "not interested", with a poster wall of everything you rated.
+- **Lists you make and name:** ranked or not, with your stars under each game or not, in the order you drag them into.
 - **Recommendations** in four lists (backlog, family, wishlist, games to discover), each pick showing the games and tags behind it. Learn from ratings and play, ratings only, or play only.
 - **Explore and find new games** by Steam tags, or "games like this one", ranked by how well they fit you.
 - **Store info where you need it:** prices in your currency (kept fresh on screen), estimated length, languages, developer, release date and screenshots.
@@ -79,7 +80,7 @@ ShelfLife has no server, no account, no analytics and no tracking.
 **What it stores, and where**
 
 - `.env`: your Steam API key and SteamID.
-- `shelflife.db`: your library (games, hours, when you last played, achievement counts and when you unlocked them), your wishlist (game ids, your own rank and the date you added each), the hours you type in for family games, which games are shared with you through Family Sharing, your diary (ratings, reviews, statuses and dates, favorites, "not interested"), your settings, and public store data for each game (names, descriptions, tags, review counts, cover addresses, five numbers summarising how long its reviewers have played it, its languages, store details and its price when last read; never who wrote a review or what it says).
+- `shelflife.db`: your library (games, hours, when you last played, achievement counts and when you unlocked them), your wishlist (game ids, your own rank and the date you added each), the hours you type in for family games, which games are shared with you through Family Sharing, your diary (ratings, reviews, statuses and dates, favorites, "not interested"), your lists, your settings, and public store data for each game (names, descriptions, tags, review counts, cover addresses, five numbers summarising how long its reviewers have played it, its languages, store details and its price when last read; never who wrote a review or what it says).
 - `data/`: files you create or import, such as the Family Sharing export (it lists which games your family members own, so keep it private).
 
 All three are git-ignored. Delete them and nothing of yours is left.

@@ -135,6 +135,33 @@
           recommendations.</p>
       </details>
     </section>
+
+    <section class="panel">
+      <h3>Lists</h3>
+      {% set in_ids = in_lists|map(attribute="id")|list %}
+      {% if in_lists %}
+        <p>On {% for l in in_lists %}<a href="/lists/{{ l.id }}">{{ l.name }}</a>{{ ", " if not loop.last }}{% endfor %}.</p>
+      {% endif %}
+      {% set others = all_lists|rejectattr("id", "in", in_ids)|list %}
+      {% if others %}
+      <form method="post" action="/game/{{ game.steam_app_id }}/lists" class="row-line">
+        <select name="list_id" aria-label="List">
+          {% for l in others %}<option value="{{ l.id }}">{{ l.name }}</option>{% endfor %}
+        </select>
+        <button type="submit" class="ghost small">Add to list</button>
+      </form>
+      {% endif %}
+      <details class="help">
+        <summary>New list with this game</summary>
+        <form method="post" action="/lists" class="stack">
+          <input type="hidden" name="app_id" value="{{ game.steam_app_id }}">
+          <input type="hidden" name="show_ratings" value="1">
+          <label>Name <input type="text" name="name" required maxlength="80" placeholder="e.g. Best of {{ (game.release_date or '')[-4:] if (game.release_date or '')[-4:].isdigit() else '2024' }}"></label>
+          <label class="switch"><input type="checkbox" name="ranked" value="1"> Ranked</label>
+          <button type="submit" class="small">Create list</button>
+        </form>
+      </details>
+    </section>
   </div>
 
   <div>

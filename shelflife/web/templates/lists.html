@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Lists · ShelfLife{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h2>Lists{% if lists %}<span class="count">{{ lists|length }}</span>{% endif %}</h2>
+</div>
+<p class="lede">Your own lists of games: a year's best, a genre, a mood. Rank them or just collect them. Lists never change your recommendations; the stars you give do.</p>
+
+<details class="panel new-list" {{ "open" if not lists }}>
+  <summary>+ New list</summary>
+  <form method="post" action="/lists" class="stack">
+    <label>Name
+      <input type="text" name="name" required maxlength="80" placeholder="e.g. Best of 2024">
+    </label>
+    <label>Description
+      <textarea name="description" rows="2" maxlength="1000" placeholder="Optional"></textarea>
+    </label>
+    <label class="switch"><input type="checkbox" name="ranked" value="1"> Ranked: number the games 1, 2, 3…</label>
+    <label class="switch"><input type="checkbox" name="show_ratings" value="1" checked> Show my star ratings under each game</label>
+    <button type="submit">Create list</button>
+  </form>
+</details>
+
+{% if lists %}
+<div class="list-cards">
+  {% for gl in lists %}
+  <a class="list-card" href="/lists/{{ gl.id }}">
+    <span class="list-fan" aria-hidden="true">
+      {% for g in covers[gl.id] %}
+        <img src="{{ poster_url(g) }}" loading="lazy" alt=""
+             onerror='this.onerror = null; {% if g.cover_url %}this.src = {{ g.cover_url|tojson }}; this.classList.add("wide");{% else %}this.remove();{% endif %}'>
+      {% else %}
+        <span class="list-fan-empty"></span>
+      {% endfor %}
+    </span>
+    <span class="list-card-name">{{ gl.name }}</span>
+    <span class="meta">{{ counts.get(gl.id, 0) }} game{{ "" if counts.get(gl.id, 0) == 1 else "s" }}{% if gl.ranked %} · ranked{% endif %}</span>
+    {% if gl.description %}<span class="list-card-desc">{{ gl.description|truncate(140) }}</span>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

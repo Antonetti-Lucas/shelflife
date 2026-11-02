@@ -51,7 +51,7 @@
   }
 
   function holder(form) {
-    return form.closest(".card, .row, tr");
+    return form.closest(".card, .row, tr, .list-item");
   }
 
   function hide(form, item) {

@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% from "_stars.html" import star_rating %}
+{% block title %}{{ gl.name }} · Lists · ShelfLife{% endblock %}
+{% block content %}
+{# A switch at the top of the list: one click turns it on or off. #}
+{% macro option(name, on, label) %}
+<form method="post" action="/lists/{{ gl.id }}/option" class="inline">
+  <input type="hidden" name="option" value="{{ name }}">
+  <input type="hidden" name="value" value="{{ '0' if on else '1' }}">
+  <button type="submit" class="opt {{ 'on' if on }}" aria-pressed="{{ 'true' if on else 'false' }}">{{ "✓ " if on }}{{ label }}</button>
+</form>
+{% endmacro %}
+
+<p class="meta crumbs"><a href="/lists">← Lists</a></p>
+<div class="page-head">
+  <h2>{{ gl.name }}<span class="count">{{ items|length }}</span></h2>
+  <div class="list-options">
+    {{ option("ranked", gl.ranked, "Ranked") }}
+    {{ option("show_ratings", gl.show_ratings, "My ratings") }}
+  </div>
+</div>
+{% if gl.description %}<p class="lede list-desc">{{ gl.description }}</p>{% endif %}
+
+<form class="bar list-search" method="get" action="/lists/{{ gl.id }}">
+  <input type="search" name="q" value="{{ q }}" placeholder="Add a game: type its name" aria-label="Find a game to add">
+  <button type="submit" class="ghost small">Find</button>
+  {% if q %}<a class="meta" href="/lists/{{ gl.id }}">Done adding</a>{% endif %}
+</form>
+{% if q %}
+  {% if results %}
+  <div class="add-results">
+    {% for g in results %}
+    <form method="post" action="/lists/{{ gl.id }}/add">
+      <input type="hidden" name="app_id" value="{{ g.steam_app_id }}">
+      <input type="hidden" name="next" value="{{ here }}">
+      <button type="submit" class="add-result" title="Add {{ g.name }}">
+        {% if g.cover_url %}<img src="{{ g.cover_url }}" loading="lazy" alt="">{% endif %}
+        <span>{{ g.name }}</span><b>+ Add</b>
+      </button>
+    </form>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty">No game matches “{{ q }}” that isn't on this list already. ShelfLife knows the games in your library, your wishlist and Explore.</p>
+  {% endif %}
+{% endif %}
+
+{% if items %}
+<ol class="posters list-posters" data-order-url="/lists/{{ gl.id }}/order">
+  {% for e, g in items %}
+  <li class="poster-item list-item" draggable="true" data-app-id="{{ g.steam_app_id }}">
+    <a class="poster" href="/game/{{ g.steam_app_id }}" title="{{ g.name }}" draggable="false">
+      <img src="{{ poster_url(g) }}" loading="lazy" alt="{{ g.name }}" draggable="false"
+           onerror='this.onerror = null; this.closest(".poster").classList.add("wide"); {% if g.cover_url %}this.src = {{ g.cover_url|tojson }};{% else %}this.remove();{% endif %}'>
+      <span class="poster-name">{{ g.name }}</span>
+      {% if gl.ranked %}<span class="rank">{{ e.position }}</span>{% endif %}
+    </a>
+    <span class="movers">
+      {% if not loop.first %}
+      <form method="post" action="/lists/{{ gl.id }}/move" class="inline">
+        <input type="hidden" name="app_id" value="{{ g.steam_app_id }}"><input type="hidden" name="to" value="{{ e.position - 1 }}">
+        <button type="submit" title="Move earlier" aria-label="Move {{ g.name }} earlier">‹</button>
+      </form>
+      {% endif %}
+      {% if not loop.last %}
+      <form method="post" action="/lists/{{ gl.id }}/move" class="inline">
+        <input type="hidden" name="app_id" value="{{ g.steam_app_id }}"><input type="hidden" name="to" value="{{ e.position + 1 }}">
+        <button type="submit" title="Move later" aria-label="Move {{ g.name }} later">›</button>
+      </form>
+      {% endif %}
+      <form method="post" action="/lists/{{ gl.id }}/remove" class="inline" data-inline="remove">
+        <input type="hidden" name="app_id" value="{{ g.steam_app_id }}"><input type="hidden" name="next" value="{{ here }}">
+        <button type="submit" title="Remove from this list" aria-label="Remove {{ g.name }} from this list">×</button>
+      </form>
+    </span>
+    {% if gl.show_ratings %}
+    <span class="poster-meta">{{ star_rating(g, ratings.get(g.steam_app_id), here, "small") }}</span>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ol>
+<p class="meta list-hint">Drag the games into your order{% if gl.ranked %}: the numbers follow{% endif %}. <span class="list-status" role="status"></span></p>
+{% else %}
+<p class="empty">This list is empty. Find games to add above, or use “Add to a list” on any game's page.</p>
+{% endif %}
+
+<details class="help list-edit">
+  <summary>Edit or delete this list</summary>
+  <form method="post" action="/lists/{{ gl.id }}/edit" class="stack">
+    <label>Name <input type="text" name="name" value="{{ gl.name }}" required maxlength="80"></label>
+    <label>Description <textarea name="description" rows="2" maxlength="1000">{{ gl.description or "" }}</textarea></label>
+    <label class="switch"><input type="checkbox" name="ranked" value="1" {{ "checked" if gl.ranked }}> Ranked: number the games 1, 2, 3…</label>
+    <label class="switch"><input type="checkbox" name="show_ratings" value="1" {{ "checked" if gl.show_ratings }}> Show my star ratings under each game</label>
+    <button type="submit">Save</button>
+  </form>
+  {% set msg = "Delete the list “" ~ gl.name ~ "”? The games and your ratings stay; only the list goes." %}
+  <form method="post" action="/lists/{{ gl.id }}/delete" class="inline" onsubmit='return confirm({{ msg|tojson }})' style="margin-top: 14px">
+    <button type="submit" class="ghost danger small">Delete list</button>
+  </form>
+</details>
+{% endblock %}

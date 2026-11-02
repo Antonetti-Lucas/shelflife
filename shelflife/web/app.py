@@ -20,7 +20,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from shelflife import diary
+from shelflife import diary, gamelists
 from shelflife.diary import favorite_ids
 from shelflife.config import try_load_settings
 from shelflife.db import SessionLocal, init_db
@@ -736,6 +736,8 @@ def game_page(request: Request, app_id: int, session: Session = Depends(get_sess
             "play": play_score_of(session, app_id),
             "taste_mode": get_taste_mode(session),
             "my_languages": get_languages(session),
+            "all_lists": gamelists.all_lists(session),
+            "in_lists": gamelists.lists_with(session, app_id),
         },
     )
 
@@ -830,6 +832,163 @@ def ratings_page(
             **settings,
         },
     )
+
+
+# ---- your lists -------------------------------------------------------------
+
+
+def _list_or_404(session: Session, list_id: int):
+    try:
+        return gamelists.get_list(session, list_id)
+    except LookupError:
+        raise HTTPException(404, "List not found")
+
+
+LIST_COVERS = 5  # covers fanned out on a list's card
+
+
+@app.get("/lists")
+def lists_page(request: Request, session: Session = Depends(get_session)):
+    """Your lists, each with its first few covers, and a form to make a new one."""
+    lists = gamelists.all_lists(session)
+    return templates.TemplateResponse(
+        request,
+        "lists.html",
+        {
+            "lists": lists,
+            "counts": gamelists.counts(session),
+            "covers": {gl.id: [g for _, g in gamelists.entries(session, gl.id)[:LIST_COVERS]] for gl in lists},
+            "poster_url": poster_url,
+        },
+    )
+
+
+@app.post("/lists")
+def create_list(
+    name: str = Form(""),
+    description: str = Form(""),
+    ranked: str = Form(""),
+    show_ratings: str = Form(""),
+    app_id: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    """Make a list; with `app_id` (from a game's page), that game is its first."""
+    try:
+        made = gamelists.create_list(session, name, description, ranked=bool(ranked), show_ratings=bool(show_ratings))
+        if app_id.isdigit():
+            gamelists.add_game(session, made.id, int(app_id))
+    except (ValueError, LookupError) as exc:
+        raise HTTPException(400, str(exc))
+    return RedirectResponse(f"/lists/{made.id}", status_code=303)
+
+
+@app.get("/lists/{list_id}")
+def list_page(request: Request, list_id: int, q: str = "", session: Session = Depends(get_session)):
+    """One list in its order, with a search to add games to it."""
+    gl = _list_or_404(session, list_id)
+    q = q.strip()
+    return templates.TemplateResponse(
+        request,
+        "list.html",
+        {
+            "gl": gl,
+            "items": gamelists.entries(session, list_id),
+            "ratings": diary.load_ratings(session),
+            "q": q,
+            "results": gamelists.addable(session, list_id, q) if q else [],
+            "here": current_url(request),
+            "poster_url": poster_url,
+        },
+    )
+
+
+@app.post("/lists/{list_id}/edit")
+def edit_list(
+    list_id: int,
+    name: str = Form(""),
+    description: str = Form(""),
+    ranked: str = Form(""),
+    show_ratings: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    _list_or_404(session, list_id)
+    try:
+        gamelists.update_list(session, list_id, name, description, ranked=bool(ranked), show_ratings=bool(show_ratings))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return RedirectResponse(f"/lists/{list_id}", status_code=303)
+
+
+@app.post("/lists/{list_id}/option")
+def list_option(
+    list_id: int, option: str = Form(""), value: str = Form(""), session: Session = Depends(get_session)
+):
+    """The switches on a list's page: numbered or not, your stars shown or not."""
+    _list_or_404(session, list_id)
+    try:
+        gamelists.set_option(session, list_id, option, value == "1")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return RedirectResponse(f"/lists/{list_id}", status_code=303)
+
+
+@app.post("/lists/{list_id}/delete")
+def delete_list(list_id: int, session: Session = Depends(get_session)):
+    _list_or_404(session, list_id)
+    gamelists.delete_list(session, list_id)
+    return RedirectResponse("/lists", status_code=303)
+
+
+@app.post("/lists/{list_id}/add")
+def add_to_list(list_id: int, app_id: int = Form(...), next: str = Form(""), session: Session = Depends(get_session)):
+    _list_or_404(session, list_id)
+    try:
+        gamelists.add_game(session, list_id, app_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    return RedirectResponse(safe_next(next, f"/lists/{list_id}"), status_code=303)
+
+
+@app.post("/lists/{list_id}/remove")
+def remove_from_list(list_id: int, app_id: int = Form(...), next: str = Form(""), session: Session = Depends(get_session)):
+    _list_or_404(session, list_id)
+    gamelists.remove_game(session, list_id, app_id)
+    return RedirectResponse(safe_next(next, f"/lists/{list_id}"), status_code=303)
+
+
+@app.post("/lists/{list_id}/move")
+def move_in_list(
+    list_id: int, app_id: int = Form(...), to: str = Form(""), next: str = Form(""), session: Session = Depends(get_session)
+):
+    """Move a game to another place (the arrows on a list, for when dragging isn't an option)."""
+    _list_or_404(session, list_id)
+    try:
+        gamelists.move_game(session, list_id, app_id, int(to))
+    except (ValueError, LookupError) as exc:
+        raise HTTPException(400, str(exc))
+    return RedirectResponse(safe_next(next, f"/lists/{list_id}"), status_code=303)
+
+
+@app.post("/lists/{list_id}/order")
+def order_list(list_id: int, order: str = Form(""), session: Session = Depends(get_session)):
+    """Save the order the games were dragged into (static/lists.js): app ids, comma separated."""
+    _list_or_404(session, list_id)
+    try:
+        gamelists.set_order(session, list_id, [int(x) for x in order.split(",") if x.strip()])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return {"saved": True}
+
+
+@app.post("/game/{app_id}/lists")
+def add_game_to_a_list(app_id: int, list_id: int = Form(...), session: Session = Depends(get_session)):
+    """The "Add to a list" box on a game's page."""
+    _list_or_404(session, list_id)
+    try:
+        gamelists.add_game(session, list_id, app_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    return RedirectResponse(f"/game/{app_id}", status_code=303)
 
 
 DIARY_PAGE_SIZE = 12

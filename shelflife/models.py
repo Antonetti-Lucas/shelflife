@@ -148,3 +148,29 @@ class LibraryEntry(Base):
     @property
     def playtime_total_hours(self) -> float:
         return self.playtime_total_min / 60
+
+
+class GameList(Base):
+    """A list of games you made and named (shelflife/gamelists.py): ranked or not, with or
+    without your star ratings shown. Lists are yours to keep in order: they never change your taste."""
+
+    __tablename__ = "game_lists"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str]
+    description: Mapped[str | None]
+    ranked: Mapped[bool] = mapped_column(default=False)  # numbered 1, 2, 3...
+    show_ratings: Mapped[bool] = mapped_column(default=True)  # your stars under each game
+    created_at: Mapped[datetime]
+    updated_at: Mapped[datetime]
+
+
+class GameListEntry(Base):
+    """A game on one of your lists, at its place in it (1 is the first)."""
+
+    __tablename__ = "game_list_entries"
+
+    list_id: Mapped[int] = mapped_column(ForeignKey("game_lists.id"), primary_key=True)
+    steam_app_id: Mapped[int] = mapped_column(ForeignKey("games.steam_app_id"), primary_key=True)
+    position: Mapped[int]
+    added_at: Mapped[datetime]
