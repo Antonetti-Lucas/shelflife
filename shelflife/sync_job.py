@@ -51,7 +51,7 @@ STEPS = (
     ("wishlist", "Reading your wishlist"),
     ("achievements", "Reading your achievements"),
     ("details", "Fetching store details for new games"),
-    ("about", "Reading descriptions, languages and prices"),
+    ("about", "Reading descriptions, languages, prices and more store details"),
     ("reviews", "Counting reviews"),
     ("players", "Reading how long other players play"),
 )

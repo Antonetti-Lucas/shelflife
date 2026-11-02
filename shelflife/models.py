@@ -44,6 +44,9 @@ class Game(Base):
     # Prices change with sales, so price_fetched_at says how old it is.
     price: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     price_fetched_at: Mapped[datetime | None]
+    # More store details, kept for later and not used yet (store.parse_info): developers, publishers,
+    # Steam's categories, platforms, Metacritic, mature content flags, screenshots... None: never read.
+    store_info: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     cover_url: Mapped[str | None]
     details_fetched_at: Mapped[datetime | None]
     tags_fetched_at: Mapped[datetime | None]

@@ -211,6 +211,7 @@ def enrich_one(game: Game, spy: store.SpyDetails | None = None) -> None:
         game.about_text = details.about_text
         game.languages = details.languages
         game.price, game.price_fetched_at = details.price, _now()
+        game.store_info = details.info
     game.details_fetched_at = _now()
     _fill_tags(game, spy)
 
@@ -376,18 +377,19 @@ def sync_player_hours(
 
 def about_due(session: Session) -> list[Game]:
     """Games that have their store details but were read before the "About this game" text, the
-    languages or the price were kept: yours first, most played first, then your wishlist, then
-    the rest of the pool. Languages only matter for a game that could be recommended, so a game
-    you have played is due only for a missing text or price."""
+    languages, the price or the other store details were kept: yours first, most played first,
+    then your wishlist, then the rest of the pool. Languages only matter for a game that could be
+    recommended, so a game you have played is due only for the others."""
+    missing = or_(Game.about_text.is_(None), Game.price_fetched_at.is_(None), Game.store_info.is_(None))
     rows = session.execute(
-        select(Game, or_(Game.about_text.is_(None), Game.price_fetched_at.is_(None)))
+        select(Game, missing)
         .options(selectinload(Game.library_entry))
         .outerjoin(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
         .outerjoin(WishlistItem, WishlistItem.steam_app_id == Game.steam_app_id)
         .where(
             Game.type == "game",
             Game.details_fetched_at.is_not(None),
-            or_(Game.about_text.is_(None), Game.languages.is_(None), Game.price_fetched_at.is_(None)),
+            or_(missing, Game.languages.is_(None)),
         )
         .order_by(
             LibraryEntry.steam_app_id.is_(None),
@@ -403,8 +405,9 @@ def sync_about(
     on_progress: Callable[[int, int, Game], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
 ) -> int:
-    """Read the "About this game" text, the languages and the price for the games `about_due`
-    lists (one store call each, nothing else is touched). Saves game by game. Returns the number read."""
+    """Read the "About this game" text, the languages, the price and the other store details for
+    the games `about_due` lists (one store call each, nothing else is touched). Saves game by game.
+    Returns the number read."""
     pending = about_due(session)
     done = failures = 0
     for i, game in enumerate(pending, start=1):
@@ -423,6 +426,7 @@ def sync_about(
         game.about_text = details.about_text if details is not None else ""
         game.languages = details.languages if details is not None else {}
         game.price, game.price_fetched_at = (details.price if details is not None else {}), _now()
+        game.store_info = details.info if details is not None else {}
         session.commit()
         done += 1
         if on_progress:

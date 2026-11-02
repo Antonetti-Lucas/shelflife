@@ -61,6 +61,7 @@ def steam(monkeypatch):
             raise state.fail["details"]
         game.type, game.tags, game.details_fetched_at, game.about_text = "game", {"Stealth": 10}, datetime.now(), ""  # fetched just now
         game.languages, game.price, game.price_fetched_at = {"English": "audio"}, {"free": True}, datetime.now()
+        game.store_info = {}
 
     def fetch_review_counts(app_id):
         state.order.append("reviews")
@@ -563,6 +564,7 @@ def test_a_page_with_everything_up_to_date_says_so(client, session):
     game.details_fetched_at = game.reviews_fetched_at = datetime.now()
     game.about_text, game.languages = "", {"English": "text"}
     game.price, game.price_fetched_at, game.player_hours_fetched_at = {}, datetime.now(), datetime.now()
+    game.store_info = {}
     session.commit()
     assert "Nothing is due: you are up to date" in client.get("/sync").text
 

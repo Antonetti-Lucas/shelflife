@@ -2,6 +2,7 @@
 
 import html
 import json
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -32,6 +33,7 @@ class StoreDetails:
     about_text: str = ""  # "About this game", as plain text
     languages: dict[str, str] = field(default_factory=dict)  # {"English": "audio", ...}
     price: dict = field(default_factory=dict)  # parse_price: {} when the store shows none
+    info: dict = field(default_factory=dict)  # parse_info: developers, categories, platforms...
 
 
 _MARKUP = re.compile(r"<[^>]*>")
@@ -47,9 +49,14 @@ def clean_store_text(raw: str | None) -> str:
 def fetch_store_details(app_id: int, timeout: float = 15) -> StoreDetails | None:
     """Return store info, or None when the store has no page for this app."""
     store_throttle.wait()
+    params = {"appids": app_id, "l": "english"}
+    # The store answers in the currency of where the request seems to come from (a VPN changes
+    # it); STEAM_COUNTRY in .env (e.g. "BR") asks for that country's prices instead.
+    if country := os.getenv("STEAM_COUNTRY", "").strip():
+        params["cc"] = country.lower()
     resp = requests.get(
         STORE_URL,
-        params={"appids": app_id, "l": "english"},
+        params=params,
         headers=HEADERS,
         timeout=timeout,
     )
@@ -71,7 +78,46 @@ def fetch_store_details(app_id: int, timeout: float = 15) -> StoreDetails | None
         about_text=clean_store_text(data.get("about_the_game")),
         languages=parse_languages(data.get("supported_languages")),
         price=parse_price(data),
+        info=parse_info(data),
     )
+
+
+SCREENSHOTS_KEPT = 6
+
+
+def parse_info(data: dict) -> dict:
+    """The store details ShelfLife keeps for later without using them yet: who made the game,
+    Steam's own categories (single-player, co-op, PvP...), platforms, Metacritic, age and mature
+    content flags, whether it's out yet, counts, and a few pictures. Missing ones are left out."""
+    info: dict = {
+        "developers": [x for x in data.get("developers") or [] if x],
+        "publishers": [x for x in data.get("publishers") or [] if x],
+        "categories": [c["description"] for c in data.get("categories") or [] if c.get("description")],
+        "platforms": [p for p, ok in (data.get("platforms") or {}).items() if ok],
+        "coming_soon": bool((data.get("release_date") or {}).get("coming_soon")),
+        "dlc_count": len(data.get("dlc") or []),
+        "screenshots": [s["path_full"] for s in (data.get("screenshots") or [])[:SCREENSHOTS_KEPT] if s.get("path_full")],
+    }
+    if data.get("controller_support"):
+        info["controller_support"] = data["controller_support"]
+    if (score := (data.get("metacritic") or {}).get("score")) is not None:
+        info["metacritic"] = score
+    try:
+        if age := int(data.get("required_age") or 0):
+            info["required_age"] = age
+    except (TypeError, ValueError):
+        pass
+    if ids := (data.get("content_descriptors") or {}).get("ids"):
+        info["content_descriptors"] = ids  # 1 some nudity or sexual content, 2 violence or gore,
+        # 3 adult only sexual content, 4 frequent nudity or sexual content, 5 general mature content
+    if (total := (data.get("achievements") or {}).get("total")) is not None:
+        info["achievements"] = total
+    if (total := (data.get("recommendations") or {}).get("total")) is not None:
+        info["recommendations"] = total
+    for key, name in (("website", "website"), ("background_raw", "background")):
+        if data.get(key):
+            info[name] = data[key]
+    return info
 
 
 def parse_price(data: dict) -> dict:

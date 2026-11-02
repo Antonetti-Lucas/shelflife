@@ -84,7 +84,10 @@ Copy `.env.example` to `.env` and fill it in. `.env` is git-ignored; never share
 ```
 STEAM_API_KEY=your_key_here
 STEAM_ID=your_64_bit_steam_id_here
+STEAM_COUNTRY=BR
 ```
+
+`STEAM_COUNTRY` is optional: your country's two-letter code, so store prices come in your currency. Without it Steam guesses from your connection, and a VPN changes the guess.
 
 **4. Run**
 
