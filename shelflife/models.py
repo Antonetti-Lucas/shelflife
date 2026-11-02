@@ -129,6 +129,9 @@ class LibraryEntry(Base):
     playtime_recent_min: Mapped[int] = mapped_column(default=0)
     last_played: Mapped[datetime | None]
     last_synced: Mapped[datetime]
+    # Where you played a game you added by hand (shelflife/otherplatforms.py): "PlayStation",
+    # "Nintendo Switch"... None for the games on your Steam account and Family Sharing games.
+    platform: Mapped[str | None]
 
     # Achievement progress (Step 3). total is None until fetched, 0 = the game
     # has no achievements.

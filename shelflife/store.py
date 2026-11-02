@@ -331,6 +331,55 @@ def fetch_steam_tag_games(tag_id: int, min_reviews: int = 0, timeout: float = 90
     return out
 
 
+@dataclass(frozen=True)
+class Found:
+    """A Steam game found by name or link, to add to your library."""
+
+    app_id: int
+    name: str
+    year: int | None = None
+
+    @property
+    def cover_url(self) -> str:
+        return f"https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{self.app_id}/header.jpg"
+
+
+SEARCH_RESULTS = 10
+_STORE_LINK = re.compile(r"(?:store\.steampowered\.com/app/|steamdb\.info/app/|^)(\d{1,8})(?:\D|$)")
+
+
+def _found(item: dict) -> Found | None:
+    if item.get("success") not in (None, 1) or not item.get("appid") or not item.get("name"):
+        return None
+    released = (item.get("release") or {}).get("steam_release_date")
+    year = time.gmtime(released).tm_year if isinstance(released, int) and released > 0 else None
+    return Found(item["appid"], item["name"], year)
+
+
+def find_games(term: str, timeout: float = 30) -> list[Found]:
+    """Steam games matching what you typed: a name (Steam's own search suggestions), or a Steam
+    store link or app id (that one game). Games only, no DLC or software."""
+    term = term.strip()
+    if not term:
+        return []
+    context = {"language": "english", "country_code": _country()}
+    request = {"include_basic_info": True, "include_release": True}
+    items: list[dict] = []
+    if link := _STORE_LINK.search(term):
+        body = {"ids": [{"appid": int(link.group(1))}], "context": context, "data_request": request}
+        items = [i for i in _steam_query("IStoreBrowseService/GetItems", body, timeout).get("store_items") or [] if _found(i)]
+    if not items and (not link or term.isdigit()):  # a name, or a number that is no game's id ("1942")
+        body = {
+            "search_term": term,
+            "max_results": SEARCH_RESULTS,
+            "filters": {"type_filters": {"include_games": True}},
+            "context": context,
+            "data_request": request,
+        }
+        items = _steam_query("IStoreQueryService/SearchSuggestions", body, timeout).get("store_items") or []
+    return [f for item in items if item.get("type") in (None, 0) and (f := _found(item))]
+
+
 def fetch_store_page_tags(app_id: int, timeout: float = 15) -> dict[str, int]:
     """Last resort for apps neither Steam's API nor SteamSpy has tags for: read the store page's tag votes."""
     store_throttle.wait()

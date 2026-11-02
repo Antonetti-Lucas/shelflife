@@ -186,7 +186,7 @@
         {% if entry.last_played %}<div><strong>{{ entry.last_played.strftime("%b %Y") }}</strong><span>last played</span></div>{% endif %}
         {% if play %}<div><strong>{{ "%.0f"|format(play.value * 100) }}%</strong><span>play score</span></div>{% endif %}
       </div>
-      {% if game.family_shared %}
+      {% if game.family_shared or entry.platform %}
       <form method="post" action="/game/{{ game.steam_app_id }}/hours" class="hours" data-inline>
         <label>Hours played
           <input type="number" name="hours" min="0" max="100000" step="0.1"
@@ -195,7 +195,24 @@
         </label>
         <button type="submit">Save hours</button>
       </form>
+      {% if entry.platform %}
+      <form method="post" action="/game/{{ game.steam_app_id }}/platform" class="row-line" style="margin-top: 10px">
+        <label class="meta">Played on
+          <select name="platform" onchange="this.form.submit()">
+            {% for p in platforms %}<option value="{{ p }}" {{ "selected" if p == entry.platform }}>{{ p }}</option>{% endfor %}
+          </select>
+        </label>
+        <noscript><button type="submit" class="ghost small">Save</button></noscript>
+      </form>
+      {% set msg = "Take " ~ game.name ~ " out of your library? Your rating, review and lists stay." %}
+      <form method="post" action="/game/{{ game.steam_app_id }}/platform" class="inline" onsubmit='return confirm({{ msg|tojson }})' style="margin-top: 8px">
+        <input type="hidden" name="remove" value="1">
+        <button type="submit" class="ghost danger small">Remove from library</button>
+      </form>
+      <p class="meta">Steam can't see what you play on {{ entry.platform }}: enter your hours if you know them.</p>
+      {% else %}
       <p class="meta">Steam doesn't report hours for family games: enter what your Steam client shows.</p>
+      {% endif %}
       {% endif %}
       <p class="meta">
         {% if diary and diary.rating is not none and taste_mode != "play" %}

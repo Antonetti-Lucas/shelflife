@@ -326,6 +326,8 @@ def _label(game: Game, rating: float | None, similarity: float) -> str:
     name = game.name.replace("™", "").replace("®", "")
     if rating is not None:
         played = f"rated {rating:g}"
+    elif game.library_entry.platform and game.library_entry.playtime_total_min == 0:
+        played = f"played on {game.library_entry.platform}"
     elif game.family_shared and game.library_entry.playtime_total_min == 0:
         entry = game.library_entry
         played = "family game"

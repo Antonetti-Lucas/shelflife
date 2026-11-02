@@ -35,7 +35,7 @@
   {% endif %}
   <p class="meta">
     {% if due.last_synced %}Last synced {{ due.last_synced.strftime("%Y-%m-%d %H:%M") }} (UTC).{% else %}Not synced yet.{% endif %}
-    {{ due.library }} games in your library{% if due.family %} ({{ due.owned }} owned, {{ due.family }} from Family Sharing){% endif %}{% if due.wishlist %}, {{ due.wishlist }} on your wishlist{% endif %}.
+    {{ due.library }} games in your library{% if due.family or due.other %} ({{ due.owned }} owned{% if due.family %}, {{ due.family }} from Family Sharing{% endif %}{% if due.other %}, {{ due.other }} from other platforms{% endif %}){% endif %}{% if due.wishlist %}, {{ due.wishlist }} on your wishlist{% endif %}.
     {% if due.minutes is none %}
     {% elif due.achievements or due.tags or due.details or due.about or due.reviews or due.players or due.length or due.prices %}
       Due now: achievements for {{ due.achievements }}{% if due.tags %}, tags for {{ due.tags }}{% endif %}, store details for {{ due.details }}{% if due.about %}, descriptions, languages and prices for {{ due.about }}{% endif %}, review counts for {{ due.reviews }}{% if due.players %}, how long players play {{ due.players }} games{% endif %}{% if due.length %}, lengths of {{ due.length }} games you haven't played{% endif %}{% if due.prices %}, prices of {{ due.prices }} games{% endif %}

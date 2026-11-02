@@ -6,8 +6,9 @@
 {% block content %}
 <div class="page-head">
   <h2>Library<span class="count">{{ total }}</span></h2>
+  <a class="button ghost small" href="/library/add">+ Add a game from another platform</a>
 </div>
-<p class="lede">Games you own or play through Family Sharing. Rate them, set a status or enter family-game hours right here.</p>
+<p class="lede">Games you own, play through Family Sharing or played on other platforms. Rate them, set a status or enter hours Steam can't see right here.</p>
 
 <form class="filters" method="get" action="/library">
   <input type="search" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
@@ -17,7 +18,7 @@
     {% for key, (label, low, high) in length_bands.items() %}<option value="{{ key }}" {{ "selected" if length == key }}>{{ label }}</option>{% endfor %}
   </select>
   <select name="source" aria-label="Source">
-    {% for value, label in [("all", "Owned and family"), ("owned", "Owned"), ("family", "Family")] %}
+    {% for value, label in [("all", "All sources"), ("owned", "Owned on Steam"), ("family", "Family"), ("other", "Other platforms")] %}
       <option value="{{ value }}" {{ "selected" if source == value }}>{{ label }}</option>
     {% endfor %}
   </select>
@@ -66,7 +67,7 @@
       </td>
       <td>{{ source_label(g) }}</td>
       <td class="num">
-        {% if g.family_shared %}
+        {% if g.family_shared or g.library_entry.platform %}
           <form method="post" action="/game/{{ g.steam_app_id }}/hours" class="cell" data-inline>
             <input type="hidden" name="next" value="{{ here }}#g{{ g.steam_app_id }}">
             <input type="number" name="hours" min="0" max="100000" step="0.1" placeholder="hours"

@@ -4,9 +4,9 @@
 <div class="page-head"><h2>Stats</h2></div>
 
 <div class="figures">
-  <div><strong>{{ stats.owned + stats.family }}</strong><span>games in your library<br>{{ stats.owned }} owned, {{ stats.family }} family</span></div>
+  <div><strong>{{ stats.owned + stats.family + stats.other }}</strong><span>games in your library<br>{{ stats.owned }} owned, {{ stats.family }} family{% if stats.other %}, {{ stats.other }} from other platforms{% endif %}</span></div>
   <div><strong>{{ stats.played }}</strong><span>played<br>{{ stats.backlog }} owned games still in the backlog</span></div>
-  <div><strong>{{ "{:,.0f}".format(stats.hours_total) }}</strong><span>hours<br>family hours only if you entered them</span></div>
+  <div><strong>{{ "{:,.0f}".format(stats.hours_total) }}</strong><span>hours<br>family and other platforms' hours only if you entered them</span></div>
   <div><strong>{{ stats.rated }}</strong><span>rated<br>{% if stats.average_rating is not none %}average {{ "%.2f"|format(stats.average_rating) }}{% else %}no ratings yet{% endif %}</span></div>
 </div>
 

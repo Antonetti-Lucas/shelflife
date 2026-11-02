@@ -12,6 +12,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
 
+import requests
 from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -20,7 +21,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from shelflife import diary, gamelists
+from shelflife import diary, gamelists, otherplatforms
 from shelflife.diary import favorite_ids
 from shelflife.config import try_load_settings
 from shelflife.db import SessionLocal, init_db
@@ -54,7 +55,9 @@ from shelflife.languages import fits
 from shelflife.length import estimate as estimate_length
 from shelflife import prices as price_view
 from shelflife import store
+from shelflife.sync import enrich_one
 from shelflife.tags import is_adult_game
+from shelflife.throttle import RateLimited
 from shelflife.web.lists import ListFilter, paginate, recommended, whole
 from shelflife.wishlist import order_key, rank_label
 
@@ -114,6 +117,8 @@ def rating_text(rating: float | None) -> str:
 def source_label(game: Game) -> str:
     if game.library_entry is None:
         return "Not owned"
+    if game.library_entry.platform:
+        return game.library_entry.platform
     return "Family" if game.family_shared else "Owned"
 
 
@@ -185,7 +190,11 @@ def wishlist_note(item: WishlistItem | None, game: Game) -> str | None:
     if item.added_at:
         bits.append(f"added {item.added_at.strftime('%Y-%m-%d')}")
     if game.library_entry is not None:
-        bits.append("you can already play it with Family Sharing" if game.family_shared else "you own it")
+        bits.append(
+            "you can already play it with Family Sharing" if game.family_shared
+            else f"you have it {otherplatforms.where_you_have_it(game)}" if game.library_entry.platform
+            else "you own it"
+        )
     return " · ".join(bits)
 
 
@@ -302,9 +311,11 @@ def library(
         .where(or_(Game.type == "game", Game.type.is_(None)))
     )
     if source == "owned":
-        query = query.where(Game.family_shared.is_not(True))
+        query = query.where(Game.family_shared.is_not(True), LibraryEntry.platform.is_(None))
     elif source == "family":
         query = query.where(Game.family_shared.is_(True))
+    elif source == "other":
+        query = query.where(LibraryEntry.platform.is_not(None))
 
     games = list(session.scalars(query))
     tag_index = TagIndex(g.tags for g in games)  # the whole source, before search and tag filters
@@ -737,6 +748,7 @@ def game_page(request: Request, app_id: int, session: Session = Depends(get_sess
             "taste_mode": get_taste_mode(session),
             "my_languages": get_languages(session),
             "all_lists": gamelists.all_lists(session),
+            "platforms": otherplatforms.PLATFORMS,
             "in_lists": gamelists.lists_with(session, app_id),
         },
     )
@@ -1166,6 +1178,72 @@ async def rate(
     return RedirectResponse(
         safe_next(str(form.get("next") or ""), f"/game/{app_id}"), status_code=303
     )
+
+
+# ---- games from other platforms ---------------------------------------------
+
+
+@app.get("/library/add")
+def add_game_page(request: Request, q: str = "", session: Session = Depends(get_session)):
+    """Find a Steam game you played elsewhere, by name or store link, to add to your library."""
+    q = q.strip()
+    found, error = [], None
+    if q:
+        try:
+            found = store.find_games(q)
+        except RateLimited:
+            error = "Steam is rate limiting searches right now; try again in a few minutes."
+        except (requests.RequestException, ValueError):
+            error = "Couldn't reach Steam to search. Check your connection and try again."
+    known = {}
+    for f in found:
+        game = session.get(Game, f.app_id)
+        if game is not None and game.library_entry is not None:
+            known[f.app_id] = otherplatforms.where_you_have_it(game)
+    return templates.TemplateResponse(
+        request,
+        "add_game.html",
+        {"q": q, "found": found, "known": known, "error": error, "platforms": otherplatforms.PLATFORMS},
+    )
+
+
+@app.post("/library/add")
+def add_game_from_elsewhere(
+    app_id: int = Form(...),
+    name: str = Form(""),
+    platform: str = Form(""),
+    hours: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    """Put the game in your library and read its store details and tags now, so its page is
+    ready; review counts and its length come with the next sync."""
+    try:
+        raw = hours.strip().replace(",", ".")
+        game = otherplatforms.add_game(session, app_id, name, platform, float(raw) if raw else None)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    if game.details_fetched_at is None:
+        try:
+            enrich_one(game)
+            session.commit()
+        except (RateLimited, requests.RequestException, ValueError):
+            session.rollback()  # the next sync fetches them
+    return RedirectResponse(f"/game/{app_id}", status_code=303)
+
+
+@app.post("/game/{app_id}/platform")
+def change_platform(
+    app_id: int, platform: str = Form(""), remove: str = Form(""), session: Session = Depends(get_session)
+):
+    """Change where you played a game you added from another platform, or take it out of your library."""
+    try:
+        if remove:
+            otherplatforms.remove_game(session, app_id)
+        else:
+            otherplatforms.set_platform(session, app_id, platform)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return RedirectResponse(f"/game/{app_id}", status_code=303)
 
 
 @app.post("/game/{app_id}/hours")

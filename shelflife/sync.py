@@ -44,6 +44,7 @@ def upsert_library(session: Session, owned: list[OwnedGame]) -> None:
         if entry is None:
             entry = LibraryEntry(steam_app_id=og.app_id)
             session.add(entry)
+        entry.platform = None  # bought on Steam: a game you added from another platform is now a Steam game
         changed = entry.playtime_total_min != og.playtime_total_min
         if changed or og.app_id not in snapshotted:
             session.add(
@@ -100,7 +101,7 @@ def achievements_due(
     cutoff = now - timedelta(days=refresh_days)
     recent_cutoff = now - timedelta(hours=RECENT_REREAD_HOURS)
     played_or_family = or_(LibraryEntry.playtime_total_min > 0, Game.family_shared.is_(True))
-    conditions = [played_or_family]
+    conditions = [played_or_family, LibraryEntry.platform.is_(None)]  # Steam has no achievements for other platforms
     if not everything:
         conditions.append(
             or_(

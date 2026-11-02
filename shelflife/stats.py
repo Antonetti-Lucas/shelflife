@@ -18,6 +18,7 @@ RATING_STEPS = [r / 2 for r in range(1, 11)]  # 0.5 ... 5.0
 class Stats:
     owned: int
     family: int
+    other: int  # games you added from other platforms
     played: int  # of the above, the ones you have really played
     backlog: int  # owned and under an hour
     hours_total: float  # owned games, plus family hours you entered
@@ -40,14 +41,16 @@ def compute_stats(session: Session) -> Stats:
         .where(or_(Game.type == "game", Game.type.is_(None)))
     ).all()
 
-    owned = family = played = backlog = 0
+    owned = family = other = played = backlog = 0
     hours: list[tuple[Game, float]] = []
     for game, entry in rows:
         is_family = bool(game.family_shared)
+        is_other = bool(entry.platform)
         family += is_family
-        owned += not is_family
+        other += is_other
+        owned += not (is_family or is_other)
         played += is_played(entry, is_family)
-        backlog += (not is_family) and entry.playtime_total_min < BACKLOG_MAX_MIN
+        backlog += not (is_family or is_other) and entry.playtime_total_min < BACKLOG_MAX_MIN
         if entry.playtime_total_min:
             hours.append((game, entry.playtime_total_hours))
     hours.sort(key=lambda gh: gh[1], reverse=True)
@@ -60,6 +63,7 @@ def compute_stats(session: Session) -> Stats:
     return Stats(
         owned=owned,
         family=family,
+        other=other,
         played=played,
         backlog=backlog,
         hours_total=sum(h for _, h in hours),

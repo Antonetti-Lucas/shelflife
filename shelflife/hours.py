@@ -1,4 +1,5 @@
-"""Hours you enter by hand, for games Steam reports no playtime for (family games).
+"""Hours you enter by hand, for games Steam reports no playtime for (family games, and games
+you played on other platforms: shelflife/otherplatforms.py).
 
 Steam shows these hours in your client but not through its Web API, so you copy
 them into data/hours.csv. The numbers become the game's playtime, which feeds the
@@ -72,15 +73,17 @@ def apply_hours(session: Session, hours: dict[int, float]) -> HoursResult:
 
 
 def set_hours(session: Session, app_id: int, hours: float | None) -> None:
-    """Set the hours for one family game; None or 0 clears them.
+    """Set the hours for one family game or game from another platform; None or 0 clears them.
 
-    Only family games take hand-entered hours: for games you own, the next Steam
-    sync would overwrite them with Steam's own number.
+    Only those take hand-entered hours: for games you own on Steam, the next sync would
+    overwrite them with Steam's own number.
     """
     game = session.get(Game, app_id)
     entry = session.get(LibraryEntry, app_id)
-    if game is None or entry is None or not game.family_shared:
-        raise ValueError("Hours can only be entered for family games; Steam reports them for games you own.")
+    if game is None or entry is None or not (game.family_shared or entry.platform):
+        raise ValueError(
+            "Hours can only be entered for family games and games from other platforms; Steam reports them for games you own."
+        )
     if hours is not None and not 0 <= hours <= 100_000:
         raise ValueError(f"Hours must be between 0 and 100000, got {hours}")
     entry.playtime_total_min = round((hours or 0) * 60)
