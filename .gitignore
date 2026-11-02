@@ -13,10 +13,10 @@ data/
 *.sqlite
 *.sqlite3
 # Planning and developer notes
-PLANS.md
-PLANS-archive.md
-HOW-IT-WORKS.md
-CONVERSATION-HISTORY.md
+/PLANS.md
+/PLANS-archive.md
+/HOW-IT-WORKS.md
+/CONVERSATION-HISTORY.md
 *.local.md
 # Editor/assistant settings and local tooling
 .claude/

@@ -1,12 +1,12 @@
 """Build a demo database of popular Steam games, for README screenshots.
 
-    python tools/make_demo_db.py demo.db
+    STEAM_COUNTRY=US python tools/make_demo_db.py demo.db
     DATABASE_URL=sqlite:///demo.db python -m scripts.web --port 8001
 
-Game names, covers, tags and review counts are real (fetched from Steam and
-SteamSpy, so this needs a network connection and takes a few minutes). The
-playtime, achievements and ratings are made up for an imaginary player. It only
-writes the file you name and never touches your own database.
+Game names, covers, tags, prices, review counts and how long players play are
+real (fetched from Steam, so this needs a network connection and takes several
+minutes). The playtime, achievements and ratings are made up for an imaginary
+player. It only writes the file you name and never touches your own database.
 """
 
 import os
@@ -24,10 +24,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import requests  # noqa: E402
 
-from shelflife import diary  # noqa: E402
+from shelflife import diary, reviews  # noqa: E402
 from shelflife.db import SessionLocal, init_db  # noqa: E402
 from shelflife.models import Game, LibraryEntry, WishlistItem  # noqa: E402
-from shelflife.sync import enrich_one  # noqa: E402
+from shelflife.sync import LENGTH_PAGES, enrich_one  # noqa: E402
 
 NOW = datetime.now(timezone.utc).replace(tzinfo=None)
 RNG = random.Random(7)
@@ -149,6 +149,25 @@ def main():
                     s.delete(game.library_entry)
                 s.delete(game)
         s.commit()
+
+        # Real review counts, and how long players play (five pages for the games "played" here, which
+        # are measured against them; one for the others, for their length).
+        games = s.query(Game).all()
+        for i, game in enumerate(games, start=1):
+            try:
+                counts = reviews.fetch_review_counts(game.steam_app_id)
+                if counts:
+                    game.reviews_positive, game.reviews_negative, game.reviews_fetched_at = counts.positive, counts.negative, NOW
+                pages = reviews.PLAYER_PAGES if game.steam_app_id in PLAYED else LENGTH_PAGES
+                hours = reviews.fetch_player_hours(game.steam_app_id, game.reviews_positive, game.reviews_negative, pages=pages)
+                game.player_hours = hours.percentiles if hours else None
+                game.player_hours_sample = hours.sample if hours else 0
+                game.player_hours_fetched_at = NOW
+                s.commit()
+                print(f"[{i}/{len(games)}] reviews of {game.name}", flush=True)
+            except Exception as exc:  # keep going: the game just shows no length
+                s.rollback()
+                print(f"[{i}/{len(games)}] reviews of {game.name} FAILED: {exc}", flush=True)
 
         # Made-up play history, using each game's real achievement list.
         for app_id, (hours, share, first, last, recent) in PLAYED.items():
