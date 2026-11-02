@@ -38,7 +38,7 @@
     {{ due.library }} games in your library{% if due.family %} ({{ due.owned }} owned, {{ due.family }} from Family Sharing){% endif %}{% if due.wishlist %}, {{ due.wishlist }} on your wishlist{% endif %}.
     {% if due.minutes is none %}
     {% elif due.achievements or due.details or due.about or due.reviews or due.players %}
-      Due now: achievements for {{ due.achievements }}, store details for {{ due.details }}{% if due.about %}, descriptions for {{ due.about }}{% endif %}, review counts for {{ due.reviews }}{% if due.players %}, how long players play {{ due.players }} games{% endif %}
+      Due now: achievements for {{ due.achievements }}, store details for {{ due.details }}{% if due.about %}, descriptions and languages for {{ due.about }}{% endif %}, review counts for {{ due.reviews }}{% if due.players %}, how long players play {{ due.players }} games{% endif %}
       (about {{ due.minutes }} minute{{ "" if due.minutes == 1 else "s" }}).
       {% if due.achievements %}Steam sometimes cannot give a few games' achievements, so a handful can stay on this list.{% endif %}
     {% else %}Nothing is due: you are up to date.{% endif %}

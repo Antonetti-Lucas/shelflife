@@ -1,5 +1,7 @@
 """Choices you make in the app and expect to find again (kept in the database)."""
 
+import json
+
 from sqlalchemy.orm import Session
 
 from shelflife.models import Setting
@@ -58,3 +60,24 @@ def get_hide_adult(session: Session) -> bool:
 
 def set_hide_adult(session: Session, hide: bool) -> None:
     _set_flag(session, "hide_adult", hide)
+
+
+# The languages you can play in (Steam's names, e.g. "Portuguese - Brazil"). Games the store says
+# have none of them are left out of recommendations and Explore. None chosen: no filter.
+def get_languages(session: Session) -> list[str]:
+    row = session.get(Setting, "languages")
+    try:
+        value = json.loads(row.value) if row is not None else []
+    except ValueError:
+        return []
+    return [x for x in value if isinstance(x, str)] if isinstance(value, list) else []
+
+
+def set_languages(session: Session, languages: list[str]) -> None:
+    value = json.dumps(sorted({x.strip() for x in languages if x.strip()}))
+    row = session.get(Setting, "languages")
+    if row is None:
+        session.add(Setting(key="languages", value=value))
+    else:
+        row.value = value
+    session.commit()

@@ -55,10 +55,11 @@ from shelflife.learned import (
     text_index,
     unit_tag_vectors,
 )
+from shelflife.languages import fits
 from shelflife.models import Game
 from shelflife.play import BACKLOG_MAX_MIN, PlayScale, PlayScore, is_played
 from shelflife.quality import quality_factor
-from shelflife.settings import get_hide_adult, get_taste_mode
+from shelflife.settings import get_hide_adult, get_languages, get_taste_mode
 from shelflife.tags import compute_idf, is_adult, tag_vector
 
 __all__ = ["BACKLOG_MAX_MIN", "is_played"]  # also imported from here by other modules
@@ -153,6 +154,7 @@ class _Model:
     session: Session | None = None
     mode: str = "both"  # what teaches the taste: "both", "ratings" or "play" (settings.TASTE_MODES)
     hide_adult: bool = False  # leave games for adults out of the lists
+    languages: tuple[str, ...] = ()  # leave out games without any of these (none: no filter)
     candidates: list[Game] = field(default_factory=list)
     played_titles: set[str] = field(default_factory=set)
     owned_titles: set[str] = field(default_factory=set)
@@ -356,6 +358,7 @@ def _build_model(
 
     model = _Model(
         vectors, games, session=session, mode=mode, hide_adult=get_hide_adult(session),
+        languages=tuple(get_languages(session)),
         shown_ratings=dict(taught), scale=scale,
     )
     for g in games:
@@ -401,7 +404,8 @@ SELECT
           || coalesce(sum(family_shared), 0) || ':' || coalesce(sum(reviews_positive), 0) || ':'
           || coalesce(sum(reviews_negative), 0) || ':' || coalesce(max(details_fetched_at), '') || ':'
           || coalesce(max(tags_fetched_at), '') || ':' || coalesce(sum(length(player_hours)), 0) || ':'
-          || coalesce(sum(player_hours_sample), 0) || ':' || coalesce(sum(length(about_text)), 0)
+          || coalesce(sum(player_hours_sample), 0) || ':' || coalesce(sum(length(about_text)), 0) || ':'
+          || coalesce(sum(length(languages)), 0)
      FROM games),
   (SELECT count(*) || ':' || coalesce(sum(playtime_total_min), 0) || ':' || coalesce(sum(playtime_recent_min), 0) || ':'
           || coalesce(sum(achievements_unlocked), 0) || ':' || coalesce(sum(achievements_total), 0) || ':'
@@ -577,7 +581,11 @@ def _classify(model: _Model) -> tuple[list[Game], list[Game], list[Game]]:
     discover: list[Game] = []
     for cand in model.candidates:
         base = _base_name(cand.name)
-        if base in model.played_titles or (model.hide_adult and is_adult(cand.tags)):
+        if (
+            base in model.played_titles
+            or (model.hide_adult and is_adult(cand.tags))
+            or not fits(cand.languages, model.languages)
+        ):
             continue
         if cand.library_entry is None:
             # A remaster of something you already have access to isn't a discovery.

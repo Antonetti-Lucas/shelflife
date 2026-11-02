@@ -37,6 +37,9 @@ class Game(Base):
     # Community tags -> votes, e.g. {"Roguelike": 5400, "Cozy": 120}
     tags: Mapped[dict[str, int]] = mapped_column(JSON, default=dict)
     release_date: Mapped[str | None]  # kept as Steam's text; formats vary
+    # Languages it can be played in, {"English": "audio", "Polish": "text"} (shelflife/languages.py);
+    # {} when the store lists none, None when never read.
+    languages: Mapped[dict[str, str] | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     cover_url: Mapped[str | None]
     details_fetched_at: Mapped[datetime | None]
     tags_fetched_at: Mapped[datetime | None]

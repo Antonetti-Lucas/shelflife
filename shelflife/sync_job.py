@@ -50,7 +50,7 @@ STEPS = (
     ("wishlist", "Reading your wishlist"),
     ("achievements", "Reading your achievements"),
     ("details", "Fetching store details for new games"),
-    ("about", "Reading game descriptions"),
+    ("about", "Reading game descriptions and languages"),
     ("reviews", "Counting reviews"),
     ("players", "Reading how long other players play"),
 )
@@ -191,7 +191,7 @@ def summarize_sync(result: SyncResult) -> JobSnapshot:
     if result.details:
         parts.append(f"store details for {result.details} games")
     if result.about:
-        parts.append(f"descriptions for {result.about} games")
+        parts.append(f"descriptions and languages for {result.about} games")
     if result.reviews:
         parts.append(f"review counts for {result.reviews} games")
     if result.players:

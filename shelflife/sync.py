@@ -5,11 +5,12 @@ from typing import Callable
 
 import requests
 from sqlalchemy import and_, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from shelflife import store
 from shelflife.achievements import AchievementsUnavailable, AchievementStats, fetch_achievements
 from shelflife.models import OFF_TOPIC, Game, LibraryEntry, PlaytimeSnapshot, WishlistItem
+from shelflife.play import is_played
 from shelflife import reviews
 from shelflife.reviews import fetch_review_counts
 from shelflife.steam import OwnedGame, SteamError
@@ -207,6 +208,7 @@ def enrich_one(game: Game, spy: store.SpyDetails | None = None) -> None:
         game.release_date = details.release_date
         game.cover_url = details.cover_url
         game.about_text = details.about_text
+        game.languages = details.languages
     game.details_fetched_at = _now()
     _fill_tags(game, spy)
 
@@ -343,22 +345,27 @@ def sync_player_hours(
 
 
 def about_due(session: Session) -> list[Game]:
-    """Games that have their store details but whose "About this game" text was never read
-    (they were fetched before it was kept): yours first, most played first, then your
-    wishlist, then the rest of the pool."""
-    return list(
-        session.scalars(
-            select(Game)
-            .outerjoin(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
-            .outerjoin(WishlistItem, WishlistItem.steam_app_id == Game.steam_app_id)
-            .where(Game.type == "game", Game.about_text.is_(None), Game.details_fetched_at.is_not(None))
-            .order_by(
-                LibraryEntry.steam_app_id.is_(None),
-                WishlistItem.steam_app_id.is_(None),
-                LibraryEntry.playtime_total_min.desc().nulls_last(),
-            )
+    """Games that have their store details but were read before the "About this game" text or
+    the languages were kept: yours first, most played first, then your wishlist, then the rest
+    of the pool. Languages only matter for a game that could be recommended, so a game you have
+    played is due only for a missing text."""
+    rows = session.execute(
+        select(Game, Game.about_text.is_(None))
+        .options(selectinload(Game.library_entry))
+        .outerjoin(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
+        .outerjoin(WishlistItem, WishlistItem.steam_app_id == Game.steam_app_id)
+        .where(
+            Game.type == "game",
+            Game.details_fetched_at.is_not(None),
+            or_(Game.about_text.is_(None), Game.languages.is_(None)),
         )
-    )
+        .order_by(
+            LibraryEntry.steam_app_id.is_(None),
+            WishlistItem.steam_app_id.is_(None),
+            LibraryEntry.playtime_total_min.desc().nulls_last(),
+        )
+    ).all()
+    return [g for g, no_text in rows if no_text or not is_played(g.library_entry, bool(g.family_shared))]
 
 
 def sync_about(
@@ -366,8 +373,8 @@ def sync_about(
     on_progress: Callable[[int, int, Game], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
 ) -> int:
-    """Read the "About this game" text for the games `about_due` lists (one store call each,
-    nothing else is touched). Saves game by game. Returns the number read."""
+    """Read the "About this game" text and the languages for the games `about_due` lists (one
+    store call each, nothing else is touched). Saves game by game. Returns the number read."""
     pending = about_due(session)
     done = failures = 0
     for i, game in enumerate(pending, start=1):
@@ -384,6 +391,7 @@ def sync_about(
                 raise SteamError(f"{exc} ({failures} failures in a row, stopping.)") from exc
             continue
         game.about_text = details.about_text if details is not None else ""
+        game.languages = details.languages if details is not None else {}
         session.commit()
         done += 1
         if on_progress:

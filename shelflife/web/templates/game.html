@@ -14,6 +14,11 @@
         {% if game.release_date %}<span>{{ game.release_date }}</span>{% endif %}
         {% if game.genres %}<span>{{ game.genres|join(", ") }}</span>{% endif %}
         <span>{{ reviews_text(game) }}</span>
+        {% if game.languages %}
+        {% set audio = game.languages|dictsort|selectattr(1, "equalto", "audio")|map(attribute=0)|list %}
+        <span title="{% for name, kind in game.languages|dictsort %}{{ name }}{{ ' (full audio)' if kind == 'audio' }}{{ ', ' if not loop.last }}{% endfor %}">{{ game.languages|length }} language{{ "" if game.languages|length == 1 else "s" }}{% if audio %} · audio in {{ audio|length }}{% endif %}</span>
+        {% if my_languages and not fits_languages(game.languages, my_languages) %}<span class="nolang">Not in your languages</span>{% endif %}
+        {% endif %}
       </div>
       {% if wish_note %}<p class="meta">★ {{ wish_note }}</p>{% endif %}
       <p class="meta"><a href="https://store.steampowered.com/app/{{ game.steam_app_id }}/">Steam store page ↗</a></p>

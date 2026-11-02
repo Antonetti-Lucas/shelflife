@@ -63,6 +63,30 @@
   </section>
 </div>
 
+<section id="languages" class="panel" style="margin-top: 20px">
+  <h3>Languages you play in</h3>
+  <form method="post" action="/taste/languages">
+    <div class="langs">
+      {% for name in common_languages %}<label class="lang"><input type="checkbox" name="lang" value="{{ name }}" {{ "checked" if name in chosen_languages }}>{{ name }}</label>{% endfor %}
+    </div>
+    {% if other_languages %}
+    <details class="more-langs">
+      <summary>More languages ({{ other_languages|length }})</summary>
+      <div class="langs">
+        {% for name in other_languages %}<label class="lang"><input type="checkbox" name="lang" value="{{ name }}" {{ "checked" if name in chosen_languages }}>{{ name }}</label>{% endfor %}
+      </div>
+    </details>
+    {% endif %}
+    <button type="submit" class="small">Save languages</button>
+  </form>
+  <p class="meta">
+    {% if chosen_languages %}Games the store lists without any of these (in text or audio) are left out of recommendations and Explore.
+    {% else %}None chosen, so no game is left out for its language.{% endif %}
+    Languages are known for {{ "{:,}".format(languages_known) }} of {{ "{:,}".format(games_total) }} games; the others stay in until a Sync reads them.
+    Your library, diary and wishlist page always show every game.
+  </p>
+</section>
+
 <section id="content" class="panel" style="margin-top: 20px">
   <h3>Games for adults</h3>
   <form method="post" action="/taste/hide-adult" class="inline">

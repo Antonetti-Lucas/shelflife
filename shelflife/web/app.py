@@ -17,7 +17,7 @@ from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from shelflife import diary
@@ -32,7 +32,16 @@ from shelflife.discover_job import SECONDS_PER_GAME, job as discover_job
 from shelflife.discovery import MIN_REVIEWS
 from shelflife.recommend import explain, play_score_of, recommend, score_all, taste_profile, top_taste_tags
 from shelflife.score import engagement_score
-from shelflife.settings import TASTE_MODE_LABELS, TASTE_MODES, get_hide_adult, get_taste_mode, set_hide_adult, set_taste_mode
+from shelflife.settings import (
+    TASTE_MODE_LABELS,
+    TASTE_MODES,
+    get_hide_adult,
+    get_languages,
+    get_taste_mode,
+    set_hide_adult,
+    set_languages,
+    set_taste_mode,
+)
 from shelflife.learned import text_index
 from shelflife.similar import search_tags, similar_to, tag_idf
 from shelflife.stats import compute_stats
@@ -40,6 +49,8 @@ from shelflife.sync_job import STEPS as SYNC_STEPS
 from shelflife.sync_job import job as sync_job
 from shelflife.sync_job import what_is_due
 from shelflife.tagfilter import TagIndex, parse_tags, split_excluded
+from shelflife.languages import COMMON as COMMON_LANGUAGES
+from shelflife.languages import fits
 from shelflife.tags import is_adult
 from shelflife.web.lists import ListFilter, paginate, recommended, whole
 from shelflife.wishlist import order_key, rank_label
@@ -139,6 +150,7 @@ templates.env.globals.update(
     stars=stars,
     fit_level=fit_level,
     game_of=game_of,
+    fits_languages=fits,
 )
 
 
@@ -391,6 +403,8 @@ def explore(
     games = list(session.scalars(query))
     if get_hide_adult(session):
         games = [g for g in games if not is_adult(g.tags)]
+    if my_languages := get_languages(session):
+        games = [g for g in games if fits(g.languages, my_languages)]
     tag_index = TagIndex(g.tags for g in games)
     recs = []
     for game in games:
@@ -684,6 +698,7 @@ def game_page(request: Request, app_id: int, session: Session = Depends(get_sess
             "wish_note": wishlist_note(session.get(WishlistItem, app_id), game),
             "play": play_score_of(session, app_id),
             "taste_mode": get_taste_mode(session),
+            "my_languages": get_languages(session),
         },
     )
 
@@ -881,8 +896,37 @@ def taste_page(request: Request, session: Session = Depends(get_session)):
             "taste_mode": get_taste_mode(session),
             "modes": TASTE_MODE_LABELS,
             "hide_adult": get_hide_adult(session),
+            **language_choices(session),
         },
     )
+
+
+def language_choices(session: Session) -> dict:
+    """The languages offered on My taste: the common ones first, then every other language the
+    store lists for your games, most common first; and how many games' languages are known."""
+    chosen = get_languages(session)
+    seen: dict[str, int] = {}
+    known = 0
+    for languages in session.scalars(select(Game.languages).where(Game.type == "game", Game.languages.is_not(None))):
+        known += 1
+        for name in languages:
+            seen[name] = seen.get(name, 0) + 1
+    others = [n for n in sorted(seen, key=lambda n: (-seen[n], n)) if n not in COMMON_LANGUAGES]
+    return {
+        "chosen_languages": chosen,
+        "common_languages": [*COMMON_LANGUAGES, *(n for n in chosen if n not in COMMON_LANGUAGES and n not in others)],
+        "other_languages": others,
+        "languages_known": known,
+        "games_total": session.scalar(select(func.count()).select_from(Game).where(Game.type == "game")),
+    }
+
+
+@app.post("/taste/languages")
+async def change_languages(request: Request, session: Session = Depends(get_session)):
+    """The languages you can play in; games with none of them are left out of the lists."""
+    form = await request.form()
+    set_languages(session, [str(x)[:60] for x in form.getlist("lang")][:100])
+    return RedirectResponse("/taste#languages", status_code=303)
 
 
 @app.post("/taste/hide-adult")

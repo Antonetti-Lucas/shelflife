@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 import requests
 
+from shelflife.languages import parse_languages
 from shelflife.throttle import RateLimited, Throttle
 
 STORE_URL = "https://store.steampowered.com/api/appdetails"
@@ -29,6 +30,7 @@ class StoreDetails:
     cover_url: str | None = None
     name: str | None = None
     about_text: str = ""  # "About this game", as plain text
+    languages: dict[str, str] = field(default_factory=dict)  # {"English": "audio", ...}
 
 
 _MARKUP = re.compile(r"<[^>]*>")
@@ -66,6 +68,7 @@ def fetch_store_details(app_id: int, timeout: float = 15) -> StoreDetails | None
         cover_url=data.get("header_image"),
         name=data.get("name"),
         about_text=clean_store_text(data.get("about_the_game")),
+        languages=parse_languages(data.get("supported_languages")),
     )
 
 

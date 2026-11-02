@@ -60,6 +60,7 @@ def steam(monkeypatch):
         if "details" in state.fail:
             raise state.fail["details"]
         game.type, game.tags, game.details_fetched_at, game.about_text = "game", {"Stealth": 10}, datetime.now(), ""  # fetched just now
+        game.languages = {"English": "audio"}
 
     def fetch_review_counts(app_id):
         state.order.append("reviews")
@@ -360,7 +361,7 @@ def test_a_network_error_is_reported_not_raised(session, steam):
     "result, state, fragments",
     [
         (SyncResult(games=300, new_games=4, achievements=4, details=4, reviews=2), "done", ["300 owned games (4 new)", "achievements for 4 games", "store details for 4 games", "review counts for 2 games"]),
-        (SyncResult(games=300, about=7), "done", ["descriptions for 7 games"]),
+        (SyncResult(games=300, about=7), "done", ["descriptions and languages for 7 games"]),
         (SyncResult(games=300), "done", ["300 owned games."]),
         (SyncResult(games=300, details=2, stopped=True), "stopped", ["Stopped.", "Sync again to carry on"]),
         (SyncResult(games=300, aborted="Steam is rate limiting us."), "error", ["Stopped early: Steam is rate limiting us.", "Progress is saved"]),
@@ -560,7 +561,7 @@ def test_a_page_with_everything_up_to_date_says_so(client, session):
     add_game(session, 1, minutes=0)
     game = session.get(Game, 1)
     game.details_fetched_at = game.reviews_fetched_at = datetime.now()
-    game.about_text = ""
+    game.about_text, game.languages = "", {"English": "text"}
     session.commit()
     assert "Nothing is due: you are up to date" in client.get("/sync").text
 
@@ -631,7 +632,7 @@ def test_a_sync_reads_the_text_of_games_that_have_details_but_no_text(session, s
     assert result.about == 2 and sorted(asked) == [1, 2]
     assert 5 in steps and steps == sorted(steps)
     assert session.get(Game, 1).about_text == "text of 1" and session.get(Game, 2).about_text == "text of 2"
-    assert "descriptions for 2 games" in summarize_sync(result).message
+    assert "descriptions and languages for 2 games" in summarize_sync(result).message
 
 
 def test_stopping_before_the_descriptions_step_skips_it_and_the_ones_after(session, steam, monkeypatch):
