@@ -173,6 +173,18 @@ def parse_price(data: dict) -> dict:
     }
 
 
+@dataclass(frozen=True)
+class Listing:
+    """A game in a list of games (under a tag, or by popularity) with its review counts, and its
+    tags when the list brings them (Steam's does, SteamSpy's doesn't)."""
+
+    app_id: int
+    name: str
+    positive: int
+    negative: int
+    tags: dict[str, int] | None = field(default=None, compare=False, hash=False)
+
+
 # ---- Steam's own tags ----
 # Steam's API names its tags (IStoreService/GetTagList), gives games' tags (IStoreBrowseService/
 # GetItems, TAGS_BATCH games a call) and lists the games under a tag (IStoreQueryService/Query).
@@ -345,18 +357,6 @@ class SpyDetails:
     tags: dict[str, int]
     positive: int | None
     negative: int | None
-
-
-@dataclass(frozen=True)
-class Listing:
-    """A game in a list of games (under a tag, or by popularity) with its review counts, and its
-    tags when the list brings them (Steam's does, SteamSpy's doesn't)."""
-
-    app_id: int
-    name: str
-    positive: int
-    negative: int
-    tags: dict[str, int] | None = field(default=None, compare=False, hash=False)
 
 
 def _spy_get(params: dict, timeout: float) -> dict:
