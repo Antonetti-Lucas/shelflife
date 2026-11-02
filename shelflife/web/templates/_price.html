@@ -1,0 +1,10 @@
+{# A game's price, for a game you don't own: "R$ 18,74" with "-75%" and the full price when on
+   sale, "Free", or nothing yet. static/prices.js refreshes it in place (the data-price-id). #}
+{% macro price_tag(g) %}
+{% if not owned(g) %}
+{% set p = price_of(g) %}
+<span class="price" data-price-id="{{ g.steam_app_id }}">
+  {%- if p %}{% if p.discount %}<span class="disc">-{{ p.discount }}%</span>{% endif %}{% if p.was %}<s>{{ p.was }}</s>{% endif %}<b>{{ p.text }}</b>{% endif -%}
+</span>
+{% endif %}
+{% endmacro %}

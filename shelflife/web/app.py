@@ -8,7 +8,7 @@ addressed to this computer's own names, and refuses form posts from other sites.
 import os
 import re
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
 
@@ -52,6 +52,8 @@ from shelflife.tagfilter import TagIndex, parse_tags, split_excluded
 from shelflife.languages import COMMON as COMMON_LANGUAGES
 from shelflife.languages import fits
 from shelflife.length import estimate as estimate_length
+from shelflife import prices as price_view
+from shelflife import store
 from shelflife.tags import is_adult
 from shelflife.web.lists import ListFilter, paginate, recommended, whole
 from shelflife.wishlist import order_key, rank_label
@@ -153,6 +155,8 @@ templates.env.globals.update(
     game_of=game_of,
     fits_languages=fits,
     length_of=estimate_length,
+    price_of=lambda game: price_view.shown(game.price),
+    owned=price_view.owned,
 )
 
 
@@ -674,6 +678,34 @@ def sync_stop():
 def stop_finding_games():
     discover_job.cancel()
     return RedirectResponse("/explore#find", status_code=303)
+
+
+@app.get("/prices")
+def current_prices(ids: str = "", session: Session = Depends(get_session)):
+    """The prices of the games a page shows (`ids`, comma separated, at most a hundred), for the
+    page to update in place. Those older than prices.SCREEN_PRICE_HOURS are read again from the
+    store first, in one call; if the store can't be reached, the stored ones are returned."""
+    wanted = [int(x) for x in ids.split(",") if x.strip().isdigit()][: store.PRICE_BATCH]
+    games = [g for g in session.scalars(select(Game).where(Game.steam_app_id.in_(wanted))) if not price_view.owned(g)]
+    due = [g for g in games if price_view.stale(g)]
+    if due:
+        try:
+            fresh = store.fetch_prices([g.steam_app_id for g in due])
+        except Exception:  # noqa: BLE001  (rate limit or network: show what we have)
+            fresh = {}
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        for game in due:
+            if game.steam_app_id in fresh:
+                price = fresh[game.steam_app_id]
+                if price or game.price != {"free": True}:  # a game known to be free stays free
+                    game.price = price
+                game.price_fetched_at = now
+        session.commit()
+    out = {}
+    for game in games:
+        view = price_view.shown(game.price)
+        out[str(game.steam_app_id)] = view.as_dict() if view else None
+    return out
 
 
 @app.get("/game/{app_id}")

@@ -1,17 +1,27 @@
 {% extends "base.html" %}
 {% from "_stars.html" import star_rating %}
+{% from "_price.html" import price_tag %}
 {% block title %}{{ game.name }} · ShelfLife{% endblock %}
 {% block content %}
+{% set info = game.store_info or {} %}
 <div class="hero-band">
-  {% if game.cover_url %}<div class="backdrop" style="background-image: url('{{ game.cover_url }}')"></div>{% endif %}
+  {% if info.background %}<div class="backdrop store-bg" style="background-image: url('{{ info.background }}')"></div>
+  {% elif game.cover_url %}<div class="backdrop" style="background-image: url('{{ game.cover_url }}')"></div>{% endif %}
   <div class="hero-inner">
     {% if game.cover_url %}<img class="hero" src="{{ game.cover_url }}" alt="">{% endif %}
     <div>
-      <h2>{{ game.name }}</h2>
+      <div class="title-row"><h2>{{ game.name }}</h2>{{ price_tag(game) }}</div>
+      {% if info.developers or info.publishers %}
+      <p class="byline">
+        {% if info.developers %}By <strong>{{ info.developers[:2]|join(", ") }}</strong>{% endif %}
+        {% if info.publishers and info.publishers != info.developers %}{{ " · " if info.developers }}Published by <strong>{{ info.publishers[:2]|join(", ") }}</strong>{% endif %}
+      </p>
+      {% endif %}
       {% if game.short_description %}<p>{{ game.short_description }}</p>{% endif %}
       <div class="facts">
         <span>{{ source_label(game) }}</span>
-        {% if game.release_date %}<span>{{ game.release_date }}</span>{% endif %}
+        {% if info.coming_soon %}<span class="soon">Coming soon{{ " · " ~ game.release_date if game.release_date }}</span>
+        {% elif game.release_date %}<span>Released {{ game.release_date }}</span>{% endif %}
         {% if game.genres %}<span>{{ game.genres|join(", ") }}</span>{% endif %}
         <span>{{ reviews_text(game) }}</span>
         {% set length = length_of(game) %}
@@ -27,6 +37,41 @@
     </div>
   </div>
 </div>
+
+{% if info.screenshots %}
+<section class="shots-wrap" aria-label="Screenshots">
+  <div class="strip shots">
+    {% for url in info.screenshots %}
+    <button type="button" class="shot" data-full="{{ url }}" aria-label="Screenshot {{ loop.index }} of {{ info.screenshots|length }}">
+      <img src="{{ url|replace('.1920x1080', '.600x338') }}" loading="lazy" alt="">
+    </button>
+    {% endfor %}
+  </div>
+</section>
+<dialog class="lightbox" id="lightbox" aria-label="Screenshot">
+  <img alt="">
+  <button type="button" class="lb-prev" aria-label="Previous screenshot">‹</button>
+  <button type="button" class="lb-next" aria-label="Next screenshot">›</button>
+  <button type="button" class="lb-close" aria-label="Close">×</button>
+</dialog>
+<script>
+  // Click a screenshot to see it full size; arrows or the keyboard step through, Esc or a click outside closes.
+  (function () {
+    var shots = Array.prototype.slice.call(document.querySelectorAll(".shot"));
+    var box = document.getElementById("lightbox"), img = box.querySelector("img"), at = 0;
+    function show(i) { at = (i + shots.length) % shots.length; img.src = shots[at].dataset.full; }
+    shots.forEach(function (s, i) { s.addEventListener("click", function () { show(i); box.showModal(); }); });
+    box.querySelector(".lb-prev").addEventListener("click", function () { show(at - 1); });
+    box.querySelector(".lb-next").addEventListener("click", function () { show(at + 1); });
+    box.querySelector(".lb-close").addEventListener("click", function () { box.close(); });
+    box.addEventListener("click", function (e) { if (e.target === box) box.close(); });
+    box.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowLeft") show(at - 1);
+      if (e.key === "ArrowRight") show(at + 1);
+    });
+  })();
+</script>
+{% endif %}
 
 <div class="two">
   <div>

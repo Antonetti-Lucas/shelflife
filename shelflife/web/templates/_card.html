@@ -1,6 +1,7 @@
 {# One recommendation. `next_url` is where to return after rating or dismissing;
    `rating` is your current rating of the game, if any. #}
 {% from "_stars.html" import star_rating %}
+{% from "_price.html" import price_tag %}
 {% macro rating_select(g, next_url, rating) %}{{ star_rating(g, rating, next_url) }}{% endmacro %}
 
 {% macro card(r, next_url, rating=none, similar_to=none, note=none) %}
@@ -9,10 +10,11 @@
   <a class="cover" href="/game/{{ g.steam_app_id }}">
     {% if g.cover_url %}<img src="{{ g.cover_url }}" loading="lazy" alt="">{% else %}<span class="nocover">{{ g.name[:1] }}</span>{% endif %}
     <span class="badge {{ fit_level(r.similarity) }}">{{ "%.0f"|format(r.similarity * 100) }}% {{ "similar" if similar_to else "match" }}</span>
-    {% if note %}<span class="flag">★ Wishlist</span>{% endif %}
+    {% if (g.store_info or {}).coming_soon %}<span class="flag soon">Coming soon</span>
+    {% elif note %}<span class="flag">★ Wishlist</span>{% endif %}
   </a>
   <div class="card-body">
-    <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a></h3>
+    <div class="title-row"><h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a></h3>{{ price_tag(g) }}</div>
     {% set length = length_of(g) %}
     <p class="meta">{{ short_reviews(g) }}{% if length %} · <span title="{{ length.text }} (from how long its reviewers played)">{{ length.short_text }}{{ " played" if length.endless }}</span>{% endif %}</p>
     {% if note %}<p class="wish" title="{{ note }}">★ {{ note }}</p>{% endif %}
