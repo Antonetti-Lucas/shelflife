@@ -200,3 +200,46 @@ def test_lists_cannot_be_changed_from_another_website(client, session, games):
 
 def test_the_nav_links_to_lists(client):
     assert '<a href="/lists" class="on">Lists</a>' in client.get("/lists").text
+
+
+# ---- folders ----
+
+
+def test_folders_hold_lists_and_deleting_one_keeps_its_lists(session):
+    folder = gamelists.create_folder(session, "  Yearly   bests ")
+    assert folder.name == "Yearly bests"
+    with pytest.raises(ValueError):
+        gamelists.create_folder(session, " ")
+    inside = gamelists.create_list(session, "2024", folder_id=folder.id)
+    outside = gamelists.create_list(session, "Cozy")
+    with pytest.raises(LookupError):
+        gamelists.create_list(session, "Nowhere", folder_id=999)
+    assert (inside.folder_id, outside.folder_id) == (folder.id, None)
+    gamelists.delete_folder(session, folder.id)
+    session.refresh(inside)
+    assert inside.folder_id is None and gamelists.all_folders(session) == []
+
+
+def test_the_lists_page_shows_folders_apart_and_opens_one(client, session, games):
+    folder = gamelists.create_folder(session, "Yearly bests")
+    gamelists.create_list(session, "Top games 2024", folder_id=folder.id)
+    gamelists.create_list(session, "Cozy evenings")
+    page = client.get("/lists").text
+    assert f'href="/lists?folder={folder.id}"' in page and "1 list" in page
+    assert "Cozy evenings" in page and "Top games 2024" not in page  # tucked away in its folder
+    opened = client.get(f"/lists?folder={folder.id}").text
+    assert "Top games 2024" in opened and "Cozy evenings" not in opened and "Rename or delete this folder" in opened
+
+
+def test_folders_from_the_pages(client, session, games):
+    response = post(client, "/lists/folders", name="By genre")
+    folder_id = int(response.headers["location"].rsplit("=", 1)[1])
+    response = post(client, "/lists", name="Roguelikes", folder=str(folder_id), show_ratings="1")
+    list_id = int(response.headers["location"].rsplit("/", 1)[1])
+    assert f'/ <a href="/lists?folder={folder_id}">By genre</a>' in client.get(f"/lists/{list_id}").text
+    post(client, f"/lists/{list_id}/edit", name="Roguelikes", folder="")  # out of the folder
+    assert gamelists.get_list(session, list_id).folder_id is None
+    post(client, f"/lists/folders/{folder_id}/rename", name="Genres")
+    assert gamelists.get_folder(session, folder_id).name == "Genres"
+    assert post(client, f"/lists/folders/{folder_id}/delete").headers["location"] == "/lists"
+    assert post(client, "/lists/folders", name="").status_code == 400

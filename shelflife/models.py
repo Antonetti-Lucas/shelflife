@@ -153,6 +153,16 @@ class LibraryEntry(Base):
         return self.playtime_total_min / 60
 
 
+class ListFolder(Base):
+    """A folder your lists can go in, so many lists don't crowd the Lists page."""
+
+    __tablename__ = "list_folders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str]
+    created_at: Mapped[datetime]
+
+
 class GameList(Base):
     """A list of games you made and named (shelflife/gamelists.py): ranked or not, with or
     without your star ratings shown. Lists are yours to keep in order: they never change your taste."""
@@ -164,6 +174,7 @@ class GameList(Base):
     description: Mapped[str | None]
     ranked: Mapped[bool] = mapped_column(default=False)  # numbered 1, 2, 3...
     show_ratings: Mapped[bool] = mapped_column(default=True)  # your stars under each game
+    folder_id: Mapped[int | None] = mapped_column(ForeignKey("list_folders.id"))  # None: not in a folder
     created_at: Mapped[datetime]
     updated_at: Mapped[datetime]
 

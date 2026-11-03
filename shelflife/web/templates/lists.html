@@ -1,13 +1,35 @@
 {% extends "base.html" %}
-{% block title %}Lists · ShelfLife{% endblock %}
+{% block title %}{{ opened.name ~ " · " if opened }}Lists · ShelfLife{% endblock %}
 {% block content %}
-<div class="page-head">
-  <h2>Lists{% if lists %}<span class="count">{{ lists|length }}</span>{% endif %}</h2>
-</div>
-<p class="lede">Your own lists of games: a year's best, a genre, a mood. Rank them or just collect them. Lists never change your recommendations; the stars you give do.</p>
+{% macro fan(games) %}
+<span class="list-fan" aria-hidden="true">
+  {% for g in games %}
+    <img src="{{ poster_url(g) }}" loading="lazy" alt=""
+         onerror='this.onerror = null; {% if g.cover_url %}this.src = {{ g.cover_url|tojson }}; this.classList.add("wide");{% else %}this.remove();{% endif %}'>
+  {% else %}
+    <span class="list-fan-empty"></span>
+  {% endfor %}
+</span>
+{% endmacro %}
 
-<details class="panel new-list" {{ "open" if not lists }}>
-  <summary>+ New list</summary>
+{% if opened %}<p class="meta crumbs"><a href="/lists">← Lists</a></p>{% endif %}
+<div class="page-head">
+  <h2>{% if opened %}<span class="folder-icon" aria-hidden="true">▣</span> {{ opened.name }}<span class="count">{{ lists|length }}</span>
+      {% else %}Lists{% if all_count %}<span class="count">{{ all_count }}</span>{% endif %}{% endif %}</h2>
+  {% if not opened %}
+  <details class="new-folder">
+    <summary class="ghost-summary">+ New folder</summary>
+    <form method="post" action="/lists/folders" class="row-line">
+      <input type="text" name="name" required maxlength="80" placeholder="e.g. Yearly bests" aria-label="Folder name">
+      <button type="submit" class="small">Create</button>
+    </form>
+  </details>
+  {% endif %}
+</div>
+{% if not opened %}<p class="lede">Your own lists of games: a year's best, a genre, a mood. Rank them or just collect them, and put them in folders when there are many. Lists never change your recommendations; the stars you give do.</p>{% endif %}
+
+<details class="panel new-list" {{ "open" if not all_count }}>
+  <summary>+ New list{{ " in " ~ opened.name if opened }}</summary>
   <form method="post" action="/lists" class="stack">
     <label>Name
       <input type="text" name="name" required maxlength="80" placeholder="e.g. Best of 2024">
@@ -15,29 +37,60 @@
     <label>Description
       <textarea name="description" rows="2" maxlength="1000" placeholder="Optional"></textarea>
     </label>
+    {% if folders %}
+    <label>Folder
+      <select name="folder">
+        <option value="">No folder</option>
+        {% for f in folders %}<option value="{{ f.id }}" {{ "selected" if opened and opened.id == f.id }}>{{ f.name }}</option>{% endfor %}
+      </select>
+    </label>
+    {% endif %}
     <label class="switch"><input type="checkbox" name="ranked" value="1"> Ranked: number the games 1, 2, 3…</label>
     <label class="switch"><input type="checkbox" name="show_ratings" value="1" checked> Show my star ratings under each game</label>
     <button type="submit">Create list</button>
   </form>
 </details>
 
+{% if folders and not opened %}
+<h3 class="list-section">Folders</h3>
+<div class="list-cards">
+  {% for f in folders %}
+  <a class="list-card folder-card" href="/lists?folder={{ f.id }}">
+    {{ fan(folder_covers[f.id]) }}
+    <span class="list-card-name"><span class="folder-icon" aria-hidden="true">▣</span> {{ f.name }}</span>
+    <span class="meta">{{ in_folder[f.id]|length }} list{{ "" if in_folder[f.id]|length == 1 else "s" }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% if lists %}<h3 class="list-section">Not in a folder</h3>{% endif %}
+{% endif %}
+
 {% if lists %}
 <div class="list-cards">
   {% for gl in lists %}
   <a class="list-card" href="/lists/{{ gl.id }}">
-    <span class="list-fan" aria-hidden="true">
-      {% for g in covers[gl.id] %}
-        <img src="{{ poster_url(g) }}" loading="lazy" alt=""
-             onerror='this.onerror = null; {% if g.cover_url %}this.src = {{ g.cover_url|tojson }}; this.classList.add("wide");{% else %}this.remove();{% endif %}'>
-      {% else %}
-        <span class="list-fan-empty"></span>
-      {% endfor %}
-    </span>
+    {{ fan(covers[gl.id]) }}
     <span class="list-card-name">{{ gl.name }}</span>
     <span class="meta">{{ counts.get(gl.id, 0) }} game{{ "" if counts.get(gl.id, 0) == 1 else "s" }}{% if gl.ranked %} · ranked{% endif %}</span>
     {% if gl.description %}<span class="list-card-desc">{{ gl.description|truncate(140) }}</span>{% endif %}
   </a>
   {% endfor %}
 </div>
+{% elif opened %}
+<p class="empty">No lists in this folder yet. Make one above, or move a list here from its own page (Edit).</p>
+{% endif %}
+
+{% if opened %}
+<details class="help list-edit">
+  <summary>Rename or delete this folder</summary>
+  <form method="post" action="/lists/folders/{{ opened.id }}/rename" class="row-line">
+    <input type="text" name="name" value="{{ opened.name }}" required maxlength="80" aria-label="Folder name">
+    <button type="submit" class="small">Rename</button>
+  </form>
+  {% set msg = "Delete the folder “" ~ opened.name ~ "”? Its lists stay, just out of any folder." %}
+  <form method="post" action="/lists/folders/{{ opened.id }}/delete" class="inline" onsubmit='return confirm({{ msg|tojson }})' style="margin-top: 12px">
+    <button type="submit" class="ghost danger small">Delete folder</button>
+  </form>
+</details>
 {% endif %}
 {% endblock %}

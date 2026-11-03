@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}ShelfLife{% endblock %}</title>
+  <script>try { var t = localStorage.getItem("shelflife-theme"); if (t === "dark" || t === "light") document.documentElement.dataset.theme = t; } catch (e) {}</script>
   <link rel="stylesheet" href="/static/style.css">
   {% block head %}{% endblock %}
   <script src="/static/tags.js" defer></script>
@@ -11,6 +12,7 @@
   <script src="/static/stars.js" defer></script>
   <script src="/static/prices.js" defer></script>
   <script src="/static/lists.js" defer></script>
+  <script src="/static/theme.js" defer></script>
 </head>
 <body>
   <header class="top">
@@ -35,6 +37,7 @@
       <span class="gap"></span>
       <a href="/taste" class="side {{ 'on' if path == '/taste' }}">My taste</a>
       <a href="/sync" class="side {{ 'on' if path == '/sync' }}">Sync</a>
+      <button type="button" class="theme-toggle" hidden aria-label="Theme">◐</button>
     </nav>
   </header>
   <main>

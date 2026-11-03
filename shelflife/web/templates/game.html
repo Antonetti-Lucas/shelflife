@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_stars.html" import star_rating %}
+{% from "_heart.html" import fav_heart %}
 {% from "_price.html" import price_tag %}
 {% block title %}{{ game.name }} · ShelfLife{% endblock %}
 {% block content %}
@@ -24,14 +25,19 @@
         {% elif game.release_date %}<span>Released {{ game.release_date }}</span>{% endif %}
         {% if game.genres %}<span>{{ game.genres|join(", ") }}</span>{% endif %}
         <span>{{ reviews_text(game) }}</span>
-        {% set length = length_of(game) %}
-        {% if length %}<span title="Estimated from how long {{ game.player_hours_sample }} of its reviewers played it">{{ length.text }}</span>{% endif %}
         {% if game.languages %}
         {% set audio = game.languages|dictsort|selectattr(1, "equalto", "audio")|map(attribute=0)|list %}
         <span title="{% for name, kind in game.languages|dictsort %}{{ name }}{{ ' (full audio)' if kind == 'audio' }}{{ ', ' if not loop.last }}{% endfor %}">{{ game.languages|length }} language{{ "" if game.languages|length == 1 else "s" }}{% if audio %} · audio in {{ audio|length }}{% endif %}</span>
         {% if my_languages and not fits_languages(game.languages, my_languages) %}<span class="nolang">Not in your languages</span>{% endif %}
         {% endif %}
       </div>
+      {% set length = length_of(game) %}
+      {% if length %}
+      <div class="hero-length" title="Estimated from how long {{ game.player_hours_sample }} of its reviewers played it">
+        <strong>{{ length.short_text }}</strong>
+        <span>{{ "players typically play" if length.endless else "to finish, with some extras" }}<br><small>from {{ "{:,}".format(game.player_hours_sample) }} reviewers' hours</small></span>
+      </div>
+      {% endif %}
       {% if wish_note and entry and entry.platform %}
       <p class="warn-box">⚠ This game is on your Steam wishlist, but you already have it on {{ entry.platform }}.
         If you don't mean to buy it again, take it off your wishlist on its
@@ -86,7 +92,7 @@
   <div>
     <section class="panel">
       <h3>Your verdict</h3>
-      {{ star_rating(game, diary.rating if diary else none, "/game/" ~ game.steam_app_id, "large") }}
+      <div class="row-line">{{ star_rating(game, diary.rating if diary else none, "/game/" ~ game.steam_app_id, "large") }}{{ fav_heart(game, diary and diary.favorite, "/game/" ~ game.steam_app_id, "large") }}</div>
       <form method="post" action="/game/{{ game.steam_app_id }}/rate" class="stack" data-inline style="margin-top: 12px">
         <label>Review
           <textarea name="review" rows="3" placeholder="Optional notes">{{ diary.review if diary and diary.review else "" }}</textarea>
@@ -94,15 +100,6 @@
         <button type="submit">Save review</button>
       </form>
       <div class="row-line" style="margin-top: 14px">
-        <form method="post" action="/game/{{ game.steam_app_id }}/favorite" class="inline">
-          {% if diary and diary.favorite %}
-            <input type="hidden" name="value" value="0">
-            <span>★ One of your <strong>favorites</strong>.</span> <button class="ghost small" type="submit">Remove</button>
-          {% else %}
-            <input type="hidden" name="value" value="1">
-            <button class="ghost small" type="submit">☆ Add to favorites</button>
-          {% endif %}
-        </form>
         <form method="post" action="/game/{{ game.steam_app_id }}/not-interested" class="inline">
           {% if diary and diary.not_interested %}
             <input type="hidden" name="value" value="0">

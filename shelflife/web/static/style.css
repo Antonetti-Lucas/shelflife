@@ -18,8 +18,9 @@
   --radius: 14px;
   color-scheme: light;
 }
+/* Dark: your system's choice, unless the theme button (static/theme.js) picked one. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #0f1115;
     --surface: #181b21;
     --surface-2: #1e222a;
@@ -38,6 +39,25 @@
     --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 18px rgb(0 0 0 / 0.25);
     color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+    --bg: #0f1115;
+    --surface: #181b21;
+    --surface-2: #1e222a;
+    --text: #e9eaee;
+    --muted: #8f95a2;
+    --line: #2a2f38;
+    --accent: #3fcf9b;
+    --accent-strong: #5fe0b0;
+    --accent-soft: #19302a;
+    --star: #f2b545;
+    --warn: #e6a06e;
+    --warn-soft: #33241a;
+    --bad: #ec8478;
+    --header: #0a0c0f;
+    --header-text: #8f95a2;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 18px rgb(0 0 0 / 0.25);
+    color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -145,7 +165,9 @@ button, select, input[type="search"], input[type="number"], input[type="date"], 
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
 button { cursor: pointer; background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
 button:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
-@media (prefers-color-scheme: dark) { button { color: #08130f; } }
+/* :where() keeps these as weak as a plain "button", so .ghost and others still win. */
+@media (prefers-color-scheme: dark) { :where(:root:not([data-theme="light"])) button { color: #08130f; } }
+:where(:root[data-theme="dark"]) button { color: #08130f; }
 button.ghost { background: transparent; color: var(--muted); border-color: var(--line); font-weight: 500; }
 button.ghost:hover { color: var(--text); border-color: var(--muted); background: transparent; }
 button.small, .actions button, .actions select { font-size: 0.82rem; padding: 5px 10px; }
@@ -153,7 +175,8 @@ select { padding: 7px 8px; }
 select.stars { color: var(--star); font-weight: 600; }
 select.stars.unrated { color: var(--muted); font-weight: 500; }
 a.button { display: inline-block; background: var(--accent); color: #fff; border-radius: 9px; padding: 7px 14px; font-weight: 600; font-size: 0.92rem; }
-@media (prefers-color-scheme: dark) { a.button { color: #08130f; } }
+@media (prefers-color-scheme: dark) { :where(:root:not([data-theme="light"])) a.button { color: #08130f; } }
+:where(:root[data-theme="dark"]) a.button { color: #08130f; }
 a.button:hover { text-decoration: none; background: var(--accent-strong); }
 
 .filters {
@@ -539,3 +562,75 @@ dialog.lightbox .lb-close { right: -8px; top: -52px; font-size: 2rem; }
 .warn-box a { color: inherit; text-decoration: underline; }
 .hero-inner .warn-box { background: rgb(232 154 27 / 0.16); color: #ffd9a8; }
 .warn-tag { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); font-size: 0.76rem; font-weight: 600; white-space: nowrap; }
+
+/* ---- game page: length ---- */
+.hero-length { display: inline-flex; align-items: center; gap: 12px; margin-top: 14px; padding: 8px 16px 8px 14px; border-radius: 12px; background: rgb(255 255 255 / 0.1); }
+.hero-length strong { font-size: 1.9rem; line-height: 1; color: #fff; }
+.hero-length span { font-size: 0.86rem; line-height: 1.3; color: rgb(255 255 255 / 0.85); }
+.hero-length small { color: rgb(255 255 255 / 0.55); }
+
+/* ---- stats: ratings histogram ---- */
+.histogram { display: flex; align-items: flex-end; gap: 10px; height: 120px; margin: 8px 0 6px; }
+.histogram ol { flex: 1; display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; align-items: end; height: 100%; list-style: none; margin: 0; padding: 0; border-bottom: 1px solid var(--line); }
+.histogram li { height: 100%; display: flex; align-items: flex-end; }
+.histogram li a { display: flex; align-items: flex-end; width: 100%; height: 100%; }
+.histogram i { display: block; width: 100%; border-radius: 3px 3px 0 0; background: var(--muted); opacity: 0.55; }
+.histogram li:hover i { background: var(--accent); opacity: 1; }
+.hist-end { color: var(--star); font-size: 0.8rem; white-space: nowrap; padding-bottom: 2px; }
+
+/* ---- favorite heart ---- */
+.heart { display: inline-flex; margin: 0; }
+.heart button { background: none; border: none; padding: 0 2px; font-size: 1.05rem; line-height: 1; color: var(--line); cursor: pointer; transition: color 0.12s, transform 0.12s; }
+.heart button:hover { color: var(--bad); background: none; transform: scale(1.15); }
+.heart.on button { color: var(--bad); }
+.heart.small button { font-size: 0.9rem; }
+.heart.large button { font-size: 1.6rem; }
+
+/* ---- reviews ---- */
+.inline-tabs { margin: 0; border: none; }
+.review-list { display: flex; flex-direction: column; max-width: 860px; }
+.review-item { display: grid; grid-template-columns: 92px 1fr; gap: 18px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.review-poster img { width: 92px; height: 138px; object-fit: cover; border-radius: 6px; box-shadow: var(--shadow); display: block; background: var(--surface-2); }
+.review-poster img.wide { height: auto; }
+.review-body h3 { margin: 0 0 4px; }
+.review-body h3 small { color: var(--muted); font-weight: 500; }
+.review-meta { gap: 10px; margin-bottom: 8px; }
+.review-body .review { white-space: pre-line; margin: 0 0 8px; line-height: 1.55; }
+
+/* ---- diary rows ---- */
+.diary-list { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.diary-row { display: grid; grid-template-columns: 64px 52px 1fr auto; gap: 16px; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+.diary-row:last-child { border-bottom: none; }
+.diary-row:hover { background: var(--surface-2); }
+.diary-date { display: flex; flex-direction: column; align-items: center; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.4px; }
+.diary-date .day { font-size: 1.45rem; font-weight: 700; color: var(--text); line-height: 1.1; letter-spacing: 0; }
+.diary-date .undated { font-size: 1.2rem; }
+.diary-poster img { width: 52px; height: 78px; object-fit: cover; border-radius: 5px; display: block; background: var(--surface-2); box-shadow: var(--shadow); }
+.diary-poster img.wide { height: auto; }
+.diary-body { min-width: 0; }
+.diary-body h3 { margin: 0 0 2px; font-size: 1rem; }
+.diary-body h3 small { color: var(--muted); font-weight: 500; }
+.diary-body .meta { margin: 0; }
+.diary-body .review { margin: 6px 0 0; color: var(--muted); font-size: 0.9rem; }
+.diary-status { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); font-size: 0.74rem; font-weight: 600; }
+.diary-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+@media (max-width: 640px) {
+  .diary-row { grid-template-columns: 44px 40px 1fr; gap: 10px; padding: 10px 12px; }
+  .diary-poster img { width: 40px; height: 60px; }
+  .diary-side { grid-column: 3; align-items: flex-start; }
+}
+
+/* ---- list folders ---- */
+.list-section { margin: 26px 0 12px; font-size: 0.95rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+.folder-icon { color: var(--accent); }
+.folder-card .list-fan { padding: 8px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); height: auto; }
+.new-folder { position: relative; }
+.ghost-summary { cursor: pointer; list-style: none; color: var(--accent-strong); font-weight: 600; font-size: 0.92rem; }
+.ghost-summary::-webkit-details-marker { display: none; }
+.new-folder[open] form { position: absolute; right: 0; top: 28px; z-index: 5; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px; box-shadow: var(--shadow); }
+
+/* ---- theme button ---- */
+.theme-toggle { background: none; border: none; color: var(--header-text); font-size: 1rem; padding: 4px 9px; border-radius: 8px; line-height: 1; }
+.theme-toggle:hover { background: rgb(255 255 255 / 0.1); color: #fff; }
+.actions { flex-wrap: wrap; row-gap: 6px; }
+.actions button { white-space: nowrap; }

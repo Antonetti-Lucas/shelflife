@@ -1,0 +1,11 @@
+{# A heart you click to make a game one of your favorites, or not. static/inline.js flips it in
+   place (data-inline="toggle"); without it the page reloads. `size` is "", "small" or "large". #}
+{% macro fav_heart(g, on, next_url, size="") %}
+<form method="post" action="/game/{{ g.steam_app_id }}/favorite" class="heart {{ size }} {{ 'on' if on }}" data-inline="toggle"
+      data-on-title="One of your favorites (click to remove)" data-off-title="Add to your favorites">
+  <input type="hidden" name="value" value="{{ '0' if on else '1' }}">
+  <input type="hidden" name="next" value="{{ next_url }}">
+  <button type="submit" aria-pressed="{{ 'true' if on else 'false' }}" aria-label="Favorite: {{ g.name }}"
+          title="{{ 'One of your favorites (click to remove)' if on else 'Add to your favorites' }}">♥</button>
+</form>
+{% endmacro %}

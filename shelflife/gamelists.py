@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
-from shelflife.models import Game, GameList, GameListEntry
+from shelflife.models import Game, GameList, GameListEntry, ListFolder
 
 NAME_MAX = 80
 DESCRIPTION_MAX = 1000
@@ -38,6 +38,56 @@ def all_lists(session: Session) -> list[GameList]:
     return list(session.scalars(select(GameList).order_by(GameList.updated_at.desc(), GameList.id.desc())))
 
 
+# ---- folders ----
+
+
+def _folder_name(name: str) -> str:
+    name = " ".join((name or "").split())
+    if not name:
+        raise ValueError("A folder needs a name.")
+    if len(name) > NAME_MAX:
+        raise ValueError(f"A folder's name can be at most {NAME_MAX} characters.")
+    return name
+
+
+def _check_folder(session: Session, folder_id: int | None) -> None:
+    if folder_id is not None and session.get(ListFolder, folder_id) is None:
+        raise LookupError("No such folder.")
+
+
+def all_folders(session: Session) -> list[ListFolder]:
+    """Your folders, by name."""
+    return list(session.scalars(select(ListFolder).order_by(func.lower(ListFolder.name))))
+
+
+def get_folder(session: Session, folder_id: int) -> ListFolder:
+    found = session.get(ListFolder, folder_id)
+    if found is None:
+        raise LookupError("No such folder.")
+    return found
+
+
+def create_folder(session: Session, name: str) -> ListFolder:
+    made = ListFolder(name=_folder_name(name), created_at=_now())
+    session.add(made)
+    session.commit()
+    return made
+
+
+def rename_folder(session: Session, folder_id: int, name: str) -> None:
+    get_folder(session, folder_id).name = _folder_name(name)
+    session.commit()
+
+
+def delete_folder(session: Session, folder_id: int) -> None:
+    """Delete a folder; its lists stay, out of any folder."""
+    folder = get_folder(session, folder_id)
+    for gl in session.scalars(select(GameList).where(GameList.folder_id == folder_id)):
+        gl.folder_id = None
+    session.delete(folder)
+    session.commit()
+
+
 def get_list(session: Session, list_id: int) -> GameList:
     found = session.get(GameList, list_id)
     if found is None:
@@ -46,22 +96,38 @@ def get_list(session: Session, list_id: int) -> GameList:
 
 
 def create_list(
-    session: Session, name: str, description: str | None = None, ranked: bool = False, show_ratings: bool = True
+    session: Session,
+    name: str,
+    description: str | None = None,
+    ranked: bool = False,
+    show_ratings: bool = True,
+    folder_id: int | None = None,
 ) -> GameList:
     name, description = _clean(name, description)
+    _check_folder(session, folder_id)
     now = _now()
-    made = GameList(name=name, description=description, ranked=ranked, show_ratings=show_ratings, created_at=now, updated_at=now)
+    made = GameList(
+        name=name, description=description, ranked=ranked, show_ratings=show_ratings, folder_id=folder_id,
+        created_at=now, updated_at=now,
+    )
     session.add(made)
     session.commit()
     return made
 
 
 def update_list(
-    session: Session, list_id: int, name: str, description: str | None, ranked: bool, show_ratings: bool
+    session: Session,
+    list_id: int,
+    name: str,
+    description: str | None,
+    ranked: bool,
+    show_ratings: bool,
+    folder_id: int | None = None,
 ) -> GameList:
     found = get_list(session, list_id)
     found.name, found.description = _clean(name, description)
-    found.ranked, found.show_ratings = ranked, show_ratings
+    _check_folder(session, folder_id)
+    found.ranked, found.show_ratings, found.folder_id = ranked, show_ratings, folder_id
     found.updated_at = _now()
     session.commit()
     return found

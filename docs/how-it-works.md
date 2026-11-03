@@ -56,7 +56,7 @@ score = predicted_liking(game) × quality
 quality = (Wilson lower bound of the positive-review share) ^ 2
 ```
 
-The predicted liking, stretched so that a close match reads as one, is shown as the "match" on every pick; it is 0 for a game unlike anything you have a verdict on, and below 0 for one very like a game you rated low (its card names that game). The Wilson bound is cautious with few reviews: about 0.9 at 95% positive, 0.5 at 70%, 0.36 with no review data. Candidates are backlog games (owned, under an hour played), family games you haven't played, and games you don't own (300+ reviews); other editions of games you already have are skipped, and so are games for adults while that switch is on.
+Explore and the Wishlist rank by this score by default ("Best fit"), and offer "Highest match" to rank by the liking alone. The predicted liking, stretched so that a close match reads as one, is shown as the "match" on every pick; it is 0 for a game unlike anything you have a verdict on, and below 0 for one very like a game you rated low (its card names that game). The Wilson bound is cautious with few reviews: about 0.9 at 95% positive, 0.5 at 70%, 0.36 with no review data. Candidates are backlog games (owned, under an hour played), family games you haven't played, and games you don't own (300+ reviews); other editions of games you already have are skipped, and so are games for adults while that switch is on.
 
 ## 6. Game length
 

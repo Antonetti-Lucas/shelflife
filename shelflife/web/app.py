@@ -455,11 +455,12 @@ def explore(
 
     keys = {
         "fit": lambda r: -r.score,
+        "match": lambda r: -r.similarity,
         "similar": lambda r: -r.score,
         "reviews": lambda r: -((r.game.reviews_positive or 0) + (r.game.reviews_negative or 0)),
         "name": lambda r: r.game.name.lower(),
     }
-    sorts = ("similar", "reviews", "name") if ref is not None else ("fit", "reviews", "name")
+    sorts = ("similar", "reviews", "name") if ref is not None else ("fit", "match", "reviews", "name")
     sort = sort if sort in sorts else sorts[0]
     recs.sort(key=keys[sort])
 
@@ -573,7 +574,8 @@ def find_more_games(
 
 
 WISHLIST_SORTS = {
-    "fit": "Best fit",
+    "fit": "Best fit (match and reviews)",
+    "match": "Highest match",
     "priority": "Your order",
     "added": "Newest added",
     "reviews": "Most reviews",
@@ -618,6 +620,7 @@ def wishlist_page(
     recs = [r for r in ranked if (keep is None or r.game.steam_app_id in keep) and filters.keeps(r.game)]
     keys = {
         "fit": lambda r: -r.score,
+        "match": lambda r: -r.similarity,
         "priority": lambda r: order_key(items[r.game.steam_app_id]),
         "added": lambda r: -(items[r.game.steam_app_id].added_at.timestamp() if items[r.game.steam_app_id].added_at else 0),
         "reviews": lambda r: -((r.game.reviews_positive or 0) + (r.game.reviews_negative or 0)),
@@ -864,20 +867,65 @@ def _list_or_404(session: Session, list_id: int):
 LIST_COVERS = 5  # covers fanned out on a list's card
 
 
+def _folder_id(raw: str) -> int | None:
+    return int(raw) if raw.strip().isdigit() else None
+
+
 @app.get("/lists")
-def lists_page(request: Request, session: Session = Depends(get_session)):
-    """Your lists, each with its first few covers, and a form to make a new one."""
-    lists = gamelists.all_lists(session)
+def lists_page(request: Request, folder: str = "", session: Session = Depends(get_session)):
+    """Your folders and the lists outside them, each with a few covers; or, with `folder`, the
+    lists in that folder. Forms to make a list or a folder."""
+    folders = gamelists.all_folders(session)
+    opened = next((f for f in folders if str(f.id) == folder.strip()), None)
+    every = gamelists.all_lists(session)
+    lists = [gl for gl in every if gl.folder_id == (opened.id if opened else None)]
+    in_folder = {f.id: [gl for gl in every if gl.folder_id == f.id] for f in folders}
+    covers = {gl.id: [g for _, g in gamelists.entries(session, gl.id)[:LIST_COVERS]] for gl in every}
     return templates.TemplateResponse(
         request,
         "lists.html",
         {
             "lists": lists,
+            "all_count": len(every),
+            "folders": folders,
+            "opened": opened,
+            "in_folder": in_folder,
+            # A folder's tile shows the first cover of each of its lists.
+            "folder_covers": {f.id: [covers[gl.id][0] for gl in in_folder[f.id] if covers[gl.id]][:LIST_COVERS] for f in folders},
             "counts": gamelists.counts(session),
-            "covers": {gl.id: [g for _, g in gamelists.entries(session, gl.id)[:LIST_COVERS]] for gl in lists},
+            "covers": covers,
             "poster_url": poster_url,
         },
     )
+
+
+@app.post("/lists/folders")
+def create_folder(name: str = Form(""), session: Session = Depends(get_session)):
+    try:
+        made = gamelists.create_folder(session, name)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return RedirectResponse(f"/lists?folder={made.id}", status_code=303)
+
+
+@app.post("/lists/folders/{folder_id}/rename")
+def rename_folder(folder_id: int, name: str = Form(""), session: Session = Depends(get_session)):
+    try:
+        gamelists.rename_folder(session, folder_id, name)
+    except LookupError:
+        raise HTTPException(404, "Folder not found")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return RedirectResponse(f"/lists?folder={folder_id}", status_code=303)
+
+
+@app.post("/lists/folders/{folder_id}/delete")
+def delete_folder(folder_id: int, session: Session = Depends(get_session)):
+    try:
+        gamelists.delete_folder(session, folder_id)
+    except LookupError:
+        raise HTTPException(404, "Folder not found")
+    return RedirectResponse("/lists", status_code=303)
 
 
 @app.post("/lists")
@@ -887,11 +935,14 @@ def create_list(
     ranked: str = Form(""),
     show_ratings: str = Form(""),
     app_id: str = Form(""),
+    folder: str = Form(""),
     session: Session = Depends(get_session),
 ):
     """Make a list; with `app_id` (from a game's page), that game is its first."""
     try:
-        made = gamelists.create_list(session, name, description, ranked=bool(ranked), show_ratings=bool(show_ratings))
+        made = gamelists.create_list(
+            session, name, description, ranked=bool(ranked), show_ratings=bool(show_ratings), folder_id=_folder_id(folder)
+        )
         if app_id.isdigit():
             gamelists.add_game(session, made.id, int(app_id))
     except (ValueError, LookupError) as exc:
@@ -913,6 +964,8 @@ def list_page(request: Request, list_id: int, q: str = "", session: Session = De
             "ratings": diary.load_ratings(session),
             "q": q,
             "results": gamelists.addable(session, list_id, q) if q else [],
+            "favorites": favorite_ids(session),
+            "folders": gamelists.all_folders(session),
             "here": current_url(request),
             "poster_url": poster_url,
         },
@@ -926,12 +979,15 @@ def edit_list(
     description: str = Form(""),
     ranked: str = Form(""),
     show_ratings: str = Form(""),
+    folder: str = Form(""),
     session: Session = Depends(get_session),
 ):
     _list_or_404(session, list_id)
     try:
-        gamelists.update_list(session, list_id, name, description, ranked=bool(ranked), show_ratings=bool(show_ratings))
-    except ValueError as exc:
+        gamelists.update_list(
+            session, list_id, name, description, ranked=bool(ranked), show_ratings=bool(show_ratings), folder_id=_folder_id(folder)
+        )
+    except (ValueError, LookupError) as exc:
         raise HTTPException(400, str(exc))
     return RedirectResponse(f"/lists/{list_id}", status_code=303)
 
@@ -1008,8 +1064,69 @@ def add_game_to_a_list(app_id: int, list_id: int = Form(...), session: Session =
     return RedirectResponse(f"/game/{app_id}", status_code=303)
 
 
-DIARY_PAGE_SIZE = 12
+REVIEWS_PAGE_SIZE = 20
+REVIEWS_SORTS = {"recent": "Most recent", "rating": "Highest rated", "low": "Lowest rated", "name": "Name"}
+
+
+@app.get("/reviews")
+def reviews_page(request: Request, q: str = "", sort: str = "recent", page: str = "1", session: Session = Depends(get_session)):
+    """Everything you wrote about games, newest first, with your stars."""
+    sort = sort if sort in REVIEWS_SORTS else "recent"
+    rows = session.execute(
+        select(DiaryEntry, Game)
+        .join(Game, Game.steam_app_id == DiaryEntry.steam_app_id)
+        .where(DiaryEntry.review.is_not(None), DiaryEntry.review != "")
+    ).all()
+    written = len(rows)
+    words = q.lower().split()
+    shown = [(e, g) for e, g in rows if all(w in g.name.lower() or w in e.review.lower() for w in words)]
+    keys = {
+        "recent": lambda p: (-p[0].updated_at.timestamp(),),
+        "rating": lambda p: (-(p[0].rating or 0), p[1].name.lower()),
+        "low": lambda p: (p[0].rating is None, p[0].rating or 0, p[1].name.lower()),
+        "name": lambda p: (p[1].name.lower(),),
+    }
+    shown.sort(key=keys[sort])
+    part = paginate(shown, page, REVIEWS_PAGE_SIZE)
+    base = "/reviews?" + urlencode({k: v for k, v in {"q": q.strip(), "sort": sort if sort != "recent" else ""}.items() if v})
+    return templates.TemplateResponse(
+        request,
+        "reviews.html",
+        {
+            "items": part.shown,
+            "written": written,
+            "total": part.total,
+            "q": q.strip(),
+            "sort": sort,
+            "sorts": REVIEWS_SORTS,
+            "page": part.page,
+            "pages": part.pages,
+            "pager_base": base + ("page=" if base.endswith("?") else "&page="),
+            "here": current_url(request),
+            "poster_url": poster_url,
+            "year_of": release_year,
+            "favorites": favorite_ids(session),
+        },
+    )
+
+
+DIARY_PAGE_SIZE = 20
 DIARY_TABS = ("playing", "played", "dropped", "favorites", "not-interested")
+# Each tab starts in its own order ("": newest dates first; favorites by name; "not interested" by
+# when you marked it); these reorder any tab.
+DIARY_SORTS = {
+    "": "Newest first",
+    "oldest": "Oldest first",
+    "rating": "Your rating",
+    "hours": "Hours played",
+    "release": "Release date",
+    "name": "Name",
+}
+
+
+def diary_date(e: DiaryEntry) -> date | None:
+    """The date a diary row is filed under: when you finished or stopped it, else when you started."""
+    return e.finished_on or e.started_on
 
 
 @app.get("/diary")
@@ -1019,11 +1136,13 @@ def diary_page(
     q: str = "",
     tag: str = "",
     match: str = "all",
+    sort: str = "",
     page: str = "1",
     session: Session = Depends(get_session),
 ):
-    """Your games, one status at a time, newest first, with your favorites and the games you're not
-    interested in each in a tab."""
+    """Your games, one status at a time, newest first (or in the order you pick), with your
+    favorites and the games you're not interested in each in a tab."""
+    sort = sort if sort in DIARY_SORTS else ""
     rows = session.execute(
         select(DiaryEntry, Game)
         .join(Game, Game.steam_app_id == DiaryEntry.steam_app_id)
@@ -1047,7 +1166,18 @@ def diary_page(
 
     filters = ListFilter.read(q, tag, match)
     tag_index = TagIndex(g.tags for _, g in groups[show])
-    part = paginate([(e, g) for e, g in groups[show] if filters.keeps(g)], page, DIARY_PAGE_SIZE)
+    shown = [(e, g) for e, g in groups[show] if filters.keeps(g)]
+    hours = lambda g: g.library_entry.playtime_total_min if g.library_entry else 0  # noqa: E731
+    reorder = {
+        "oldest": lambda p: (diary_date(p[0]) is None, diary_date(p[0]) or date.max),
+        "rating": lambda p: (p[0].rating is None, -(p[0].rating or 0), p[1].name.lower()),
+        "hours": lambda p: (-hours(p[1]), p[1].name.lower()),
+        "release": lambda p: (release_year(p[1]) is None, -(release_year(p[1]) or 0), p[1].name.lower()),
+        "name": lambda p: p[1].name.lower(),
+    }
+    if sort in reorder:
+        shown.sort(key=reorder[sort])
+    part = paginate(shown, page, DIARY_PAGE_SIZE)
 
     def url(**changes) -> str:
         """This page with some settings changed (a new tab starts on page 1)."""
@@ -1056,6 +1186,7 @@ def diary_page(
             "q": q.strip(),
             "tag": tag.strip(),
             "match": "any" if (filters.wanted and filters.match == "any") else "",  # "all" is the default
+            "sort": sort,
             "page": part.page,
         } | changes
         return "/diary?" + urlencode({k: v for k, v in params.items() if v not in ("", None)})
@@ -1067,6 +1198,12 @@ def diary_page(
             "tabs": DIARY_TABS,
             "counts": counts,
             "show": show,
+            "sort": sort,
+            "sorts": DIARY_SORTS,
+            "poster_url": poster_url,
+            "year_of": release_year,
+            "favorites": favorite_ids(session),
+            "here": current_url(request),
             "items": part.shown,
             "total": part.total,
             "filtered": filters.active,

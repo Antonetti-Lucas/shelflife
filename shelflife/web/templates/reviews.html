@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from "_stars.html" import star_rating %}
+{% from "_heart.html" import fav_heart %}
+{% from "_pager.html" import link_pager %}
+{% block title %}Reviews · ShelfLife{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h2>Reviews<span class="count">{{ written }}</span></h2>
+  <nav class="tabs inline-tabs" aria-label="My ratings and reviews">
+    <a href="/ratings">Ratings</a><a href="/reviews" class="on">Reviews</a>
+  </nav>
+</div>
+
+{% if written %}
+<form class="bar" method="get" action="/reviews">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search games and reviews" aria-label="Search games and reviews">
+  <button type="submit" class="ghost small">Search</button>
+  <span class="bar-gap"></span>
+  <select name="sort" aria-label="Sort by" onchange="this.form.submit()">
+    {% for value, label in sorts.items() %}<option value="{{ value }}" {{ "selected" if sort == value }}>{{ label }}</option>{% endfor %}
+  </select>
+</form>
+{% if q %}<p class="meta">{{ total }} of {{ written }} reviews · <a href="/reviews{{ '?sort=' ~ sort if sort != 'recent' }}">Clear search</a></p>{% endif %}
+{% endif %}
+
+{% if items %}
+<div class="review-list">
+  {% for e, g in items %}
+  <article class="review-item" id="g{{ g.steam_app_id }}">
+    <a class="review-poster" href="/game/{{ g.steam_app_id }}">
+      <img src="{{ poster_url(g) }}" loading="lazy" alt="{{ g.name }}"
+           onerror='this.onerror = null; {% if g.cover_url %}this.src = {{ g.cover_url|tojson }}; this.classList.add("wide");{% else %}this.remove();{% endif %}'>
+    </a>
+    <div class="review-body">
+      <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a>{% if year_of(g) %} <small>{{ year_of(g) }}</small>{% endif %}</h3>
+      <div class="row-line review-meta">
+        {{ star_rating(g, e.rating, here ~ "#g" ~ g.steam_app_id, "small") }}
+        {{ fav_heart(g, g.steam_app_id in favorites, here ~ "#g" ~ g.steam_app_id, "small") }}
+        <span class="meta">{{ e.updated_at.strftime("%b %d, %Y") }}</span>
+      </div>
+      <p class="review">{{ e.review }}</p>
+      <a class="meta" href="/game/{{ g.steam_app_id }}">Edit on its page</a>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{{ link_pager(page, pages, pager_base) }}
+{% elif q %}
+  <p class="empty">No review matches “{{ q }}”.</p>
+{% else %}
+  <p class="empty">No reviews yet. Write one on a game's page, under your stars.</p>
+{% endif %}
+{% endblock %}

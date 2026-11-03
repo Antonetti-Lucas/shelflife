@@ -88,7 +88,7 @@
     {% endfor %}
   </select>
   <select name="sort" aria-label="Sort by">
-    {% for value, label in [("similar", "Most similar"), ("fit", "Best fit for you"), ("reviews", "Most reviews"), ("name", "Name")] if value in sorts %}
+    {% for value, label in [("similar", "Most similar"), ("fit", "Best fit (match and reviews)"), ("match", "Highest match"), ("reviews", "Most reviews"), ("name", "Name")] if value in sorts %}
       <option value="{{ value }}" {{ "selected" if sort == value }}>{{ label }}</option>
     {% endfor %}
   </select>

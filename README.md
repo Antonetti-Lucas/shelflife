@@ -14,12 +14,12 @@ It runs entirely on your own computer: nothing is hosted, and your diary never l
 ## Features
 
 - **Steam import:** your library, playtime, achievements and wishlist, plus Family Sharing games if you want them, and games you played on consoles or other stores, added by hand.
-- **A diary:** half-star ratings, reviews, statuses with dates (playing, played, dropped), favorites and "not interested", with a poster wall of everything you rated.
-- **Lists you make and name:** ranked or not, with your stars under each game or not, in the order you drag them into.
+- **A diary:** half-star ratings, reviews, statuses with dates (playing, played, dropped), favorites and "not interested", with a poster wall of everything you rated and a page of your reviews.
+- **Lists you make and name:** ranked or not, with your stars under each game or not, in the order you drag them into, and kept in folders.
 - **Recommendations** in four lists (backlog, family, wishlist, games to discover), each pick showing the games and tags behind it. Learn from ratings and play, ratings only, or play only.
 - **Explore and find new games** by Steam tags, or "games like this one", ranked by how well they fit you.
 - **Store info where you need it:** prices in your currency (kept fresh on screen), estimated length, languages, developer, release date and screenshots.
-- **Stats and a taste profile**, a language filter, and a switch to hide games for adults.
+- **Stats and a taste profile**, a language filter, a switch to hide games for adults, and light or dark.
 
 ## Quick start
 

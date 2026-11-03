@@ -4,6 +4,7 @@
 //   data-inline="hide"  hides the card or row it is in, with an Undo
 //   data-inline="remove" removes the card or row it is in
 //   data-inline="done"  replaces the form with its data-done text (and an "Open it" link to data-done-link)
+//   data-inline="toggle" flips an on/off form (its hidden "value", its "on" class, its button's title)
 // Without this script, or if the background request fails to reach the app, the form is sent
 // the normal way and the page reloads.
 (function () {
@@ -49,6 +50,16 @@
       form.appendChild(field);
     }
     return form;
+  }
+
+  function toggle(form) {
+    var value = form.querySelector('input[name="value"]');
+    var nowOn = value.value === "1";  // what was just saved
+    value.value = nowOn ? "0" : "1";
+    form.classList.toggle("on", nowOn);
+    var button = form.querySelector("button");
+    button.setAttribute("aria-pressed", String(nowOn));
+    button.title = nowOn ? form.dataset.onTitle : form.dataset.offTitle;
   }
 
   function done(form) {
@@ -119,6 +130,7 @@
       if (how === "hide" && item) hide(form, item);
       else if (how === "remove" && item) item.remove();
       else if (how === "done") done(form);
+      else if (how === "toggle") toggle(form);
       else if (form.matches(".starrate") && window.shelflifeStars) window.shelflifeStars(form, submitter ? submitter.value : "");
       else note(form, "Saved");
       form.querySelectorAll("select.stars").forEach(function (s) { s.classList.toggle("unrated", !s.value); });

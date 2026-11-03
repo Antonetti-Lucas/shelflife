@@ -37,11 +37,18 @@
   <section class="panel">
     <h3>How you rate</h3>
     {% if stats.rated %}
-    <ul class="bars">
-      {% for step, count in stats.rating_counts.items() %}
-        <li><span>{{ "%g"|format(step) }} ★ <small>{{ count }}</small></span><i style="width: {{ (count / most_rated * 100)|round|int }}%"></i></li>
-      {% endfor %}
-    </ul>
+    <div class="histogram" role="img" aria-label="How many games you rated at each half star">
+      <span class="hist-end">★</span>
+      <ol>
+        {% for step, count in stats.rating_counts.items() %}
+        <li title="{{ count }} game{{ '' if count == 1 else 's' }} rated {{ stars(step) }}">
+          <a href="/ratings?rating={{ '%g'|format(step) }}"><i style="height: {{ [(count / most_rated * 100)|round|int, 2 if count else 0]|max }}%"></i></a>
+        </li>
+        {% endfor %}
+      </ol>
+      <span class="hist-end">★★★★★</span>
+    </div>
+    <p class="meta">{{ stats.rated }} rated{% if stats.average_rating %} · average {{ "%.1f"|format(stats.average_rating) }} ★{% endif %}. Hover a column for its count; click it for those games.</p>
     {% else %}
       <p class="empty">No ratings yet. Rate games from their page or the <a href="/library">Library</a>.</p>
     {% endif %}

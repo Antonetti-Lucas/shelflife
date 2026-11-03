@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_stars.html" import star_rating %}
+{% from "_heart.html" import fav_heart %}
 {% block title %}{{ gl.name }} · Lists · ShelfLife{% endblock %}
 {% block content %}
 {# A switch at the top of the list: one click turns it on or off. #}
@@ -11,7 +12,8 @@
 </form>
 {% endmacro %}
 
-<p class="meta crumbs"><a href="/lists">← Lists</a></p>
+{% set folder = folders|selectattr("id", "equalto", gl.folder_id)|first if gl.folder_id else none %}
+<p class="meta crumbs"><a href="/lists">← Lists</a>{% if folder %} / <a href="/lists?folder={{ folder.id }}">{{ folder.name }}</a>{% endif %}</p>
 <div class="page-head">
   <h2>{{ gl.name }}<span class="count">{{ items|length }}</span></h2>
   <div class="list-options">
@@ -74,7 +76,7 @@
       </form>
     </span>
     {% if gl.show_ratings %}
-    <span class="poster-meta">{{ star_rating(g, ratings.get(g.steam_app_id), here, "small") }}</span>
+    <span class="poster-meta">{{ star_rating(g, ratings.get(g.steam_app_id), here, "small") }}{{ fav_heart(g, g.steam_app_id in favorites, here, "small") }}</span>
     {% endif %}
   </li>
   {% endfor %}
@@ -85,10 +87,16 @@
 {% endif %}
 
 <details class="help list-edit">
-  <summary>Edit or delete this list</summary>
+  <summary>Edit, move to a folder or delete this list</summary>
   <form method="post" action="/lists/{{ gl.id }}/edit" class="stack">
     <label>Name <input type="text" name="name" value="{{ gl.name }}" required maxlength="80"></label>
     <label>Description <textarea name="description" rows="2" maxlength="1000">{{ gl.description or "" }}</textarea></label>
+    <label>Folder
+      <select name="folder">
+        <option value="">No folder</option>
+        {% for f in folders %}<option value="{{ f.id }}" {{ "selected" if gl.folder_id == f.id }}>{{ f.name }}</option>{% endfor %}
+      </select>
+    </label>
     <label class="switch"><input type="checkbox" name="ranked" value="1" {{ "checked" if gl.ranked }}> Ranked: number the games 1, 2, 3…</label>
     <label class="switch"><input type="checkbox" name="show_ratings" value="1" {{ "checked" if gl.show_ratings }}> Show my star ratings under each game</label>
     <button type="submit">Save</button>

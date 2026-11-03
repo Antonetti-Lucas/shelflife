@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_stars.html" import star_rating %}
+{% from "_heart.html" import fav_heart %}
 {% from "_pager.html" import link_pager %}
 {% from "_tagbox.html" import tag_input, tag_note %}
 {% block title %}My ratings · ShelfLife{% endblock %}
@@ -12,6 +13,10 @@
 
 <div class="page-head">
   <h2>My ratings<span class="count">{{ rated_total }}</span></h2>
+  <nav class="tabs inline-tabs" aria-label="My ratings and reviews">
+    <a href="/ratings" class="on">Ratings</a><a href="/reviews">Reviews</a>
+  </nav>
+  <span class="bar-gap"></span>
   <nav class="viewswitch" aria-label="View">
     <a href="{{ url(view='grid', page=1) }}" class="{{ 'on' if view == 'grid' }}" title="Posters" aria-label="Posters">
       <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg></a>
@@ -54,7 +59,7 @@
     </a>
     <span class="poster-meta">
       {{ star_rating(g, e.rating, here, "small") }}
-      {% if g.steam_app_id in favorites %}<span class="fav" title="One of your favorites">♥</span>{% endif %}
+      {{ fav_heart(g, g.steam_app_id in favorites, here, "small") }}
       {% if e.review %}<span class="has-review" title="You reviewed it">≡</span>{% endif %}
     </span>
   </div>
@@ -68,7 +73,7 @@
     {{ thumb(g) }}
     <div class="row-body">
       <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a> <small>updated {{ e.updated_at.strftime("%Y-%m-%d") }}</small></h3>
-      {{ star_rating(g, e.rating, here ~ "#g" ~ g.steam_app_id) }}
+      <div class="row-line">{{ star_rating(g, e.rating, here ~ "#g" ~ g.steam_app_id) }}{{ fav_heart(g, g.steam_app_id in favorites, here ~ "#g" ~ g.steam_app_id) }}</div>
       <form method="post" action="/game/{{ g.steam_app_id }}/rate" class="edit" data-inline>
         <input type="hidden" name="next" value="{{ here }}#g{{ g.steam_app_id }}">
         <textarea name="review" rows="2" placeholder="Add a review" aria-label="Review of {{ g.name }}">{{ e.review or "" }}</textarea>

@@ -9,7 +9,7 @@
 <article class="card">
   <a class="cover" href="/game/{{ g.steam_app_id }}">
     {% if g.cover_url %}<img src="{{ g.cover_url }}" loading="lazy" alt="">{% else %}<span class="nocover">{{ g.name[:1] }}</span>{% endif %}
-    <span class="badge {{ fit_level(r.similarity) }}">{{ "%.0f"|format(r.similarity * 100) }}% {{ "similar" if similar_to else "match" }}</span>
+    <span class="badge {{ fit_level(r.similarity) }}" title="{{ 'How alike it is to this game' if similar_to else 'How well it fits your taste. Best fit ranks by this times its reviews (' ~ ('%.2f'|format(r.quality)) ~ ' here), so a close match with mixed reviews can rank lower.' }}">{{ "%.0f"|format(r.similarity * 100) }}% {{ "similar" if similar_to else "match" }}</span>
     {% set have = elsewhere(g) if note else none %}
     {% if have %}<span class="flag warn" title="On your Steam wishlist, but you already have it on {{ have }}">⚠ Have it on {{ have }}</span>
     {% elif (g.store_info or {}).coming_soon %}<span class="flag soon">Coming soon</span>

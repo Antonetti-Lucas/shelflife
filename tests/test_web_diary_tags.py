@@ -84,19 +84,19 @@ def test_diary_reviews_are_escaped_and_dates_shown(client, scenario):
     post(client, "/game/20/rate", rating="4", review="a <b>bold</b> take")
     html = client.get("/diary?show=played").text
     assert "&lt;b&gt;bold&lt;/b&gt;" in html and "<b>bold</b>" not in html
-    assert "started 2025-01-02" in html and "finished 2025-02-03" in html
-    assert "rated 4" in html
+    assert "started Jan 02, 2025" in html and "finished Feb 03, 2025" in html
+    assert 'data-rating="4"' in html
 
 
 def test_the_diary_is_paged_and_pages_keep_the_tab_and_filters(client, session):
-    for i in range(100, 130):
+    for i in range(100, 150):
         add_game(session, i, f"Game {i}", tags={"Stealth": 100})
         diary.set_status(session, i, "played", None, date(2025, 1, 1) + timedelta(days=i))
     first = names_on(client.get("/diary?show=played").text)
-    assert len(first) == 12 and first[0] == "Game 129"  # newest first
-    assert len(names_on(client.get("/diary?show=played&page=3").text)) == 6
-    assert len(names_on(client.get("/diary?show=played&page=99").text)) == 6  # clamped
-    assert len(names_on(client.get("/diary?show=played&page=-4").text)) == 12
+    assert len(first) == 20 and first[0] == "Game 149"  # newest first
+    assert len(names_on(client.get("/diary?show=played&page=3").text)) == 10
+    assert len(names_on(client.get("/diary?show=played&page=99").text)) == 10  # clamped
+    assert len(names_on(client.get("/diary?show=played&page=-4").text)) == 20
     html = client.get("/diary?show=played&q=game&tag=stealth&page=2").text
     assert 'href="/diary?show=played&amp;q=game&amp;tag=stealth&amp;page=3"' in html  # Next
     assert 'href="/diary?show=played&amp;q=game&amp;tag=stealth&amp;page=1"' in html  # Previous
@@ -226,3 +226,18 @@ def test_the_games_you_are_not_interested_in_have_their_own_tab_and_can_be_put_b
     assert names_on(client.get("/diary?show=not-interested&q=nothing").text) == []
     post(client, "/game/40/not-interested", value="0")
     assert names_on(client.get("/diary?show=not-interested").text) == []
+
+
+def test_the_diary_can_be_sorted_and_keeps_the_sort_across_pages(client, session):
+    for i, (name, hours, rating) in enumerate([("Alpha", 5, 3.0), ("Beta", 50, 5.0), ("Gamma", 20, None)], start=200):
+        add_game(session, i, name, minutes=hours * 60)
+        diary.set_status(session, i, "played", None, date(2025, 1, 1) + timedelta(days=i))
+        if rating:
+            diary.save_rating(session, i, rating)
+    order = lambda sort: [n for n in names_on(client.get(f"/diary?show=played&sort={sort}").text) if n in ("Alpha", "Beta", "Gamma")]  # noqa: E731
+    assert order("") == ["Gamma", "Beta", "Alpha"]  # newest first
+    assert order("oldest") == ["Alpha", "Beta", "Gamma"]
+    assert order("rating") == ["Beta", "Alpha", "Gamma"]  # unrated last
+    assert order("hours") == ["Beta", "Gamma", "Alpha"]
+    assert order("name") == ["Alpha", "Beta", "Gamma"]
+    assert 'value="hours" selected' in client.get("/diary?show=played&sort=hours").text

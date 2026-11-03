@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% from "_tagbox.html" import tag_input, tag_note %}
+{% from "_stars.html" import star_rating %}
+{% from "_heart.html" import fav_heart %}
 {% block title %}Diary · ShelfLife{% endblock %}
 {% block content %}
 {% set labels = {"playing": "Playing", "played": "Played", "dropped": "Dropped", "favorites": "★ Favorites", "not-interested": "Not interested"} %}
@@ -20,40 +22,53 @@
   <input type="hidden" name="show" value="{{ show }}">
   <input type="search" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
   {{ tag_input(tag, tag_options, match) }}
+  <select name="sort" aria-label="Sort by" onchange="this.form.submit()">
+    {% for value, label in sorts.items() %}<option value="{{ value }}" {{ "selected" if sort == value }}>{{ label }}</option>{% endfor %}
+  </select>
   <button type="submit">Apply</button>
 </form>
 {{ tag_note(unknown_tags) }}
 
 <h3>{{ labels[show] }} <small>{{ total }} game{{ "" if total == 1 else "s" }}{{ " match" if filtered }}</small></h3>
 {% if items %}
-<div class="rows">
+<div class="diary-list">
   {% for e, g in items %}
-  <article class="row compact" id="g{{ g.steam_app_id }}">
-    <a class="thumb" href="/game/{{ g.steam_app_id }}">
-      {% if g.cover_url %}<img src="{{ g.cover_url }}" loading="lazy" alt="">{% else %}<span class="nocover">{{ g.name[:1] }}</span>{% endif %}
+  {% set when = (e.finished_on or e.started_on) if show not in ("favorites", "not-interested") else none %}
+  <article class="diary-row" id="g{{ g.steam_app_id }}">
+    <div class="diary-date" {% if when %}title="{{ when.isoformat() }}"{% endif %}>
+      {% if show == "not-interested" %}<span class="day">{{ e.updated_at.strftime("%d") }}</span><span>{{ e.updated_at.strftime("%b %Y") }}</span>
+      {% elif when %}<span class="day">{{ when.strftime("%d") }}</span><span>{{ when.strftime("%b %Y") }}</span>
+      {% else %}<span class="undated">—</span>{% endif %}
+    </div>
+    <a class="diary-poster" href="/game/{{ g.steam_app_id }}">
+      <img src="{{ poster_url(g) }}" loading="lazy" alt=""
+           onerror='this.onerror = null; {% if g.cover_url %}this.src = {{ g.cover_url|tojson }}; this.classList.add("wide");{% else %}this.remove();{% endif %}'>
     </a>
-    <div class="row-body">
-      <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a>
-        {% if e.favorite and show != "favorites" %}<small>★ favorite</small>{% endif %}
-        {% if show == "favorites" and e.status %}<small>{{ STATUS_LABELS[e.status] }}</small>{% endif %}
-        {% if e.rating is not none %}<small class="stars-text" title="rated {{ rating_text(e.rating) }}">{{ stars(e.rating) }}</small>{% endif %}</h3>
+    <div class="diary-body">
+      <h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a>{% if year_of(g) %} <small>{{ year_of(g) }}</small>{% endif %}
+        {% if show == "favorites" and e.status %}<span class="diary-status">{{ STATUS_LABELS[e.status] }}</span>{% endif %}</h3>
       {% if show == "not-interested" %}
       <form method="post" action="/game/{{ g.steam_app_id }}/not-interested" class="inline" data-inline="remove">
         <input type="hidden" name="value" value="0">
         <input type="hidden" name="next" value="{{ url() }}">
-        <span class="meta">marked {{ e.updated_at.strftime("%Y-%m-%d") }}</span>
-        <button class="ghost" type="submit">Undo</button>
+        <span class="meta">hidden from recommendations</span>
+        <button class="ghost small" type="submit">Undo</button>
       </form>
       {% else %}
       <p class="meta">
-        {% if e.started_on %}started {{ e.started_on.isoformat() }}{% endif %}
+        {% if e.started_on %}started {{ e.started_on.strftime("%b %d, %Y") }}{% endif %}
         {% if e.started_on and e.finished_on %} · {% endif %}
-        {% if e.finished_on %}{{ "stopped" if e.status == "dropped" else "finished" }} {{ e.finished_on.isoformat() }}{% endif %}
-        {% if not e.started_on and not e.finished_on %}no dates{% endif %}
-        {% if g.library_entry and g.library_entry.playtime_total_min %} · {{ "%.1f"|format(g.library_entry.playtime_total_hours) }} hours{% endif %}
+        {% if e.finished_on %}{{ "stopped" if e.status == "dropped" else "finished" }} {{ e.finished_on.strftime("%b %d, %Y") }}{% endif %}
+        {% if not e.started_on and not e.finished_on and show != "favorites" %}no dates{% endif %}
       </p>
       {% endif %}
-      {% if e.review %}<p class="review">{{ e.review }}</p>{% endif %}
+      {% if e.review %}<p class="review">{{ e.review|truncate(240) }}</p>{% endif %}
+    </div>
+    <div class="diary-side">
+      {% if show != "not-interested" %}
+      <div class="row-line">{{ star_rating(g, e.rating, here ~ "#g" ~ g.steam_app_id, "small") }}{{ fav_heart(g, g.steam_app_id in favorites, here ~ "#g" ~ g.steam_app_id, "small") }}</div>
+      {% endif %}
+      {% if g.library_entry and g.library_entry.playtime_total_min %}<span class="meta">{{ "%.1f"|format(g.library_entry.playtime_total_hours) }} h</span>{% endif %}
     </div>
   </article>
   {% endfor %}
