@@ -31,7 +31,7 @@ def test_a_games_length_is_shown_big_not_among_the_facts(client, session):
     game.player_hours, game.player_hours_sample = [10.0, 20.0, 40.0, 60.0, 90.0], 250
     session.commit()
     html = client.get("/game/1").text
-    assert re.search(r'class="hero-length"[^>]*>\s*<strong>~\d+ h</strong>', html)
+    assert re.search(r'class="hero-length".*?<strong>~\d+ h</strong>', html, re.S)
     assert "to finish, with some extras" in html and "from 250 reviewers" in html
     facts = html[html.index('class="facts"'):html.index('class="hero-length"')]
     assert "to finish" not in facts
@@ -79,10 +79,23 @@ def test_the_reviews_page_lists_what_you_wrote_searchable_and_sorted(client, ses
     assert "Celeste" not in client.get("/reviews?q=perfect").text
     low = client.get("/reviews?sort=low").text
     assert low.index("Celeste") < low.index("Hades")
-    assert 'href="/reviews">Reviews</a>' in client.get("/ratings").text  # reached from My ratings
+    assert '<a href="/reviews" class="">My reviews</a>' in client.get("/ratings").text  # its own page in the top bar
 
 
 def test_every_page_has_the_theme_button_and_applies_the_saved_choice_early(client):
     html = client.get("/").text
     assert 'class="theme-toggle"' in html and "/static/theme.js" in html
     assert html.index('localStorage.getItem("shelflife-theme")') < html.index("/static/style.css")
+
+
+def test_styles_and_scripts_carry_their_version_so_browsers_fetch_changes(client):
+    html = client.get("/").text
+    assert re.search(r'href="/static/style\.css\?v=\d+"', html) and re.search(r'src="/static/inline\.js\?v=\d+"', html)
+
+
+def test_the_heart_is_empty_until_the_game_is_a_favorite(client, session):
+    add_game(session, 1, "Hades")
+    diary.save_rating(session, 1, 5.0)
+    assert ">♡</button>" in client.get("/game/1").text
+    post(client, "/game/1/favorite", value="1")
+    assert ">♥</button>" in client.get("/game/1").text

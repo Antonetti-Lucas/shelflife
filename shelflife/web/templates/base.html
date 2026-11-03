@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}ShelfLife{% endblock %}</title>
   <script>try { var t = localStorage.getItem("shelflife-theme"); if (t === "dark" || t === "light") document.documentElement.dataset.theme = t; } catch (e) {}</script>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="{{ static_url("style.css") }}">
   {% block head %}{% endblock %}
-  <script src="/static/tags.js" defer></script>
-  <script src="/static/inline.js" defer></script>
-  <script src="/static/stars.js" defer></script>
-  <script src="/static/prices.js" defer></script>
-  <script src="/static/lists.js" defer></script>
-  <script src="/static/theme.js" defer></script>
+  <script src="{{ static_url("tags.js") }}" defer></script>
+  <script src="{{ static_url("inline.js") }}" defer></script>
+  <script src="{{ static_url("stars.js") }}" defer></script>
+  <script src="{{ static_url("prices.js") }}" defer></script>
+  <script src="{{ static_url("lists.js") }}" defer></script>
+  <script src="{{ static_url("theme.js") }}" defer></script>
 </head>
 <body>
   <header class="top">
@@ -32,6 +32,7 @@
       <a href="/wishlist" class="{{ 'on' if path == '/wishlist' }}">Wishlist</a>
       <a href="/diary" class="{{ 'on' if path == '/diary' }}">Diary</a>
       <a href="/ratings" class="{{ 'on' if path == '/ratings' }}">My ratings</a>
+      <a href="/reviews" class="{{ 'on' if path == '/reviews' }}">My reviews</a>
       <a href="/lists" class="{{ 'on' if path.startswith('/lists') }}">Lists</a>
       <a href="/stats" class="{{ 'on' if path == '/stats' }}">Stats</a>
       <span class="gap"></span>

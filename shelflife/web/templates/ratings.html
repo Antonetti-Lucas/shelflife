@@ -13,10 +13,6 @@
 
 <div class="page-head">
   <h2>My ratings<span class="count">{{ rated_total }}</span></h2>
-  <nav class="tabs inline-tabs" aria-label="My ratings and reviews">
-    <a href="/ratings" class="on">Ratings</a><a href="/reviews">Reviews</a>
-  </nav>
-  <span class="bar-gap"></span>
   <nav class="viewswitch" aria-label="View">
     <a href="{{ url(view='grid', page=1) }}" class="{{ 'on' if view == 'grid' }}" title="Posters" aria-label="Posters">
       <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg></a>

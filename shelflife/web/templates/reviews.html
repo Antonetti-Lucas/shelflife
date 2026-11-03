@@ -2,17 +2,14 @@
 {% from "_stars.html" import star_rating %}
 {% from "_heart.html" import fav_heart %}
 {% from "_pager.html" import link_pager %}
-{% block title %}Reviews · ShelfLife{% endblock %}
+{% block title %}My reviews · ShelfLife{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h2>Reviews<span class="count">{{ written }}</span></h2>
-  <nav class="tabs inline-tabs" aria-label="My ratings and reviews">
-    <a href="/ratings">Ratings</a><a href="/reviews" class="on">Reviews</a>
-  </nav>
+  <h2>My reviews<span class="count">{{ written }}</span></h2>
 </div>
 
 {% if written %}
-<form class="bar" method="get" action="/reviews">
+<form class="bar list-search" method="get" action="/reviews">
   <input type="search" name="q" value="{{ q }}" placeholder="Search games and reviews" aria-label="Search games and reviews">
   <button type="submit" class="ghost small">Search</button>
   <span class="bar-gap"></span>

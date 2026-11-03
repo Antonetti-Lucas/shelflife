@@ -404,9 +404,9 @@ def test_the_stats_page_shows_your_numbers(client, scenario):
 
 def test_small_edits_are_marked_to_save_in_place(client, scenario):
     home = client.get("/").text
-    assert '<script src="/static/inline.js" defer>' in home
+    assert '<script src="/static/inline.js?v=' in home
     assert re.search(r'action="/game/\d+/rate" data-inline\s', home)
-    assert '<script src="/static/stars.js" defer>' in home
+    assert '<script src="/static/stars.js?v=' in home
     assert re.search(r'action="/game/\d+/not-interested" data-inline="hide">', home)
     library = client.get("/library").text
     assert "this.form.submit()" not in library and library.count("data-inline") >= 3  # hours, rating, status

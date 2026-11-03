@@ -60,6 +60,7 @@
     var button = form.querySelector("button");
     button.setAttribute("aria-pressed", String(nowOn));
     button.title = nowOn ? form.dataset.onTitle : form.dataset.offTitle;
+    if (form.matches(".heart")) button.textContent = nowOn ? "\u2665" : "\u2661";  // filled or empty heart
   }
 
   function done(form) {

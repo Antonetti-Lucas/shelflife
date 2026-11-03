@@ -6,6 +6,6 @@
   <input type="hidden" name="value" value="{{ '0' if on else '1' }}">
   <input type="hidden" name="next" value="{{ next_url }}">
   <button type="submit" aria-pressed="{{ 'true' if on else 'false' }}" aria-label="Favorite: {{ g.name }}"
-          title="{{ 'One of your favorites (click to remove)' if on else 'Add to your favorites' }}">♥</button>
+          title="{{ 'One of your favorites (click to remove)' if on else 'Add to your favorites' }}">{{ "♥" if on else "♡" }}</button>
 </form>
 {% endmacro %}

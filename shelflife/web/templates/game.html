@@ -34,6 +34,7 @@
       {% set length = length_of(game) %}
       {% if length %}
       <div class="hero-length" title="Estimated from how long {{ game.player_hours_sample }} of its reviewers played it">
+        <svg class="clock" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 6.5V12l3.6 2.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         <strong>{{ length.short_text }}</strong>
         <span>{{ "players typically play" if length.endless else "to finish, with some extras" }}<br><small>from {{ "{:,}".format(game.player_hours_sample) }} reviewers' hours</small></span>
       </div>

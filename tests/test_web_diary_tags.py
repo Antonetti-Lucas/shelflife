@@ -197,7 +197,7 @@ def test_every_tag_search_is_a_picker_with_the_all_or_any_choice(client, scenari
     html = client.get(path).text
     assert "data-tagpicker" in html and 'name="tag"' in html
     assert 'value="all" selected' in html and 'value="any"' in html
-    assert 'src="/static/tags.js"' in html
+    assert 'src="/static/tags.js?v=' in html
     assert 'value="any" selected' in client.get(f"{path}?tag=Stealth&match=any").text
 
 

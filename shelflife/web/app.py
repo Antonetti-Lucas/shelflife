@@ -167,6 +167,19 @@ templates.env.globals.update(
 )
 
 
+def static_url(name: str) -> str:
+    """A file in static/, with its change time in the address: a browser keeps a stylesheet or
+    script for a while, and without this kept using the old one after ShelfLife changed it."""
+    try:
+        version = int((BASE / "static" / name).stat().st_mtime)
+    except OSError:
+        version = 0
+    return f"/static/{name}?v={version}"
+
+
+templates.env.globals["static_url"] = static_url
+
+
 def safe_next(url: str | None, default: str) -> str:
     """Only redirect to paths on this site."""
     if url and url.startswith("/") and not url.startswith("//"):

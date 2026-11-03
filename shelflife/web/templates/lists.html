@@ -16,18 +16,10 @@
 <div class="page-head">
   <h2>{% if opened %}<span class="folder-icon" aria-hidden="true">▣</span> {{ opened.name }}<span class="count">{{ lists|length }}</span>
       {% else %}Lists{% if all_count %}<span class="count">{{ all_count }}</span>{% endif %}{% endif %}</h2>
-  {% if not opened %}
-  <details class="new-folder">
-    <summary class="ghost-summary">+ New folder</summary>
-    <form method="post" action="/lists/folders" class="row-line">
-      <input type="text" name="name" required maxlength="80" placeholder="e.g. Yearly bests" aria-label="Folder name">
-      <button type="submit" class="small">Create</button>
-    </form>
-  </details>
-  {% endif %}
 </div>
 {% if not opened %}<p class="lede">Your own lists of games: a year's best, a genre, a mood. Rank them or just collect them, and put them in folders when there are many. Lists never change your recommendations; the stars you give do.</p>{% endif %}
 
+<div class="create-row">
 <details class="panel new-list" {{ "open" if not all_count }}>
   <summary>+ New list{{ " in " ~ opened.name if opened }}</summary>
   <form method="post" action="/lists" class="stack">
@@ -50,6 +42,18 @@
     <button type="submit">Create list</button>
   </form>
 </details>
+{% if not opened %}
+<details class="panel new-list">
+  <summary>+ New folder</summary>
+  <form method="post" action="/lists/folders" class="stack">
+    <label>Name
+      <input type="text" name="name" required maxlength="80" placeholder="e.g. Yearly bests">
+    </label>
+    <button type="submit">Create folder</button>
+  </form>
+</details>
+{% endif %}
+</div>
 
 {% if folders and not opened %}
 <h3 class="list-section">Folders</h3>

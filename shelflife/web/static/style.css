@@ -564,10 +564,15 @@ dialog.lightbox .lb-close { right: -8px; top: -52px; font-size: 2rem; }
 .warn-tag { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); font-size: 0.76rem; font-weight: 600; white-space: nowrap; }
 
 /* ---- game page: length ---- */
-.hero-length { display: inline-flex; align-items: center; gap: 12px; margin-top: 14px; padding: 8px 16px 8px 14px; border-radius: 12px; background: rgb(255 255 255 / 0.1); }
-.hero-length strong { font-size: 1.9rem; line-height: 1; color: #fff; }
-.hero-length span { font-size: 0.86rem; line-height: 1.3; color: rgb(255 255 255 / 0.85); }
-.hero-length small { color: rgb(255 255 255 / 0.55); }
+.hero-length {
+  display: inline-flex; align-items: center; gap: 12px; margin-top: 16px; padding: 10px 20px 10px 14px;
+  border-radius: 14px; background: linear-gradient(135deg, rgb(63 207 155 / 0.22), rgb(63 207 155 / 0.08));
+  border: 1px solid rgb(63 207 155 / 0.45); box-shadow: 0 4px 18px rgb(0 0 0 / 0.25);
+}
+.hero-length .clock { width: 30px; height: 30px; color: #5fe0b0; flex: none; }
+.hero-length strong { font-size: 2.3rem; line-height: 1; color: #fff; font-weight: 800; letter-spacing: -0.5px; }
+.hero-length span { font-size: 0.9rem; line-height: 1.3; color: rgb(255 255 255 / 0.9); font-weight: 600; }
+.hero-length small { color: rgb(255 255 255 / 0.6); font-weight: 400; }
 
 /* ---- stats: ratings histogram ---- */
 .histogram { display: flex; align-items: flex-end; gap: 10px; height: 120px; margin: 8px 0 6px; }
@@ -580,44 +585,46 @@ dialog.lightbox .lb-close { right: -8px; top: -52px; font-size: 2rem; }
 
 /* ---- favorite heart ---- */
 .heart { display: inline-flex; margin: 0; }
-.heart button { background: none; border: none; padding: 0 2px; font-size: 1.05rem; line-height: 1; color: var(--line); cursor: pointer; transition: color 0.12s, transform 0.12s; }
+.heart button { background: none; border: none; padding: 0 2px; font-size: 1.1rem; line-height: 1; color: var(--muted); cursor: pointer; transition: color 0.12s, transform 0.12s; }
 .heart button:hover { color: var(--bad); background: none; transform: scale(1.15); }
 .heart.on button { color: var(--bad); }
 .heart.small button { font-size: 0.9rem; }
 .heart.large button { font-size: 1.6rem; }
 
 /* ---- reviews ---- */
-.inline-tabs { margin: 0; border: none; }
-.review-list { display: flex; flex-direction: column; max-width: 860px; }
-.review-item { display: grid; grid-template-columns: 92px 1fr; gap: 18px; padding: 18px 0; border-bottom: 1px solid var(--line); }
-.review-poster img { width: 92px; height: 138px; object-fit: cover; border-radius: 6px; box-shadow: var(--shadow); display: block; background: var(--surface-2); }
+.review-list { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.review-item { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.review-item:last-child { border-bottom: none; }
+.review-poster img { width: 54px; height: 81px; object-fit: cover; border-radius: 4px; display: block; background: var(--surface-2); }
 .review-poster img.wide { height: auto; }
-.review-body h3 { margin: 0 0 4px; }
+.review-body h3 { margin: 0 0 2px; font-size: 0.98rem; }
 .review-body h3 small { color: var(--muted); font-weight: 500; }
-.review-meta { gap: 10px; margin-bottom: 8px; }
-.review-body .review { white-space: pre-line; margin: 0 0 8px; line-height: 1.55; }
+.review-meta { gap: 10px; margin-bottom: 4px; }
+.review-body .review { white-space: pre-line; margin: 0 0 4px; line-height: 1.5; font-size: 0.92rem; max-width: 80ch; }
+.review-body > a.meta { font-size: 0.8rem; }
 
-/* ---- diary rows ---- */
+/* ---- diary rows: one line per game, in columns, like Letterboxd's diary ---- */
 .diary-list { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-.diary-row { display: grid; grid-template-columns: 64px 52px 1fr auto; gap: 16px; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+.diary-row { display: grid; grid-template-columns: 58px 36px minmax(0, 1fr) 150px 64px; gap: 14px; align-items: center; padding: 7px 16px; border-bottom: 1px solid var(--line); }
 .diary-row:last-child { border-bottom: none; }
 .diary-row:hover { background: var(--surface-2); }
-.diary-date { display: flex; flex-direction: column; align-items: center; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.4px; }
-.diary-date .day { font-size: 1.45rem; font-weight: 700; color: var(--text); line-height: 1.1; letter-spacing: 0; }
-.diary-date .undated { font-size: 1.2rem; }
-.diary-poster img { width: 52px; height: 78px; object-fit: cover; border-radius: 5px; display: block; background: var(--surface-2); box-shadow: var(--shadow); }
+.diary-date { display: flex; flex-direction: column; align-items: center; color: var(--muted); font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.4px; line-height: 1.15; }
+.diary-date .day { font-size: 1.15rem; font-weight: 700; color: var(--text); letter-spacing: 0; }
+.diary-date .undated { font-size: 1rem; }
+.diary-poster img { width: 36px; height: 54px; object-fit: cover; border-radius: 4px; display: block; background: var(--surface-2); }
 .diary-poster img.wide { height: auto; }
 .diary-body { min-width: 0; }
-.diary-body h3 { margin: 0 0 2px; font-size: 1rem; }
+.diary-body h3 { margin: 0; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .diary-body h3 small { color: var(--muted); font-weight: 500; }
-.diary-body .meta { margin: 0; }
-.diary-body .review { margin: 6px 0 0; color: var(--muted); font-size: 0.9rem; }
-.diary-status { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); font-size: 0.74rem; font-weight: 600; }
-.diary-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.diary-body .meta { margin: 1px 0 0; font-size: 0.8rem; }
+.diary-body .review { margin: 2px 0 0; color: var(--muted); font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.diary-status { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); font-size: 0.72rem; font-weight: 600; }
+.diary-side { display: contents; }
+.diary-side .row-line { justify-content: flex-start; }
+.diary-side .meta { text-align: right; font-variant-numeric: tabular-nums; }
 @media (max-width: 640px) {
-  .diary-row { grid-template-columns: 44px 40px 1fr; gap: 10px; padding: 10px 12px; }
-  .diary-poster img { width: 40px; height: 60px; }
-  .diary-side { grid-column: 3; align-items: flex-start; }
+  .diary-row { grid-template-columns: 44px 32px minmax(0, 1fr); gap: 10px; padding: 8px 12px; }
+  .diary-side { display: flex; grid-column: 3; gap: 10px; align-items: center; }
 }
 
 /* ---- list folders ---- */
@@ -634,3 +641,7 @@ dialog.lightbox .lb-close { right: -8px; top: -52px; font-size: 2rem; }
 .theme-toggle:hover { background: rgb(255 255 255 / 0.1); color: #fff; }
 .actions { flex-wrap: wrap; row-gap: 6px; }
 .actions button { white-space: nowrap; }
+
+/* ---- "+ New list" and "+ New folder" side by side ---- */
+.create-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; align-items: start; margin-bottom: 22px; }
+.create-row .new-list { margin: 0; }
