@@ -13,7 +13,7 @@ from pathlib import Path
 from urllib.parse import urlencode, urlparse
 
 import requests
-from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -1206,32 +1206,48 @@ def add_game_page(request: Request, q: str = "", session: Session = Depends(get_
     return templates.TemplateResponse(
         request,
         "add_game.html",
-        {"q": q, "found": found, "known": known, "family": family, "error": error, "platforms": otherplatforms.PLATFORMS},
+        {
+            "q": q, "found": found, "known": known, "family": family, "error": error,
+            "platforms": otherplatforms.PLATFORMS, "here": current_url(request),
+        },
     )
+
+
+def fetch_new_game(app_id: int) -> None:
+    """Read a just-added game's store details and tags, after the page has answered, so adding
+    several games in a row doesn't wait on Steam. Best effort: if Steam can't be reached, the
+    next sync reads them."""
+    with SessionLocal() as session:
+        game = session.get(Game, app_id)
+        if game is None or game.details_fetched_at is not None:
+            return
+        try:
+            enrich_one(game)
+            session.commit()
+        except (RateLimited, requests.RequestException, ValueError):
+            session.rollback()
 
 
 @app.post("/library/add")
 def add_game_from_elsewhere(
+    background: BackgroundTasks,
     app_id: int = Form(...),
     name: str = Form(""),
     platform: str = Form(""),
     hours: str = Form(""),
+    next: str = Form(""),
     session: Session = Depends(get_session),
 ):
-    """Put the game in your library and read its store details and tags now, so its page is
-    ready; review counts and its length come with the next sync."""
+    """Put the game in your library and go back to the search, to add the next one. Its store
+    details and tags are read in the background; review counts and length come with the next sync."""
     try:
         raw = hours.strip().replace(",", ".")
         game = otherplatforms.add_game(session, app_id, name, platform, float(raw) if raw else None)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     if game.details_fetched_at is None:
-        try:
-            enrich_one(game)
-            session.commit()
-        except (RateLimited, requests.RequestException, ValueError):
-            session.rollback()  # the next sync fetches them
-    return RedirectResponse(f"/game/{app_id}", status_code=303)
+        background.add_task(fetch_new_game, app_id)
+    return RedirectResponse(safe_next(next, "/library/add"), status_code=303)
 
 
 @app.post("/game/{app_id}/platform")

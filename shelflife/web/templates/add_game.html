@@ -30,7 +30,9 @@
         <p class="meta">Already in your library ({{ mine }}). <a href="/game/{{ f.app_id }}">Open it</a></p>
       {% else %}
       {% if f.app_id in family %}<p class="meta">In your family library. Played it somewhere else? Say where:</p>{% endif %}
-      <form method="post" action="/library/add" class="row-line">
+      <form method="post" action="/library/add" class="row-line" data-inline="done"
+            data-done="{{ 'Marked as played there.' if f.app_id in family else 'Added to your library.' }}" data-done-link="/game/{{ f.app_id }}">
+        <input type="hidden" name="next" value="{{ here }}">
         <input type="hidden" name="app_id" value="{{ f.app_id }}">
         <input type="hidden" name="name" value="{{ f.name }}">
         <select name="platform" aria-label="Where you played {{ f.name }}" required>

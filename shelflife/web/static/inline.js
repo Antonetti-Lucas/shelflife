@@ -3,6 +3,7 @@
 //   data-inline         shows "Saved" next to the form (a star rating shows its new stars)
 //   data-inline="hide"  hides the card or row it is in, with an Undo
 //   data-inline="remove" removes the card or row it is in
+//   data-inline="done"  replaces the form with its data-done text (and an "Open it" link to data-done-link)
 // Without this script, or if the background request fails to reach the app, the form is sent
 // the normal way and the page reloads.
 (function () {
@@ -48,6 +49,20 @@
       form.appendChild(field);
     }
     return form;
+  }
+
+  function done(form) {
+    var line = document.createElement("p");
+    line.className = "meta done-note";
+    line.setAttribute("role", "status");
+    line.textContent = (form.dataset.done || "Done.") + " ";
+    if (form.dataset.doneLink) {
+      var link = document.createElement("a");
+      link.href = form.dataset.doneLink;
+      link.textContent = "Open it";
+      line.appendChild(link);
+    }
+    form.replaceWith(line);
   }
 
   function holder(form) {
@@ -103,6 +118,7 @@
       var item = holder(form);
       if (how === "hide" && item) hide(form, item);
       else if (how === "remove" && item) item.remove();
+      else if (how === "done") done(form);
       else if (form.matches(".starrate") && window.shelflifeStars) window.shelflifeStars(form, submitter ? submitter.value : "");
       else note(form, "Saved");
       form.querySelectorAll("select.stars").forEach(function (s) { s.classList.toggle("unrated", !s.value); });

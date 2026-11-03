@@ -277,7 +277,7 @@ def test_the_add_page_says_when_steam_cant_be_reached(client, monkeypatch):
     assert "reach Steam to search" in client.get("/library/add?q=hades").text
 
 
-def test_adding_reads_the_store_details_now_and_opens_the_game(client, session, monkeypatch):
+def test_adding_goes_back_to_the_search_and_reads_the_store_details_after_answering(client, session, monkeypatch):
     fetched = []
 
     def enrich(game):
@@ -285,8 +285,12 @@ def test_adding_reads_the_store_details_now_and_opens_the_game(client, session, 
         game.type, game.details_fetched_at = "game", otherplatforms._now()
 
     monkeypatch.setattr(web_app, "enrich_one", enrich)
-    response = post(client, "/library/add", app_id="1593500", name="God of War", platform="PlayStation", hours="40,5")
-    assert response.headers["location"] == "/game/1593500" and fetched == [1593500]
+    response = post(client, "/library/add", app_id="1593500", name="God of War", platform="PlayStation", hours="40,5",
+                    next="/library/add?q=god+of+war")
+    assert response.headers["location"] == "/library/add?q=god+of+war"  # on to the next game
+    assert fetched == [1593500]  # in the background, once the page had answered
+    session.expire_all()
+    assert session.get(Game, 1593500).details_fetched_at is not None
     assert session.get(LibraryEntry, 1593500).playtime_total_min == 2430
     page = client.get("/game/1593500").text
     assert "Remove from library" in page and 'value="PlayStation" selected' in page and "Save hours" in page
@@ -302,6 +306,7 @@ def test_adding_still_works_when_steam_is_down(client, session, monkeypatch):
     monkeypatch.setattr(web_app, "enrich_one", down)
     assert post(client, "/library/add", app_id="7", name="Game", platform="Xbox").status_code == 303
     assert session.get(LibraryEntry, 7).platform == "Xbox"  # its details come with the next sync
+    assert session.get(Game, 7).details_fetched_at is None
 
 
 def test_a_bad_platform_is_refused(client):
