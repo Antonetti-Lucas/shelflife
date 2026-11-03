@@ -130,7 +130,7 @@ def test_the_wishlist_pages_keep_your_filters(client, session):
 # ---- the rest of the app ----
 
 
-def test_wishlisting_a_game_never_changes_your_taste(session, scenario):
+def test_wishlisting_never_changes_the_tags_on_my_taste(session, scenario):
     before = taste_profile(session, scenario, {}).profile
     wish(session, 40, 41, 30)
     assert taste_profile(session, scenario, {}).profile == before

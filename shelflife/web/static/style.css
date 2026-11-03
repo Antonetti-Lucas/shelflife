@@ -526,3 +526,8 @@ dialog.lightbox .lb-close { right: -8px; top: -52px; font-size: 2rem; }
 .found-body input[type=number] { width: 140px; }
 @media (max-width: 600px) { .found-game { flex-direction: column; align-items: stretch; } .found-game img { width: 100%; height: auto; } }
 .done-note { color: var(--accent-strong); font-weight: 600; margin: 0; }
+
+/* ---- wishlisting on Steam ---- */
+.wish-on-steam { margin-left: 10px; padding: 3px 11px; font-size: 0.82rem; }
+.wish-link { font-size: 0.84rem; color: var(--muted); white-space: nowrap; }
+.wish-link:hover { color: var(--accent); }

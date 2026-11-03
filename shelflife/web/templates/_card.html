@@ -27,6 +27,10 @@
         <input type="hidden" name="next" value="{{ next_url }}">
         <button class="ghost" type="submit" title="Hide it, and push down games very like it">Not interested</button>
       </form>
+      {% if g.library_entry is none and not note %}
+      <a class="wish-link" href="https://store.steampowered.com/app/{{ g.steam_app_id }}/" target="_blank" rel="noopener"
+         title="Opens the Steam store page: click “Add to your wishlist” there, and your next sync brings it in">Wishlist ↗</a>
+      {% endif %}
     </div>
   </div>
 </article>

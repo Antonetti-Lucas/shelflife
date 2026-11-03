@@ -19,13 +19,16 @@ The older **engagement score** (`shelflife/score.py`: points for hours, achievem
 
 ## 2. What your taste learns from
 
-`shelflife/recommend.py`. Only three things, each with one meaning:
+`shelflife/recommend.py`. Only four things, each with one meaning:
 
 - **Your star ratings.** A rating of 3 stars or more says how much you liked a game, `(rating − 3) / 2` from 0 to +1, and games like it rise. A rating under 3 stars says "not this game": it pushes down only games very like it (a sequel, a near-clone), never its whole genre. Disliking one horror game says nothing about horror.
 - **"Not interested"** hides a game and counts as a weaker 2-star rating: it pushes down only its close look-alikes, a little less than a real 2-star rating would, because it can also mean "not now" or "too expensive". A rating you give the game wins over it.
+- **Your wishlist** counts as a weaker 3.5-star rating, in every mode: like "not interested" the other way round, it lifts only its close look-alikes, so a few hundred wishlisted games can't swamp your ratings, and a game never lifts itself (the wishlist page is still ranked by everything else). A rating, "not interested" or your play wins over it. On the owner's games it moved the check below from +0.302 to +0.309 on ratings and from +0.408 to +0.417 on ranked games.
 - **Games you played but didn't rate**, in **Ratings and play** (the default). In **Play only** every game you played counts this way, rated or not, and your star ratings are ignored; **Ratings only** leaves play out. Playing a game says you probably liked it, so it counts as the rating your played games usually get; how much you played it (the play score above) says how sure that is. Little play means "not sure", never "didn't like it".
 
-Favorites, statuses (playing, played, dropped) and your wishlist are diary records: they never change your taste, and a game in your diary isn't recommended.
+Favorites and statuses (playing, played, dropped) are diary records: they never change your taste, and a game in your diary isn't recommended.
+
+The look-alike step (dislikes, "not interested" and the wishlist) only looks at pairs of games at least 0.2 alike: anything less would count under 1% as much as a sequel, and leaving those pairs out keeps scoring fast with a long wishlist.
 
 ## 3. Learning your taste
 

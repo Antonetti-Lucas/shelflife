@@ -17,7 +17,13 @@ What teaches your taste, and nothing else (the taste mode on My taste picks betw
   So it pushes down only its close look-alikes, a little less than a 2-star rating would. A
   rating you gave the game wins over it.
 
-Favorites, statuses and the wishlist are diary records and never change your taste. (Research
+- **Your wishlist** (every mode) counts as a weak "games like this one": like a
+  3.5-star rating held half as sure (`WANT_WEIGHT`, `WANT_CONFIDENCE`), on the same narrow
+  likeness as "not interested", so they pull up only their close look-alikes and a few hundred
+  wishlisted games can't swamp your ratings. A game never pulls up itself, so the wishlist list
+  is still ranked by everything else. A rating, "not interested" or your play wins over it.
+
+Favorites and statuses are diary records and never change your taste. (Research
 behind this: PLANS.md, section 8b.)
 
 shelflife/learned.py does the learning: it predicts, from a game's tags and the words of its store
@@ -48,7 +54,8 @@ from shelflife.learned import (
     TEXT_WEIGHT,
     LearnedTaste,
     Vector,
-    _solve,
+    NearIndex,
+    solve_sparse,
     fit,
     fit_cached,
     likeness,
@@ -56,7 +63,7 @@ from shelflife.learned import (
     unit_tag_vectors,
 )
 from shelflife.languages import fits
-from shelflife.models import Game
+from shelflife.models import Game, WishlistItem
 from shelflife.play import BACKLOG_MAX_MIN, PlayScale, PlayScore, is_played
 from shelflife.quality import quality_factor
 from shelflife.settings import get_hide_adult, get_languages, get_taste_mode
@@ -69,6 +76,10 @@ NEUTRAL_RATING = 3.0  # 3 stars: an ordinary game for you; under it, a dislike
 # sequel at 0.7 feels half of it (0.34) and a game of the same genre at 0.3 almost nothing (0.03).
 # Measured on the owner's games: ratings +0.438 -> +0.452, rankings +0.317 -> +0.387 (PLANS.md 8).
 LOOK_ALIKE_POWER = 3
+# Pairs less alike than this are left out of the look-alike step: they'd count under 1% of a
+# sequel's pull (0.2 cubed is 0.008), and with a few hundred wishlisted games comparing every pair
+# took ten seconds. Measured: (PLANS.md 9).
+LOOK_ALIKE_FLOOR = 0.2
 # How sure a game you only played makes the taste: its ridge is RIDGE / (PLAY_CONFIDENCE x play
 # score), so a game you played far more than usual (score near 1) counts about like a rating and
 # one you barely played (score 0.1) about a tenth. Tried 0.1 to 1 on the owner's games; 1 did best.
@@ -88,6 +99,10 @@ def rating_weight(rating: float) -> float:
 # marked games are rated); chosen to stay under a real rating.
 NOT_INTERESTED_WEIGHT = rating_weight(2.0)
 NOT_INTERESTED_CONFIDENCE = 0.5
+# A game on your wishlist (not rated, not dismissed, not played) is the
+# mirror image: a 3.5-star rating held half as sure, pulling up its close look-alikes.
+WANT_WEIGHT = rating_weight(3.5)
+WANT_CONFIDENCE = 0.5
 
 
 class _Lazy(Sequence):
@@ -165,6 +180,7 @@ class _Model:
     likes: dict[int, float] = field(default_factory=dict)  # rated 3 stars or more: (rating - 3) / 2
     dislikes: dict[int, float] = field(default_factory=dict)  # rated under 3 stars
     dismissed: set[int] = field(default_factory=set)  # marked "not interested", not rated
+    wanted: set[int] = field(default_factory=set)  # wishlisted; not rated, dismissed or played
     played: dict[int, PlayScore] = field(default_factory=dict)  # played, not rated (or any played game in "play"); learned from unless the mode is "ratings"
     rated_and_played: dict[int, float] = field(default_factory=dict)  # what the games you played and rated got
 
@@ -224,23 +240,41 @@ class _Model:
         )
         return fit_cached(key, training, self.tag_units, self.text_units, self.beta, ridges=ridges)
 
-    def narrow_alphas(self, skip: int | None = None) -> list[tuple[int, float]]:
-        """The dislikes and the games you're not interested in, as (game id, weight) on the narrow
-        likeness."""
-        targets = {i: (NOT_INTERESTED_WEIGHT, RIDGE / NOT_INTERESTED_CONFIDENCE) for i in self.dismissed}
+    @cached_property
+    def narrow_targets(self) -> dict[int, tuple[float, float]]:
+        """game id -> (its weight, its ridge) on the narrow likeness: the games you want (pulling
+        up), the ones you're not interested in and your dislikes (pushing down)."""
+        targets = {i: (WANT_WEIGHT, RIDGE / WANT_CONFIDENCE) for i in self.wanted}
+        targets |= {i: (NOT_INTERESTED_WEIGHT, RIDGE / NOT_INTERESTED_CONFIDENCE) for i in self.dismissed}
         targets |= {i: (w, RIDGE) for i, w in self.dislikes.items()}
+        return targets
+
+    @cached_property
+    def near_targets(self) -> NearIndex:
+        """Which of those games are close to a given one (LOOK_ALIKE_FLOOR or more alike)."""
+        return NearIndex(self.narrow_targets, self.tag_units, self.text_units, self.beta, LOOK_ALIKE_FLOOR)
+
+    def narrow_alphas(self, skip: int | None = None) -> list[tuple[int, float]]:
+        """The narrow targets as (game id, weight) on the narrow likeness, fitted together so a
+        cluster of near-identical games never counts more than one plain rating would."""
+        targets = self.narrow_targets
         ids = [i for i in targets if i != skip]
         if not ids:
             return []
-        gram = [[self.kernel(a, b) ** LOOK_ALIKE_POWER + (targets[a][1] if x == y else 0.0) for y, b in enumerate(ids)] for x, a in enumerate(ids)]
-        return list(zip(ids, _solve(gram, [targets[i][0] for i in ids])))
+        place = {i: n for n, i in enumerate(ids)}
+        diagonal = [self.kernel(i, i) ** LOOK_ALIKE_POWER + targets[i][1] for i in ids]
+        off = [[(place[j], k ** LOOK_ALIKE_POWER) for j, k in self.near_targets.near(i) if j != i and j in place] for i in ids]
+        return list(zip(ids, solve_sparse(diagonal, off, [targets[i][0] for i in ids])))
 
     @cached_property
     def narrow(self) -> list[tuple[int, float]]:
         return self.narrow_alphas()
 
     def push_down(self, app_id: int, narrow: list[tuple[int, float]]) -> float:
-        return sum(a * self.kernel(app_id, i) ** LOOK_ALIKE_POWER for i, a in narrow if i != app_id)
+        """The look-alike step: down from games you rated low or dismissed, up from games you want.
+        A game is never moved by itself."""
+        alphas = dict(narrow)
+        return sum(alphas.get(i, 0.0) * k ** LOOK_ALIKE_POWER for i, k in self.near_targets.near(app_id) if i != app_id)
 
     def liking(self, app_id: int) -> float:
         """How much more (or less) than your usual game you would like this one, on the scale of a
@@ -351,6 +385,7 @@ def _build_model(
     taught = ratings if mode != "play" else {}
     # In your diary, so not recommended. Of these only "not interested" teaches anything (below).
     in_diary = set(not_interested) | favorite_ids(session) | tracked_ids(session)
+    wanted = set(session.scalars(select(WishlistItem.steam_app_id)))
 
     games = list(session.scalars(select(Game).where(Game.type == "game").options(selectinload(Game.library_entry))))
     # Rarity is measured on your own library, not on the pool picked by tag.
@@ -370,6 +405,8 @@ def _build_model(
             (model.family_titles if family else model.owned_titles).add(_base_name(g.name))
         rating = ratings.get(app_id)
         played = is_played(entry, family)
+        if app_id in wanted and rating is None and not played and app_id not in not_interested and vectors[app_id]:
+            model.wanted.add(app_id)
         if rating is None and not played and app_id not in in_diary:
             if vectors[app_id]:
                 model.candidates.append(g)
@@ -417,7 +454,8 @@ SELECT
   (SELECT count(*) || ':' || coalesce(max(updated_at), '') || ':' || coalesce(sum(rating), 0) || ':'
           || coalesce(sum(not_interested), 0) || ':' || coalesce(sum(favorite), 0) || ':' || coalesce(sum(length(status)), 0)
      FROM diary_entries),
-  (SELECT coalesce(group_concat(key || '=' || value, ';'), '') FROM settings)
+  (SELECT coalesce(group_concat(key || '=' || value, ';'), '') FROM settings),
+  (SELECT count(*) || ':' || coalesce(sum(steam_app_id), 0) FROM wishlist_items)
 """)
 
 _cache_lock = threading.Lock()

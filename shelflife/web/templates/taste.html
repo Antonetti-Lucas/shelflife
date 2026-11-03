@@ -21,7 +21,7 @@
     </div>
     <noscript><button type="submit">Save</button></noscript>
   </form>
-  <p class="meta">Try each to see what it picks: the modes only change what teaches the taste. "Not interested" counts in all three; favorites, statuses and your wishlist never do.</p>
+  <p class="meta">Try each to see what it picks: the modes only change what teaches the taste. "Not interested" and your wishlist count in all three, as weak signals that reach only very similar games; favorites and statuses never do.</p>
   {% if taste.explicit_count + taste.implicit_count == 0 %}
     <p class="warn">Nothing to learn from yet, so the picks are not based on your taste:
       {% if taste_mode == "ratings" %}rate some games, or pick a mode that uses your play.

@@ -168,6 +168,68 @@ def likeness(a_tags: Vector, a_text: Vector | None, b_tags: Vector, b_text: Vect
     return value
 
 
+class NearIndex:
+    """Among a set of games, the ones at least `floor` alike to a given game (likeness above), found
+    fast: tags are compared first, through an index of which game has which tag, and the store text
+    is read only for pairs whose tags alone are that alike. Comparing every pair's text took seconds
+    with a few hundred games in the set; on the owner's games, of 837,000 pairs only 5 were 0.2
+    alike through their text but not through their tags."""
+
+    def __init__(self, ids, tag_units: dict[int, Vector], text_units: dict[int, Vector], beta: float, floor: float):
+        self.tag_units, self.text_units, self.beta, self.floor = tag_units, text_units, beta, floor
+        self._postings: dict[str, list[tuple[int, float]]] = {}
+        for j in ids:
+            for tag, y in tag_units.get(j, {}).items():
+                self._postings.setdefault(tag, []).append((j, y))
+        self._found: dict[int, list[tuple[int, float]]] = {}
+
+    def near(self, i: int) -> list[tuple[int, float]]:
+        """(game id, likeness) for the games in the set at least `floor` alike to game i (itself included)."""
+        if i in self._found:
+            return self._found[i]
+        tag_dots: dict[int, float] = {}
+        for tag, x in self.tag_units.get(i, {}).items():
+            for j, y in self._postings.get(tag, ()):
+                tag_dots[j] = tag_dots.get(j, 0.0) + x * y
+        own_text = self.text_units.get(i) if self.beta else None
+        out = []
+        for j, tag_dot in tag_dots.items():
+            if tag_dot < self.floor:
+                continue
+            value = (1 - self.beta) * tag_dot
+            if own_text and (other := self.text_units.get(j)):
+                value += self.beta * _dot(own_text, other)
+            if value >= self.floor:
+                out.append((j, value))
+        self._found[i] = out
+        return out
+
+
+def solve_sparse(diagonal: list[float], off: list[list[tuple[int, float]]], rhs: list[float], tol: float = 1e-12) -> list[float]:
+    """Solve a symmetric positive definite system given as its diagonal and, for each row, its
+    (column, value) entries off the diagonal (conjugate gradients). Fast when most entries are 0."""
+    n = len(rhs)
+
+    def times(v: list[float]) -> list[float]:
+        return [diagonal[r] * v[r] + sum(value * v[c] for c, value in off[r]) for r in range(n)]
+
+    x = [0.0] * n
+    residual = list(rhs)
+    direction = list(residual)
+    size = sum(r * r for r in residual)
+    for _ in range(max(n, 1) * 2):
+        if size <= tol:
+            break
+        moved = times(direction)
+        step = size / sum(d * m for d, m in zip(direction, moved))
+        x = [a + step * d for a, d in zip(x, direction)]
+        residual = [r - step * m for r, m in zip(residual, moved)]
+        new_size = sum(r * r for r in residual)
+        direction = [r + (new_size / size) * d for r, d in zip(residual, direction)]
+        size = new_size
+    return x
+
+
 def _cholesky(matrix: list[list[float]]) -> list[list[float]]:
     """L with L x L-transposed = matrix, for a symmetric positive definite matrix."""
     n = len(matrix)

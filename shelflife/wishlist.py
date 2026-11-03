@@ -4,7 +4,8 @@ Valve's `IWishlistService/GetWishlist` returns only a game id, your own rank for
 you added it. It needs no key, only your SteamID, and a private wishlist comes back empty. The
 endpoint is not part of Valve's documented API (see "Privacy" in the README).
 
-Wishlisting is wanting, not liking, so it never teaches your taste profile.
+A wishlisted game teaches your taste weakly: it lifts games very like it, a little (see
+shelflife/recommend.py), and never changes the tag profile on My taste.
 """
 
 from dataclasses import dataclass

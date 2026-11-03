@@ -33,7 +33,11 @@
         {% endif %}
       </div>
       {% if wish_note %}<p class="meta">★ {{ wish_note }}</p>{% endif %}
-      <p class="meta"><a href="https://store.steampowered.com/app/{{ game.steam_app_id }}/">Steam store page ↗</a></p>
+      <p class="meta"><a href="https://store.steampowered.com/app/{{ game.steam_app_id }}/">Steam store page ↗</a>
+        {% if not entry and not wish_note %}
+        <a class="button small wish-on-steam" href="https://store.steampowered.com/app/{{ game.steam_app_id }}/" target="_blank" rel="noopener"
+           title="Opens the game's Steam store page: click “Add to your wishlist” there, and your next sync brings it in">Wishlist it on Steam ↗</a>
+        {% endif %}</p>
     </div>
   </div>
 </div>
