@@ -63,6 +63,9 @@
             {% if g.cover_url %}<img src="{{ g.cover_url }}" loading="lazy" alt="">{% endif %}
           </a>
           <a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a>
+          {% if g.library_entry.platform and g.steam_app_id in wished %}
+          <span class="warn-tag" title="You have it on {{ g.library_entry.platform }}, and it's on your Steam wishlist">⚠ Wishlisted</span>
+          {% endif %}
         </div>
       </td>
       <td>{{ source_label(g) }}</td>

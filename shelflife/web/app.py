@@ -163,6 +163,7 @@ templates.env.globals.update(
     length_of=estimate_length,
     price_of=lambda game: price_view.shown(game.price),
     owned=price_view.owned,
+    elsewhere=otherplatforms.elsewhere,
 )
 
 
@@ -383,6 +384,7 @@ def library(
             "pager_base": url() + "&page=",
             "rec": rec,
             "status": status,
+            "wished": set(wishlist_by_id(session)),
             **filters.context(tag_index),
             "page": part.page,
             "pages": part.pages,
@@ -632,6 +634,8 @@ def wishlist_page(
             "notes": {r.game.steam_app_id: wishlist_note(items[r.game.steam_app_id], r.game) for r in part.shown},
             "total": part.total,
             "on_list": len(items),
+            # Wishlisted, but you already have them on another platform: worth a look before buying.
+            "doubles": sorted((g for g in games.values() if otherplatforms.elsewhere(g)), key=lambda g: g.name.lower()),
             "waiting": waiting,
             "other": other,
             "dismissed": dismissed,

@@ -10,14 +10,17 @@
   <a class="cover" href="/game/{{ g.steam_app_id }}">
     {% if g.cover_url %}<img src="{{ g.cover_url }}" loading="lazy" alt="">{% else %}<span class="nocover">{{ g.name[:1] }}</span>{% endif %}
     <span class="badge {{ fit_level(r.similarity) }}">{{ "%.0f"|format(r.similarity * 100) }}% {{ "similar" if similar_to else "match" }}</span>
-    {% if (g.store_info or {}).coming_soon %}<span class="flag soon">Coming soon</span>
+    {% set have = elsewhere(g) if note else none %}
+    {% if have %}<span class="flag warn" title="On your Steam wishlist, but you already have it on {{ have }}">⚠ Have it on {{ have }}</span>
+    {% elif (g.store_info or {}).coming_soon %}<span class="flag soon">Coming soon</span>
     {% elif note %}<span class="flag">★ Wishlist</span>{% endif %}
   </a>
   <div class="card-body">
     <div class="title-row"><h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a></h3>{{ price_tag(g) }}</div>
     {% set length = length_of(g) %}
     <p class="meta">{{ short_reviews(g) }}{% if length %} · <span title="{{ length.text }} (from how long its reviewers played)">{{ length.short_text }}{{ " played" if length.endless }}</span>{% endif %}</p>
-    {% if note %}<p class="wish" title="{{ note }}">★ {{ note }}</p>{% endif %}
+    {% if have %}<p class="warn-line">⚠ On your Steam wishlist, but you already have it on {{ have }}.</p>
+    {% elif note %}<p class="wish" title="{{ note }}">★ {{ note }}</p>{% endif %}
     {% if r.because %}<p class="why" title="{{ r.because|join('; ') }}">Like {% for b in r.because %}<b>{{ game_of(b) }}</b>{{ ", " if not loop.last }}{% endfor %}</p>{% endif %}
     {% if r.tags %}<p class="tags">{% for t in r.tags %}<span class="tag">{{ t }}</span>{% endfor %}</p>{% endif %}
     {% if r.watch %}<p class="watch">Very like {{ r.watch|join(", ") }}</p>{% endif %}

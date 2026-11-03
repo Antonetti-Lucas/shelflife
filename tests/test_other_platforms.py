@@ -320,3 +320,30 @@ def test_changing_the_platform_and_removing_from_the_game_page(client, session):
     post(client, "/game/7/platform", remove="1")
     session.expire_all()
     assert session.get(LibraryEntry, 7) is None
+
+
+# ---- wishlisted, but you have it elsewhere ----
+
+
+def test_a_wishlisted_game_you_have_on_another_platform_is_flagged_everywhere(client, session):
+    from datetime import datetime
+
+    from shelflife.models import WishlistItem
+
+    add_game(session, 1, "Loved", tags={"Stealth": 100}, minutes=6000)
+    diary.save_rating(session, 1, 5.0)
+    add_game(session, 5, "Thief Again", tags={"Stealth": 100}, owned=False, reviews=(900, 100))
+    add_game(session, 6, "Only wished", tags={"Stealth": 90}, owned=False, reviews=(900, 100))
+    otherplatforms.add_game(session, 5, "x", "PlayStation", 20)
+    for app_id in (5, 6):
+        session.add(WishlistItem(steam_app_id=app_id, priority=0, added_at=datetime(2026, 1, 1), seen_at=datetime(2026, 1, 1)))
+    session.commit()
+    assert otherplatforms.elsewhere(session.get(Game, 5)) == "PlayStation" and otherplatforms.elsewhere(session.get(Game, 6)) is None
+
+    wishlist = client.get("/wishlist").text
+    assert "You already have 1 of these on other platforms" in wishlist and "Thief Again</a> (PlayStation)" in wishlist
+    assert "⚠ Have it on PlayStation" in wishlist and wishlist.count("⚠ Have it on") == 1  # only that card
+    assert "already have it on PlayStation" in client.get("/game/5").text
+    assert "already have it on" not in client.get("/game/6").text
+    library = client.get("/library").text
+    assert library.count("⚠ Wishlisted") == 1

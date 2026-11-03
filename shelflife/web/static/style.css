@@ -531,3 +531,11 @@ dialog.lightbox .lb-close { right: -8px; top: -52px; font-size: 2rem; }
 .wish-on-steam { margin-left: 10px; padding: 3px 11px; font-size: 0.82rem; }
 .wish-link { font-size: 0.84rem; color: var(--muted); white-space: nowrap; }
 .wish-link:hover { color: var(--accent); }
+
+/* ---- wishlisted, but you have it elsewhere ---- */
+.flag.warn { background: var(--warn); color: #fff; }
+.warn-line { color: var(--warn); font-size: 0.86rem; font-weight: 600; margin: 4px 0; }
+.warn-box { background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 9px 13px; font-size: 0.9rem; max-width: 820px; }
+.warn-box a { color: inherit; text-decoration: underline; }
+.hero-inner .warn-box { background: rgb(232 154 27 / 0.16); color: #ffd9a8; }
+.warn-tag { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); font-size: 0.76rem; font-weight: 600; white-space: nowrap; }

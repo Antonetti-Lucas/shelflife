@@ -32,7 +32,12 @@
         {% if my_languages and not fits_languages(game.languages, my_languages) %}<span class="nolang">Not in your languages</span>{% endif %}
         {% endif %}
       </div>
-      {% if wish_note %}<p class="meta">★ {{ wish_note }}</p>{% endif %}
+      {% if wish_note and entry and entry.platform %}
+      <p class="warn-box">⚠ This game is on your Steam wishlist, but you already have it on {{ entry.platform }}.
+        If you don't mean to buy it again, take it off your wishlist on its
+        <a href="https://store.steampowered.com/app/{{ game.steam_app_id }}/" target="_blank" rel="noopener">Steam store page ↗</a>;
+        your next sync takes it off here too.</p>
+      {% elif wish_note %}<p class="meta">★ {{ wish_note }}</p>{% endif %}
       <p class="meta"><a href="https://store.steampowered.com/app/{{ game.steam_app_id }}/">Steam store page ↗</a>
         {% if not entry and not wish_note %}
         <a class="button small wish-on-steam" href="https://store.steampowered.com/app/{{ game.steam_app_id }}/" target="_blank" rel="noopener"

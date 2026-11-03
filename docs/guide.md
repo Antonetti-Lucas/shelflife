@@ -23,6 +23,8 @@ The web app listens only on your own machine, answers only to `127.0.0.1` and `l
 
 A game in your **family library that you played somewhere else** works the same way: find it on the same page (it says it's in your family library) and mark where you played it, or pick the platform under **Played on** on its page. It stays a family game and the Library shows it as "Family · PlayStation". Its Steam achievements are no longer read or counted, since they'd show your Steam play (often none) and pull its play score down; only the hours you type count, for wherever you played. Pick "Steam, through Family Sharing" to undo it. If the family stops sharing the game, it stays in your library as a game from that platform.
 
+A game on your Steam wishlist that you already have on another platform gets a **warning**, so you don't buy it twice by mistake: a notice at the top of the Wishlist page naming them, an orange flag on its card, a box on its page, and "⚠ Wishlisted" in its Library row. Take it off your wishlist on Steam (its store page) and the next sync clears the warning.
+
 ## What Sync reads
 
 One button, nine steps, in the background with a progress bar and a Stop button:

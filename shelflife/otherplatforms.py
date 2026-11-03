@@ -47,6 +47,13 @@ def where_you_have_it(game: Game) -> str:
     return f"on {platform}" if platform else "on Steam"
 
 
+def elsewhere(game: Game) -> str | None:
+    """The other platform you have this game on, or None. A game on your Steam wishlist that you
+    already have elsewhere gets a warning, so you don't buy it twice by mistake."""
+    entry = game.library_entry
+    return entry.platform if entry is not None and entry.platform else None
+
+
 def can_mark(game: Game | None) -> bool:
     """A Family Sharing game not yet marked as played elsewhere: it can be."""
     entry = game.library_entry if game is not None else None

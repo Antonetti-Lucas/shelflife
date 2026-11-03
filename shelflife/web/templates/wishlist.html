@@ -9,6 +9,12 @@
 </div>
 <p class="lede">Your Steam wishlist, ranked by how well each game fits your taste. Each wishlisted game also lifts games very like it a little, a weaker signal than a rating.</p>
 
+{% if doubles %}
+<p class="warn-box">⚠ You already have {{ doubles|length }} of these on other platforms:
+  {% for g in doubles %}<a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a> ({{ elsewhere(g) }}){{ ", " if not loop.last else "." }}{% endfor %}
+  Take {{ "it" if doubles|length == 1 else "them" }} off your Steam wishlist if you don't mean to buy {{ "it" if doubles|length == 1 else "them" }} again.</p>
+{% endif %}
+
 {% if not on_list %}
   <p class="empty">Nothing here yet. Press <a href="/sync">Sync</a> to read your wishlist (it must be public on Steam).</p>
 {% else %}
