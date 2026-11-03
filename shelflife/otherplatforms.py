@@ -2,10 +2,11 @@
 friend's copy. You add them by hand, and only games that are also on Steam, so their store
 details, tags, reviews and length come from Steam like every other game's.
 
-Such a game is in your library with the platform you played it on, and like a Family Sharing
-game it has no Steam playtime or achievements: you type its hours. It counts as played (you
-added it because you did), so it is never recommended back to you; your rating or your hours
-teach your taste as they do for any game. If you later buy it on Steam, the next sync makes it
+Such a game is in your library with the platform you have it on, and like a Family Sharing
+game it has no Steam playtime or achievements: you type its hours. With an hour or more it is
+played, and your rating or your hours teach your taste as for any game; under an hour it is on
+your backlog, recommended like an owned game you haven't played, until you play it, rate it or
+give it a status. If you later buy it on Steam, the next sync makes it
 an ordinary Steam game, with Steam's hours.
 
 A Family Sharing game you played somewhere else instead is marked the same way: it stays a

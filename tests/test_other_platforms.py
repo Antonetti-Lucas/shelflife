@@ -39,7 +39,7 @@ def test_a_game_from_another_platform_joins_the_library_with_your_hours(session)
     game = otherplatforms.add_game(session, 1593500, "  God of   War ", "PlayStation", 42.5)
     entry = session.get(LibraryEntry, 1593500)
     assert game.name == "God of War" and entry.platform == "PlayStation" and entry.playtime_total_min == 2550
-    assert is_played(entry, False)  # added because you played it, hours or not
+    assert is_played(entry, False)  # 42.5 hours
     assert otherplatforms.where_you_have_it(game) == "on PlayStation"
 
 
@@ -183,19 +183,37 @@ def test_a_played_game_from_another_platform_is_never_recommended_back(session):
     ratings = build_scenario(session)
     scores = score_all(session, ratings)
     pick = next(iter(scores.discover))  # a game you don't have, recommended
-    otherplatforms.add_game(session, pick, "x", "Nintendo Switch")
+    otherplatforms.add_game(session, pick, "x", "Nintendo Switch", 12)
     after = score_all(session, ratings)
     assert pick not in after.backlog | after.discover | after.family
+
+
+def test_one_you_havent_played_goes_on_the_backlog_until_you_play_rate_or_track_it(session):
+    ratings = build_scenario(session)
+    pick = next(iter(score_all(session, ratings).discover))
+    otherplatforms.add_game(session, pick, "x", "PlayStation")  # no hours
+    assert not is_played(session.get(LibraryEntry, pick), False)
+    assert pick in score_all(session, ratings).backlog
+    diary.set_status(session, pick, "played", None, None)  # played it, hours unknown
+    assert pick not in score_all(session, ratings).backlog
+
+
+def test_steam_achievements_dont_make_a_family_game_played_elsewhere_played(session):
+    add_game(session, 2, "Family Game", owned=False, family=True, achievements=(5, 40))
+    assert is_played(session.get(LibraryEntry, 2), True)  # family play on Steam
+    otherplatforms.set_platform(session, 2, "Xbox")
+    assert not is_played(session.get(LibraryEntry, 2), True)  # only your typed hours tell now
 
 
 def test_stats_and_sync_count_them_apart(session):
     add_game(session, 1, "Owned", minutes=600)
     add_game(session, 2, "Family", owned=False, family=True)
-    otherplatforms.add_game(session, 3, "Elsewhere", "Mobile")
+    otherplatforms.add_game(session, 3, "Elsewhere", "Mobile")  # no hours: on the backlog
+    otherplatforms.add_game(session, 4, "Played elsewhere", "Mobile", 9)
     stats = compute_stats(session)
-    assert (stats.owned, stats.family, stats.other, stats.backlog) == (1, 1, 1, 0)
+    assert (stats.owned, stats.family, stats.other, stats.backlog, stats.played) == (1, 1, 2, 1, 2)
     due = what_is_due(session, with_due=False)
-    assert (due["owned"], due["family"], due["other"]) == (1, 1, 1)
+    assert (due["owned"], due["family"], due["other"]) == (1, 1, 2)
 
 
 # ---- finding the game on Steam ----

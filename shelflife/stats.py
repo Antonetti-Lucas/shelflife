@@ -20,7 +20,7 @@ class Stats:
     family: int
     other: int  # games you added from other platforms
     played: int  # of the above, the ones you have really played
-    backlog: int  # owned and under an hour
+    backlog: int  # yours (on Steam or another platform) and under an hour
     hours_total: float  # owned games, plus family hours you entered
     top_hours: list[tuple[Game, float]]
 
@@ -50,7 +50,7 @@ def compute_stats(session: Session) -> Stats:
         other += is_other
         owned += not (is_family or is_other)
         played += is_played(entry, is_family)
-        backlog += not (is_family or is_other) and entry.playtime_total_min < BACKLOG_MAX_MIN
+        backlog += not is_family and entry.playtime_total_min < BACKLOG_MAX_MIN  # other platforms' unplayed ones too
         if entry.playtime_total_min:
             hours.append((game, entry.playtime_total_hours))
     hours.sort(key=lambda gh: gh[1], reverse=True)

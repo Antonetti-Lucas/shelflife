@@ -66,14 +66,15 @@ def players_percentile(hours: float, percentiles: list[float]) -> float:
 
 def is_played(entry: LibraryEntry | None, family: bool) -> bool:
     """Whether you've really played a game. Steam reports no playtime for family
-    games, so for those any unlocked achievement counts as having played. A game you
-    added from another platform counts as played: that's why you added it."""
+    games, so for those any unlocked achievement counts as having played. For a game
+    you played on another platform only the hours you typed tell: under an hour, it is
+    on your backlog like an owned game (rate it or give it a status if you did play it)."""
     if entry is None:
         return False
-    if entry.platform:
-        return True
     if entry.playtime_total_min >= BACKLOG_MAX_MIN:
         return True
+    if entry.platform:
+        return False  # Steam's achievements aren't your play there
     return family and (entry.achievements_unlocked or 0) > 0
 
 
