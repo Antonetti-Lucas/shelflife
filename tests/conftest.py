@@ -22,7 +22,7 @@ os.environ["SHELFLIFE_ALLOWED_HOSTS"] = "127.0.0.1,localhost,testserver"
 
 import pytest  # noqa: E402
 
-from shelflife import achievements, appnames, learned, recommend, reviews, store  # noqa: E402
+from shelflife import achievements, appnames, learned, recommend, reviews, similar, store  # noqa: E402
 from shelflife.db import Base, SessionLocal, engine, init_db  # noqa: E402
 
 if "shelflife-tests-" not in str(engine.url):  # pragma: no cover - safety net
@@ -39,6 +39,11 @@ def isolated(tmp_path, monkeypatch):
     learned._text_cache.update(key=None, vectors={})
     learned._fit_cache.clear()
     recommend.clear_cache()
+    similar._idf_cache.update(key=None, idf=None)
+    from shelflife.web import app as web_app  # noqa: PLC0415  (the app imports everything; only needed here)
+
+    web_app._all_tags.update(key=None, index=None)
+    recommend.WARM_AFTER_CHANGES = False  # no background rebuilds racing the next test's database
     yield
 
 

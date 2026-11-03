@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, contains_eager, selectinload
 
 from shelflife import diary, gamelists, otherplatforms
 from shelflife.diary import favorite_ids
@@ -31,7 +31,7 @@ from shelflife.quality import quality_factor
 from shelflife.recency import recency
 from shelflife.discover_job import SECONDS_PER_GAME, job as discover_job
 from shelflife.discovery import MIN_REVIEWS
-from shelflife.recommend import explain, play_score_of, recommend, score_all, taste_profile, top_taste_tags
+from shelflife.recommend import explain, play_score_of, recommend, score_all, taste_profile, top_taste_tags, warm_up
 from shelflife.score import engagement_score
 from shelflife.settings import (
     TASTE_MODE_LABELS,
@@ -44,7 +44,7 @@ from shelflife.settings import (
     set_taste_mode,
 )
 from shelflife.learned import text_index
-from shelflife.similar import search_tags, similar_to, tag_idf
+from shelflife.similar import GAMES_VERSION, search_tags, similar_to, tag_idf
 from shelflife.stats import compute_stats
 from shelflife.sync_job import STEPS as SYNC_STEPS
 from shelflife.sync_job import job as sync_job
@@ -92,12 +92,17 @@ def get_session():
 
 @app.middleware("http")
 async def block_cross_site_posts(request: Request, call_next):
-    """Stop other websites from submitting forms to this local app."""
+    """Stop other websites from submitting forms to this local app. And after a change (any post
+    that worked: a rating, a status, a list...), start rebuilding the scores in the background,
+    so the next page doesn't wait for them."""
     if request.method == "POST":
         origin = request.headers.get("origin")
         if origin and urlparse(origin).netloc != request.headers.get("host"):
             return PlainTextResponse("Cross-site request blocked.", status_code=403)
-    return await call_next(request)
+    response = await call_next(request)
+    if request.method == "POST" and response.status_code < 400:
+        warm_up()
+    return response
 
 
 # ---- helpers used by the templates ----------------------------------------
@@ -165,6 +170,18 @@ templates.env.globals.update(
     owned=price_view.owned,
     elsewhere=otherplatforms.elsewhere,
 )
+
+
+_all_tags: dict = {"key": None, "index": None}
+
+
+def all_tags_index(session: Session) -> TagIndex:
+    """The tags of every game ShelfLife knows (for "Find more games"), kept until games' tags change:
+    reading them all took a few tenths of a second on every Explore visit."""
+    key = session.execute(GAMES_VERSION).scalar()
+    if _all_tags["key"] != key:
+        _all_tags.update(key=key, index=TagIndex(session.scalars(select(Game.tags))))
+    return _all_tags["index"]
 
 
 def static_url(name: str) -> str:
@@ -323,6 +340,7 @@ def library(
     query = (
         select(Game)
         .join(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
+        .options(contains_eager(Game.library_entry))  # one query, not one more per game
         .where(or_(Game.type == "game", Game.type.is_(None)))
     )
     if source == "owned":
@@ -430,12 +448,9 @@ def explore(
     scores = score_all(session, ratings, not_interested)
     rec, keep = recommended(rec, {i: scores.by_id[i].score for i in scores.discover})
 
-    query = (
-        select(Game)
-        .outerjoin(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
-        .where(LibraryEntry.steam_app_id.is_(None), Game.type == "game")
-    )
-    games = list(session.scalars(query))
+    # The games you don't own, from the scores (they hold every game with tags, already loaded;
+    # one without tags can't be ranked, so Explore never showed it).
+    games = [r.game for r in scores.by_id.values() if r.game.library_entry is None]
     if get_hide_adult(session):
         games = [g for g in games if not is_adult_game(g)]
     if my_languages := get_languages(session):
@@ -490,7 +505,7 @@ def explore(
             "like_tags": like_tags,
             "rec": rec,
             "wishlist": wishlist,
-            "notes": {i: wishlist_note(w, session.get(Game, i)) for i, w in wished.items()},
+            "notes": {r.game.steam_app_id: wishlist_note(wished[r.game.steam_app_id], r.game) for r in part.shown if r.game.steam_app_id in wished},
             **filters.context(tag_index),
             "page": part.page,
             "pages": part.pages,
@@ -499,7 +514,7 @@ def explore(
             "job": discover_job.snapshot(),
             "sync_running": sync_job.snapshot().running,
             "taste_tags": top_taste_tags(session, ratings, not_interested),
-            "find_tag_options": TagIndex(session.scalars(select(Game.tags))).popular(),
+            "find_tag_options": all_tags_index(session).popular(),
             "find_counts": FIND_COUNTS,
             "find_min_reviews": FIND_MIN_REVIEWS,
             "min_reviews_default": MIN_REVIEWS,
@@ -567,7 +582,7 @@ def find_more_games(
         return RedirectResponse("/explore#find", status_code=303)
 
     wanted, leave_out = split_excluded(parse_tags(tags))  # "-Horror": search, but set aside games with it
-    index = TagIndex(session.scalars(select(Game.tags)))
+    index = all_tags_index(session)
     leave_out = [index.spelling(t) for t in leave_out]
     if wanted:
         wanted = [index.spelling(t) for t in wanted][:MAX_FIND_TAGS]
@@ -612,7 +627,10 @@ def wishlist_page(
     filters = ListFilter.read(q, tag, match, length)
     sort = sort if sort in WISHLIST_SORTS else "fit"
     items = wishlist_by_id(session)
-    games = {g.steam_app_id: g for g in session.scalars(select(Game).where(Game.steam_app_id.in_(list(items))))} if items else {}
+    games = {
+        g.steam_app_id: g
+        for g in session.scalars(select(Game).options(selectinload(Game.library_entry)).where(Game.steam_app_id.in_(list(items))))
+    } if items else {}
     ratings = diary.load_ratings(session)
     not_interested = diary.load_not_interested(session)
     scores = score_all(session, ratings, not_interested)

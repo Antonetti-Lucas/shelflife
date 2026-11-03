@@ -182,11 +182,13 @@ class NearIndex:
             for tag, y in tag_units.get(j, {}).items():
                 self._postings.setdefault(tag, []).append((j, y))
         self._found: dict[int, list[tuple[int, float]]] = {}
+        self._lock = threading.Lock()  # shared between rebuilds, and a rebuild can run in the background
 
     def near(self, i: int) -> list[tuple[int, float]]:
         """(game id, likeness) for the games in the set at least `floor` alike to game i (itself included)."""
-        if i in self._found:
-            return self._found[i]
+        found = self._found.get(i)
+        if found is not None:
+            return found
         tag_dots: dict[int, float] = {}
         for tag, x in self.tag_units.get(i, {}).items():
             for j, y in self._postings.get(tag, ()):
@@ -201,7 +203,8 @@ class NearIndex:
                 value += self.beta * _dot(own_text, other)
             if value >= self.floor:
                 out.append((j, value))
-        self._found[i] = out
+        with self._lock:
+            self._found[i] = out
         return out
 
 

@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 from shelflife.db import SessionLocal
 from shelflife.jobs import BackgroundJob, JobSnapshot
 from shelflife.models import Game, LibraryEntry, WishlistItem
+from shelflife.recommend import warm_up
 from shelflife.steam import SteamError, fetch_owned_games
 from shelflife.sync import (
     about_due,
@@ -340,6 +341,7 @@ class SyncJob(BackgroundJob):
                     session, api_key, steam_id, on_progress=progress, should_stop=self._stop.is_set, full=full
                 )
             snapshot = summarize_sync(result)
+            warm_up()  # the scores, ready for the next page
         except Exception as exc:  # never leave the page stuck on "running"
             reason = (str(exc).splitlines() or [""])[0] or type(exc).__name__
             snapshot = JobSnapshot(state="error", message=f"Stopped early: {reason}")

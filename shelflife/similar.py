@@ -8,7 +8,7 @@ by how relevant they are to it and how rare they are, compared by cosine.
 
 from collections.abc import Iterable
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from shelflife.learned import TEXT_WEIGHT, Vector, likeness, unit
@@ -21,11 +21,22 @@ MIN_SIMILARITY = 0.15  # a new game must be at least this close to count as "lik
 SEARCH_TAGS = 3  # how many of a game's tags a search for similar games uses
 
 
+_idf_cache: dict = {"key": None, "idf": None}
+GAMES_VERSION = text(  # changes when any game's tags (or type) do
+    "SELECT count(*) || ':' || coalesce(sum(length(tags)), 0) || ':' || coalesce(max(tags_fetched_at), '') || ':'"
+    " || coalesce(sum(length(type)), 0) FROM games"
+)
+
+
 def tag_idf(session: Session) -> dict[str, float]:
     """Tag rarity across every game with tags (library and pool), so common tags such
-    as "Singleplayer" count for little."""
-    games = session.scalars(select(Game).where(Game.type == "game"))
-    return compute_idf(g.tags for g in games if g.tags)
+    as "Singleplayer" count for little. Reading every game's tags takes half a second, so the
+    result is kept until the games' tags change."""
+    key = session.execute(GAMES_VERSION).scalar()
+    if _idf_cache["key"] != key:
+        games = session.scalars(select(Game.tags).where(Game.type == "game"))
+        _idf_cache.update(key=key, idf=compute_idf(tags for tags in games if tags))
+    return _idf_cache["idf"]
 
 
 def reference_vector(game: Game, idf: dict[str, float]) -> dict[str, float]:

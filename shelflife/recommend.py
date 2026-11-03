@@ -167,6 +167,7 @@ class _Model:
     vectors: dict[int, dict[str, float]]
     games: list[Game]
     session: Session | None = None
+    likeness_key: tuple | None = None  # what the games' tags and texts are (data_version's games and library parts)
     mode: str = "both"  # what teaches the taste: "both", "ratings" or "play" (settings.TASTE_MODES)
     hide_adult: bool = False  # leave games for adults out of the lists
     languages: tuple[str, ...] = ()  # leave out games without any of these (none: no filter)
@@ -251,8 +252,19 @@ class _Model:
 
     @cached_property
     def near_targets(self) -> NearIndex:
-        """Which of those games are close to a given one (LOOK_ALIKE_FLOOR or more alike)."""
-        return NearIndex(self.narrow_targets, self.tag_units, self.text_units, self.beta, LOOK_ALIKE_FLOOR)
+        """Which of those games are close to a given one (LOOK_ALIKE_FLOOR or more alike). Finding
+        them is most of the work of scoring every game, and it depends only on the games' tags and
+        texts and on which games are targets, not on how you rated them: so it is kept across
+        rebuilds, and rating a game 3 stars or more (or changing a rating among those) reuses it."""
+        key = (self.likeness_key, self.beta, frozenset(self.narrow_targets)) if self.likeness_key is not None else None
+        with _cache_lock:
+            if key is not None and _near_cache.get("key") == key:
+                return _near_cache["index"]
+        index = NearIndex(self.narrow_targets, self.tag_units, self.text_units, self.beta, LOOK_ALIKE_FLOOR)
+        if key is not None:
+            with _cache_lock:
+                _near_cache.update(key=key, index=index)
+        return index
 
     def narrow_alphas(self, skip: int | None = None) -> list[tuple[int, float]]:
         """The narrow targets as (game id, weight) on the narrow likeness, fitted together so a
@@ -394,7 +406,7 @@ def _build_model(
     scale = play_scale(games)
 
     model = _Model(
-        vectors, games, session=session, mode=mode, hide_adult=get_hide_adult(session),
+        vectors, games, session=session, likeness_key=data_version(session)[:2], mode=mode, hide_adult=get_hide_adult(session),
         languages=tuple(get_languages(session)),
         shown_ratings=dict(taught), scale=scale,
     )
@@ -458,8 +470,9 @@ SELECT
   (SELECT count(*) || ':' || coalesce(sum(steam_app_id), 0) FROM wishlist_items)
 """)
 
-_cache_lock = threading.Lock()
+_cache_lock = threading.RLock()
 _cache: dict = {"key": None, "model": None, "scores": None}
+_near_cache: dict = {"key": None, "index": None}
 
 
 def data_version(session: Session) -> tuple:
@@ -485,6 +498,27 @@ def _cached(session: Session, ratings: dict[int, float], not_interested: dict[in
 def clear_cache() -> None:
     with _cache_lock:
         _cache.update(key=None, model=None, scores=None)
+        _near_cache.update(key=None, index=None)
+
+
+WARM_AFTER_CHANGES = True  # tests turn it off: they check the pages, not the timing
+
+
+def warm_up() -> None:
+    """Rebuild the scores now, in the background, after something changed (a rating, a sync), so
+    the next page you open finds them ready instead of building them itself. A page asking
+    while this runs waits for it rather than building them twice."""
+    if not WARM_AFTER_CHANGES:
+        return
+
+    def work() -> None:
+        try:
+            with SessionLocal() as session:
+                score_all(session, diary_ratings(session), diary_not_interested(session))
+        except Exception:  # noqa: BLE001  (best effort: the next page builds them anyway)
+            pass
+
+    threading.Thread(target=work, name="warm-scores", daemon=True).start()
 
 
 def _score_everything(model: _Model) -> Scores:
@@ -595,8 +629,9 @@ def _score(cand: Game, model: _Model) -> Recommendation:
     similarity = min(model.liking(app_id) * MATCH_SCALE, 1.0)
     by_tag = sorted(((model.profile.get(t, 0.0) * v, t) for t, v in vec.items()), reverse=True)
     near_dislikes = sorted(
-        ((model.kernel(app_id, i), i) for i in (*model.dislikes, *model.dismissed) if i != app_id), reverse=True
-    )[:1]
+        ((k, i) for i, k in model.near_targets.near(app_id) if i != app_id and (i in model.dislikes or i in model.dismissed)),
+        reverse=True,
+    )[:1]  # WATCH_LIKENESS is above LOOK_ALIKE_FLOOR, so the search has every game close enough
     quality = quality_factor(cand.reviews_positive, cand.reviews_negative)
     return Recommendation(
         game=cand,
