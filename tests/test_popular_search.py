@@ -1,4 +1,4 @@
-"""Searching for new games without tags: the best reviewed of SteamSpy's list of popular games."""
+"""Searching for new games without tags: the best reviewed of Steam's popular games (SteamSpy's list if Steam fails)."""
 
 import threading
 
@@ -134,6 +134,24 @@ def no_tag_lookups(monkeypatch):
     monkeypatch.setattr(store, "fetch_spy_details", refuse)
 
 
+@pytest.fixture(autouse=True)
+def steam(monkeypatch):
+    """Steam's popular games: down unless a test sets `steam.listings` (or `steam.error`). Records the
+    calls, and refuses the network."""
+    state = {"listings": None, "calls": []}
+
+    def fetch(min_reviews=0, timeout=90):
+        state["calls"].append(min_reviews)
+        if state["listings"] is None:
+            raise requests.ConnectionError("steam down")
+        if isinstance(state["listings"], Exception):
+            raise state["listings"]
+        return state["listings"]
+
+    monkeypatch.setattr(store, "fetch_steam_popular_games", fetch)
+    return type("Steam", (), {"state": state})
+
+
 @pytest.fixture
 def enrich(monkeypatch):
     log, kinds = [], {}
@@ -147,6 +165,64 @@ def enrich(monkeypatch):
     monkeypatch.setattr(discovery, "enrich_one", fake)
     fake.log, fake.kinds = log, kinds
     return fake
+
+
+def tagged(app_id, positive=900, negative=100):
+    return Listing(app_id, f"Game {app_id}", positive, negative, {"Stealth": 100})
+
+
+# ---- Steam's list ----
+
+
+def test_steams_popular_games_are_used_without_touching_steamspy(session, pages, steam, enrich):
+    steam.state["listings"] = [tagged(i, 1000 - i, i) for i in range(1, 11)]
+    result = find_games(session, [], 3, popular=True)
+    assert (result.added, result.enriched) == (3, 3) and sorted(enrich.log) == [1, 2, 3]
+    assert steam.state["calls"] == [300] and pages.asked == []  # one Steam call, no SteamSpy page
+
+
+def test_steams_tags_are_saved_so_no_second_tag_fetch(session, pages, steam, monkeypatch):
+    steam.state["listings"] = [tagged(1)]
+    monkeypatch.setattr(store, "fetch_steam_tags", lambda *a, **k: pytest.fail("fetched the tags again"))
+    monkeypatch.setattr(store, "fetch_store_details", lambda app_id: None)
+    seen = {}
+
+    def fake(game, spy=None):  # the real enrich_one fetches tags only when the game has none
+        seen["tags"], seen["stamped"] = game.tags, game.tags_fetched_at
+        game.type, game.details_fetched_at = "game", discovery._now()
+
+    monkeypatch.setattr(discovery, "enrich_one", fake)
+    find_games(session, [], 1, popular=True)
+    assert seen == {"tags": {"Stealth": 100}, "stamped": session.get(Game, 1).tags_fetched_at}
+    assert seen["stamped"] is not None
+
+
+def test_the_real_enrich_does_not_fetch_tags_for_a_game_steam_brought_tags_for(session, pages, steam, monkeypatch):
+    steam.state["listings"] = [tagged(1)]
+    monkeypatch.setattr(store, "fetch_steam_tags", lambda *a, **k: pytest.fail("fetched the tags again"))
+    monkeypatch.setattr(store, "fetch_store_details", lambda app_id: None)
+    result = find_games(session, [], 1, popular=True)
+    assert result.added == 1 and session.get(Game, 1).tags == {"Stealth": 100}
+
+
+def test_steam_failing_falls_back_to_steamspy(session, pages, steam, enrich):
+    pages.data[0] = [listing(1, 900, 100)]
+    result = find_games(session, [], 1, popular=True)  # steam is down by default
+    assert result.added == 1 and pages.asked == [0] and result.aborted is None
+    assert session.get(Game, 1).tags_fetched_at is None or enrich.log == [1]  # SteamSpy's list has no tags: enrich_one gets them
+
+
+@pytest.mark.parametrize("failure", [RateLimited("Steam is rate limiting us."), ValueError("bad json"), []])
+def test_steam_rate_limited_or_empty_also_falls_back(session, pages, steam, enrich, failure):
+    steam.state["listings"] = failure
+    pages.data[0] = [listing(1)]
+    assert find_games(session, [], 1, popular=True).added == 1 and pages.asked == [0]
+
+
+def test_both_failing_is_reported(session, pages, steam, enrich):
+    pages.data[0] = requests.ConnectionError("down")
+    result = find_games(session, [], 1, popular=True)
+    assert result.added == 0 and "Could not reach Steam or SteamSpy" in result.aborted
 
 
 def test_the_best_reviewed_popular_games_you_do_not_have_are_added(session, pages, enrich):
@@ -225,8 +301,9 @@ def test_progress_names_the_page_and_says_when_it_waits(session, pages, enrich):
     steps = []
     find_games(session, [], 5, popular=True, on_progress=lambda *a: steps.append(a))
     texts = [s[3] for s in steps if s[0] == "lists"]
-    assert "page 1" in texts[0] and "waits" not in texts[0]
-    assert "page 2" in texts[1] and "waits" in texts[1]
+    assert "Steam" in texts[0] and "page" not in texts[0]  # Steam is down here, so SteamSpy follows
+    assert "page 1" in texts[1] and "waits" not in texts[1]
+    assert "page 2" in texts[2] and "waits" in texts[2]
     assert steps[-1][0] == "done"
 
 
@@ -239,7 +316,7 @@ def test_a_rate_limited_page_stops_the_search_and_says_why(session, pages, enric
 def test_a_network_error_is_reported_not_raised(session, pages, enrich):
     pages.data[0] = requests.ConnectionError("down")
     result = find_games(session, [], 5, popular=True)
-    assert result.added == 0 and "Could not reach SteamSpy" in result.aborted
+    assert result.added == 0 and "Could not reach Steam or SteamSpy" in result.aborted
 
 
 def test_stopping_before_reading_a_page_adds_nothing(session, pages, enrich):
@@ -346,7 +423,7 @@ def test_anything_else_is_the_tag_search(client, session, monkeypatch, source):
 def test_the_page_describes_the_steps_of_a_popular_search(client, session):
     post(client, "/explore/find", source="popular")
     html = client.get("/explore").text
-    assert "Step 1 of 2: reading SteamSpy's popular games" in html and "<progress" in html
+    assert "Step 1 of 2: reading Steam's popular games" in html and "<progress" in html
 
 
 def test_a_finished_popular_search_shows_what_it_found(client, session, pages, enrich):

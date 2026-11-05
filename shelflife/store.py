@@ -300,11 +300,14 @@ def _steam_listing(item: dict, names: dict[int, str]) -> Listing:
     return Listing(app_id, item.get("name") or f"App {app_id}", positive, count - positive, _item_tags(item, names))
 
 
-def fetch_steam_tag_games(tag_id: int, min_reviews: int = 0, timeout: float = 90) -> list[Listing]:
-    """The released games Steam lists under a tag, with their review counts and tags, in Steam's
-    popularity order. Reads pages until one brings few games with `min_reviews` (see
+def _steam_games(tag_id: int | None, min_reviews: int, timeout: float) -> list[Listing]:
+    """Steam's released games in its popularity order, under a tag or (tag_id None) all of them,
+    with review counts and tags. Reads pages until one brings few games with `min_reviews` (see
     TAG_QUERY_ENOUGH), so a huge tag like Indie isn't read to the end."""
     names = steam_tag_names()
+    filters: dict = {"released_only": True, "type_filters": {"include_games": True}}
+    if tag_id is not None:
+        filters["tagids_must_match"] = [{"tagids": [tag_id]}]
     out: list[Listing] = []
     for page in range(TAG_QUERY_PAGES):
         body = {
@@ -312,11 +315,7 @@ def fetch_steam_tag_games(tag_id: int, min_reviews: int = 0, timeout: float = 90
                 "start": page * TAG_QUERY_PAGE,
                 "count": TAG_QUERY_PAGE,
                 "sort": TAG_QUERY_SORT,
-                "filters": {
-                    "released_only": True,
-                    "type_filters": {"include_games": True},
-                    "tagids_must_match": [{"tagids": [tag_id]}],
-                },
+                "filters": filters,
             },
             "context": {"language": "english", "country_code": _country()},
             "data_request": {"include_basic_info": True, "include_reviews": True, "include_tag_count": TAGS_PER_GAME},
@@ -329,6 +328,18 @@ def fetch_steam_tag_games(tag_id: int, min_reviews: int = 0, timeout: float = 90
         if len(listings) < TAG_QUERY_PAGE or len(out) >= total or enough < TAG_QUERY_ENOUGH:
             break
     return out
+
+
+def fetch_steam_tag_games(tag_id: int, min_reviews: int = 0, timeout: float = 90) -> list[Listing]:
+    """The released games Steam lists under a tag, with their review counts and tags, in Steam's
+    popularity order."""
+    return _steam_games(tag_id, min_reviews, timeout)
+
+
+def fetch_steam_popular_games(min_reviews: int = 0, timeout: float = 90) -> list[Listing]:
+    """Steam's most popular released games, whatever their tags (the same query without a tag
+    filter), with their review counts and tags."""
+    return _steam_games(None, min_reviews, timeout)
 
 
 @dataclass(frozen=True)

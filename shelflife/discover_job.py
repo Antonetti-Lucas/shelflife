@@ -66,7 +66,7 @@ class DiscoverJob(BackgroundJob):
         exclude: list[str] | None = None,
     ) -> bool:
         """Start a search; False if one is already running. `like`: (app id, name) of a
-        game to find close matches for. `popular`: search SteamSpy's popular games, not tags."""
+        game to find close matches for. `popular`: search Steam's popular games (SteamSpy's if Steam fails), not tags."""
         started = self._begin(
             JobSnapshot(
                 state="running",

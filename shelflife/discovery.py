@@ -225,18 +225,27 @@ def _add_popular(
     stop: Callable[[], bool],
     result: FindResult,
 ) -> None:
-    """Add the best-reviewed games from SteamSpy's popularity-ordered list, whatever their
-    tags. Reads up to POPULAR_PAGES pages (a page a minute), stopping as soon as there are
-    enough games you do not already have."""
+    """Add the best-reviewed games from Steam's popularity-ordered list, whatever their tags
+    (SteamSpy's, up to POPULAR_PAGES pages a minute apart, when Steam fails). Steam's list
+    brings each game's tags, which are saved with it."""
     skip = known_ids(session)
     found: dict[int, Listing] = {}
+    if stop():
+        result.stopped = True
+        return
+    report("lists", 0, POPULAR_PAGES, "Fetching Steam's popular games")
     try:
-        for page in range(POPULAR_PAGES):
+        for g in rank_candidates(store.fetch_steam_popular_games(min_reviews), skip, min_reviews):
+            found.setdefault(g.app_id, g)
+    except (RateLimited, requests.RequestException, ValueError):
+        found.clear()  # Steam failed: SteamSpy's pages below
+    try:
+        for page in range(POPULAR_PAGES if not found else 0):
             if stop():
                 result.stopped = True
                 return
             wait = " (SteamSpy allows one page a minute, so this waits)" if page else ""
-            report("lists", page, POPULAR_PAGES, f"Fetching SteamSpy's popular games, page {page + 1}{wait}")
+            report("lists", page, POPULAR_PAGES, f"Steam failed; fetching SteamSpy's popular games, page {page + 1}{wait}")
             for g in rank_candidates(store.fetch_spy_page(page), skip, min_reviews):
                 found.setdefault(g.app_id, g)
             if len(found) >= count:
@@ -245,7 +254,7 @@ def _add_popular(
         result.aborted = str(exc)
         return
     except (requests.RequestException, ValueError) as exc:
-        result.aborted = f"Could not reach SteamSpy: {exc}"
+        result.aborted = f"Could not reach Steam or SteamSpy: {exc}"
         return
     best = rank_candidates(found.values(), set(), min_reviews)[:count]
     now = _now()
@@ -257,6 +266,8 @@ def _add_popular(
             row = Game(steam_app_id=g.app_id, name=g.name)
             session.add(row)
         row.reviews_positive, row.reviews_negative, row.reviews_fetched_at = g.positive, g.negative, now
+        if g.tags:  # Steam's list brought them: enrich_one need not fetch them again
+            row.tags, row.tags_fetched_at = g.tags, now
         row.type = None
         row.details_fetched_at = None
     session.commit()

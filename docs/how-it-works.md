@@ -47,7 +47,7 @@ Explore's **Find more games** button (and `python -m scripts.discover`) works li
 
 For "games like this one", the tags searched are that game's most distinctive ones and a game must also be at least 15% similar to it.
 
-When Steam doesn't know a tag or can't be reached, SteamSpy's list is used instead. It has no tags, so each game's are read one at a time, and the games set aside are remembered so they aren't read again. SteamSpy matches tag names in a particular letter case (and a few under older names), so several spellings are tried. Without tags, the search reads SteamSpy's popularity-ordered list (up to 3 pages of 1,000 games, a minute apart as SteamSpy asks, and only as many as needed) and keeps the best-reviewed games you don't have, with no tag check.
+When Steam doesn't know a tag or can't be reached, SteamSpy's list is used instead. It has no tags, so each game's are read one at a time, and the games set aside are remembered so they aren't read again. SteamSpy matches tag names in a particular letter case (and a few under older names), so several spellings are tried. Without tags, the search asks Steam for its popularity-ordered list with the same query and no tag filter (pages of 1,000 with review counts and each game's tags, a few seconds in all) and keeps the best-reviewed games you don't have, with no tag check; their tags are saved, so they are not fetched again. If Steam fails, it reads SteamSpy's list instead (up to 3 pages of 1,000 games, a minute apart as SteamSpy asks, and only as many as needed).
 
 ## 5. Scoring
 

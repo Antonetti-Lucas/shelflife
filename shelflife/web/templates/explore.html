@@ -23,7 +23,7 @@
   {% if sync_running %}<p class="warn">A sync is running, so searching has to wait. <a href="/sync">See the sync</a>.</p>{% endif %}
   {% if job.running %}
     <p>
-      {% if job.phase == "lists" and job.popular %}Step 1 of 2: reading SteamSpy's popular games (page {{ job.done + 1 }} of up to {{ job.total }})
+      {% if job.phase == "lists" and job.popular %}Step 1 of 2: reading Steam's popular games (SteamSpy's, a page a minute, if Steam fails)
       {% elif job.phase == "lists" %}Step 1 of 3: looking up tags ({{ job.done }} of {{ job.total }})
       {% elif job.phase == "check" %}Step 2 of 3: reading games' tags, kept {{ job.done }} of {{ job.total }}
       {% elif job.popular %}Step 2 of 2: fetching game details ({{ job.done }} of {{ job.total }})
