@@ -11,15 +11,25 @@ Steam knows what you own and how long you've played, but not what you *thought* 
 
 It runs entirely on your own computer: nothing is hosted, and your diary never leaves your machine. **Status:** early development.
 
+## How it works
+
+1. **Sync** reads your Steam library, hours, achievements and wishlist, then each game's public store data (tags, reviews, price, languages). Family Sharing games and games from other platforms can be added too.
+2. **You log and rate** in the diary: half stars, reviews, statuses with dates, favorites. Your star ratings are what teach the taste, and so, if you choose, is how you played (your hours against your other games and against the game's own players, achievements, and when you played).
+3. **It learns your taste** from those games. A high rating pulls up games with similar tags; a low one pushes down only close look-alikes (a sequel, a near-clone), never a whole genre. Favorites, statuses and lists never teach it; your wishlist and "not interested" count only weakly.
+4. **It scores everything you could play next** by how well its tags match your taste, adjusted for how well the game is reviewed, and shows the picks in four lists (backlog, Steam Family, wishlist, new games), each with the games and tags behind it.
+5. **Explore finds games you don't own** through Steam's own tag and popularity lists (SteamSpy only if Steam can't be reached), then ranks them by fit. Nothing is added to your Steam account: you open a game's store page to wishlist or buy it.
+
+All of it runs on your computer, and the details are in [How recommendations work](docs/how-it-works.md).
+
 ## Features
 
 - **Steam import:** your library, playtime, achievements and wishlist, plus Family Sharing games if you want them, and games you played on consoles or other stores, added by hand.
-- **A diary:** half-star ratings, reviews, statuses with dates (playing, played, dropped), favorites and "not interested", with a poster wall of everything you rated and a page of your reviews.
+- **A diary:** half-star ratings, reviews, statuses with dates (playing, played, dropped) listed by month like Letterboxd's, favorites and "not interested", with a poster wall of everything you rated and a page of your reviews.
 - **Lists you make and name:** ranked or not, with your stars under each game or not, in the order you drag them into, and kept in folders.
 - **Recommendations** in four lists (backlog, family, wishlist, games to discover), each pick showing the games and tags behind it. Learn from ratings and play, ratings only, or play only.
-- **Explore and find new games** by Steam tags, or "games like this one", ranked by how well they fit you.
+- **Explore and find new games** by Steam tags, the best-reviewed popular games with no tag, or "games like this one", ranked by how well they fit you.
 - **Store info where you need it:** prices in your currency (kept fresh on screen), estimated length, languages, developer, release date and screenshots.
-- **Stats and a taste profile**, a language filter, a switch to hide games for adults, and light or dark.
+- **Stats and a taste profile**, a language filter, a switch to hide games for adults, light or dark, and on Windows an app window with its own icon instead of a browser tab.
 
 ## Quick start
 
@@ -57,7 +67,7 @@ python -m scripts.web
 
 Open <http://127.0.0.1:8000>, go to **Sync** and press **Sync now**. It reads everything in the background, with a progress bar and a Stop button. The first sync of a few hundred games takes a while, because it's deliberately slow to respect Steam's limits; later ones only re-read what could have changed. Then use **Find more games** on Explore to add games you don't own.
 
-On Windows you can skip the command and the browser: `pip install -r requirements-app.txt`, then `python tools/make_shortcut.py` makes a **ShelfLife** shortcut that opens the app in its own window (`python -m scripts.app` does the same). Closing the window stops the app.
+**On Windows, as an app (optional).** To skip the command and the browser: `pip install -r requirements-app.txt`, then `python tools/make_shortcut.py` (add `--desktop` for your Desktop) makes a **ShelfLife** shortcut with its icon that opens the app in its own window; `python -m scripts.app` does the same. Only one window opens at a time, and closing it stops the app (it asks first if a Sync or search is still running). Pin the shortcut to your taskbar if you like.
 
 ## Screenshots
 
@@ -83,7 +93,7 @@ ShelfLife has no server, no account, no analytics and no tracking.
 
 - `.env`: your Steam API key and SteamID.
 - `shelflife.db`: your library (games, hours, when you last played, achievement counts and when you unlocked them), your wishlist (game ids, your own rank and the date you added each), the hours you type in for family games, which games are shared with you through Family Sharing, the games you added from other platforms (which platform, and the hours you type), your diary (ratings, reviews, statuses and dates, favorites, "not interested"), your lists, your settings, and public store data for each game (names, descriptions, tags, review counts, cover addresses, five numbers summarising how long its reviewers have played it, its languages, store details and its price when last read; never who wrote a review or what it says).
-- `data/`: files you create or import, such as the Family Sharing export (it lists which games your family members own, so keep it private).
+- `data/`: files you create or import, such as the Family Sharing export (it lists which games your family members own, so keep it private), and `data/window/`, where the app window keeps its own browser storage (just your light or dark choice).
 
 All three are git-ignored. Delete them and nothing of yours is left.
 
