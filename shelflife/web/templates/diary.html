@@ -31,12 +31,20 @@
 
 <h3>{{ labels[show] }} <small>{{ total }} game{{ "" if total == 1 else "s" }}{{ " match" if filtered }}</small></h3>
 {% if items %}
+{# Month headers, like Letterboxd's diary, when the rows run in date order. #}
+{% set by_month = show in ("playing", "played", "dropped") and sort in ("", "oldest") %}
+{% set ns = namespace(month=none) %}
 <div class="diary-list">
   {% for e, g in items %}
   {% set when = (e.finished_on or e.started_on) if show not in ("favorites", "not-interested") else none %}
+  {% if by_month %}
+    {% set month = when.strftime("%B %Y") if when else "No date" %}
+    {% if month != ns.month %}{% set ns.month = month %}<h4 class="diary-month">{{ month }}</h4>{% endif %}
+  {% endif %}
   <article class="diary-row" id="g{{ g.steam_app_id }}">
     <div class="diary-date" {% if when %}title="{{ when.isoformat() }}"{% endif %}>
       {% if show == "not-interested" %}<span class="day">{{ e.updated_at.strftime("%d") }}</span><span>{{ e.updated_at.strftime("%b %Y") }}</span>
+      {% elif when and by_month %}<span class="day">{{ when.strftime("%d") }}</span><span>{{ when.strftime("%a") }}</span>
       {% elif when %}<span class="day">{{ when.strftime("%d") }}</span><span>{{ when.strftime("%b %Y") }}</span>
       {% else %}<span class="undated">—</span>{% endif %}
     </div>
@@ -59,7 +67,7 @@
         {% if e.started_on %}started {{ e.started_on.strftime("%b %d, %Y") }}{% endif %}
         {% if e.started_on and e.finished_on %} · {% endif %}
         {% if e.finished_on %}{{ "stopped" if e.status == "dropped" else "finished" }} {{ e.finished_on.strftime("%b %d, %Y") }}{% endif %}
-        {% if not e.started_on and not e.finished_on and show != "favorites" %}no dates{% endif %}
+        {% if not e.started_on and not e.finished_on and show != "favorites" and not by_month %}no dates{% endif %}
       </p>
       {% endif %}
       {% if e.review %}<p class="review">{{ e.review|truncate(240) }}</p>{% endif %}

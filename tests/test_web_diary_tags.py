@@ -241,3 +241,26 @@ def test_the_diary_can_be_sorted_and_keeps_the_sort_across_pages(client, session
     assert order("hours") == ["Beta", "Gamma", "Alpha"]
     assert order("name") == ["Alpha", "Beta", "Gamma"]
     assert 'value="hours" selected' in client.get("/diary?show=played&sort=hours").text
+
+
+# ---- month headers, like Letterboxd's diary ----
+
+
+def test_dated_tabs_are_split_by_month_with_the_undated_last(client, scenario):
+    tracked_scenario(client)
+    html = client.get("/diary?show=played").text
+    assert re.findall(r'<h4 class="diary-month">([^<]+)</h4>', html) == ["March 2026", "January 2025", "No date"]
+    assert html.index("March 2026") < html.index("Backlog Sports") < html.index("January 2025") < html.index("Backlog Stealth")
+    assert 'class="day">01</span><span>Sun</span>' in html  # 1 Mar 2026 is a Sunday: the month is not repeated in the row
+
+
+def test_oldest_first_runs_the_months_the_other_way(client, scenario):
+    tracked_scenario(client)
+    html = client.get("/diary?show=played&sort=oldest").text
+    assert re.findall(r'<h4 class="diary-month">([^<]+)</h4>', html) == ["January 2025", "March 2026", "No date"]
+
+
+@pytest.mark.parametrize("url", ["/diary?show=played&sort=rating", "/diary?show=played&sort=name", "/diary?show=favorites"])
+def test_other_orders_and_tabs_have_no_month_headers(client, scenario, url):
+    tracked_scenario(client)
+    assert "diary-month" not in client.get(url).text.replace(".diary-month", "")
