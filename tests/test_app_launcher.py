@@ -58,3 +58,16 @@ def test_only_one_window_can_hold_the_instance_port(instance_port):
         assert first is not None and app.listen_for_second_launch(lambda: None) is None
     finally:
         first.close()
+
+
+def test_the_icon_is_a_real_ico_and_the_pages_link_it():
+    data = app.ICON.read_bytes()
+    assert data[:4] == b"\x00\x00\x01\x00" and int.from_bytes(data[4:6], "little") >= 4  # an .ico with several sizes
+    from fastapi.testclient import TestClient
+
+    from shelflife.web.app import app as web
+
+    with TestClient(web) as client:
+        html = client.get("/stats").text
+        assert 'rel="icon" href="/static/shelflife.ico' in html
+        assert client.get("/static/shelflife.ico").status_code == 200

@@ -18,6 +18,7 @@ from pathlib import Path
 import uvicorn
 
 ROOT = Path(__file__).resolve().parent.parent
+ICON = ROOT / "shelflife" / "web" / "static" / "shelflife.ico"
 PROFILE = ROOT / "data" / "window"  # the window's own browser storage: keeps the light/dark choice
 INSTANCE_PORT = 47831  # a second launch finds the first one here and asks it to come forward
 DEFAULT_PORT = 8000
@@ -123,9 +124,9 @@ def main() -> int:
                 print("home page", r.status, "title:", window.evaluate_js("document.title"))
             window.destroy()
 
-        webview.start(check, private_mode=False, storage_path=str(PROFILE))
+        webview.start(check, private_mode=False, storage_path=str(PROFILE), icon=str(ICON))
     else:
-        webview.start(private_mode=False, storage_path=str(PROFILE))
+        webview.start(private_mode=False, storage_path=str(PROFILE), icon=str(ICON))
 
     server.should_exit = True  # the window is closed: stop the server, then the process ends
     thread.join(timeout=10)

@@ -7,6 +7,7 @@
   <script>try { var t = localStorage.getItem("shelflife-theme"); if (t === "dark" || t === "light") document.documentElement.dataset.theme = t; } catch (e) {}</script>
   <link rel="stylesheet" href="{{ static_url("style.css") }}">
   {% block head %}{% endblock %}
+  <link rel="icon" href="{{ static_url("shelflife.ico") }}">
   <script src="{{ static_url("tags.js") }}" defer></script>
   <script src="{{ static_url("inline.js") }}" defer></script>
   <script src="{{ static_url("stars.js") }}" defer></script>

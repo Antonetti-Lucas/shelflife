@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+ICON = ROOT / "shelflife" / "web" / "static" / "shelflife.ico"  # drawn by tools/make_icon.py
 
 
 def main() -> int:
@@ -28,9 +29,9 @@ def main() -> int:
     script = (
         "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:SL_LINK); "
         "$s.TargetPath = $env:SL_TARGET; $s.Arguments = '-m scripts.app'; $s.WorkingDirectory = $env:SL_DIR; "
-        "$s.Description = 'ShelfLife'; $s.Save()"
+        "$s.IconLocation = $env:SL_ICON; $s.Description = 'ShelfLife'; $s.Save()"
     )
-    env = {**os.environ, "SL_LINK": str(target), "SL_TARGET": str(pythonw), "SL_DIR": str(ROOT)}
+    env = {**os.environ, "SL_LINK": str(target), "SL_TARGET": str(pythonw), "SL_DIR": str(ROOT), "SL_ICON": str(ICON)}
     subprocess.run(["powershell", "-NoProfile", "-Command", script], check=True, env=env)
     print(f"Made {target}")
     return 0
