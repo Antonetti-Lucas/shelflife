@@ -48,6 +48,7 @@ One button, nine steps, in the background with a progress bar and a Stop button:
 | Command | What it does |
 |---|---|
 | `python -m scripts.web` | Run the web app |
+| `python -m scripts.app` | The same, in its own window (Windows; needs `requirements-app.txt`); closing the window stops it. `python tools/make_shortcut.py` makes a shortcut for it |
 | `python -m scripts.top_games` | A quick check that your key works |
 | `python -m scripts.sync [--limit N] [--fill-tags] [--descriptions]` | Import the library; fetch details and tags; or read the store text of games that lack it |
 | `python -m scripts.achievements` | Achievements and when you unlocked them |

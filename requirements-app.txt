@@ -1,0 +1,3 @@
+# Optional: only for the desktop window (python -m scripts.app). The web app itself does not need it.
+# pywebview (BSD-3-Clause) shows the app in a native window using Windows' Edge WebView2.
+pywebview>=6.0

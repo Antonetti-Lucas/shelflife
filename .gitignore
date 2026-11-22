@@ -35,3 +35,6 @@ __pycache__/
 build/
 dist/
 *.log
+
+# Desktop shortcut made by tools/make_shortcut.py
+*.lnk

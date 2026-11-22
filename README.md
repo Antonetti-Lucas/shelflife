@@ -57,6 +57,8 @@ python -m scripts.web
 
 Open <http://127.0.0.1:8000>, go to **Sync** and press **Sync now**. It reads everything in the background, with a progress bar and a Stop button. The first sync of a few hundred games takes a while, because it's deliberately slow to respect Steam's limits; later ones only re-read what could have changed. Then use **Find more games** on Explore to add games you don't own.
 
+On Windows you can skip the command and the browser: `pip install -r requirements-app.txt`, then `python tools/make_shortcut.py` makes a **ShelfLife** shortcut that opens the app in its own window (`python -m scripts.app` does the same). Closing the window stops the app.
+
 ## Screenshots
 
 Taken on demo data: popular Steam games with made-up playtime, ratings and diary for an imaginary player.
