@@ -96,6 +96,19 @@ def is_adult(tags: dict[str, int] | None, labels: list[int] | None = None) -> bo
     return "Hentai" in names[:10] and (labels is None or bool(SEXUAL_LABELS & set(labels)))
 
 
+# Software that Steam sells beside games (Blender, Aseprite, Wallpaper Engine): the store files it
+# under these genres, though its type still says "game". Known once the store details are read.
+SOFTWARE_GENRES = frozenset({
+    "Accounting", "Animation & Modeling", "Audio Production", "Design & Illustration", "Education",
+    "Game Development", "Photo Editing", "Software Training", "Utilities", "Video Production", "Web Publishing",
+})
+
+
+def is_software_game(game) -> bool:
+    """Is this a tool rather than a game, by its store genres?"""
+    return any(genre in SOFTWARE_GENRES for genre in game.genres or [])
+
+
 def is_adult_game(game) -> bool:
     """is_adult with the game's store labels (unknown until its store details are read)."""
     info = game.store_info

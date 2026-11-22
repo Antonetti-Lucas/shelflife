@@ -528,7 +528,7 @@ def test_checking_everything_again_starts_a_full_sync(client, configured, monkey
 def test_pressing_sync_without_a_key_says_what_to_do_and_starts_nothing(client):
     post(client, "/sync/start")
     html = client.get("/sync").text
-    assert "Add them and restart the app" in html and not client.held
+    assert 'href="/setup"' in html and "open Set up Steam" in html and not client.held
 
 
 def test_while_syncing_the_page_shows_the_step_and_a_stop_button(client, configured, session):

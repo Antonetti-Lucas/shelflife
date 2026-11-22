@@ -24,6 +24,8 @@ from sqlalchemy.orm import Session, contains_eager, selectinload
 from shelflife import diary, gamelists, otherplatforms
 from shelflife.diary import favorite_ids
 from shelflife.config import try_load_settings
+from shelflife.envfile import update_env
+from shelflife.steam import SteamError, fetch_owned_games, fetch_player_name, parse_profile, resolve_steam_id
 from shelflife.db import SessionLocal, init_db
 from shelflife.hours import set_hours
 from shelflife.models import DiaryEntry, Game, LibraryEntry, WishlistItem
@@ -37,9 +39,11 @@ from shelflife.settings import (
     TASTE_MODE_LABELS,
     TASTE_MODES,
     get_hide_adult,
+    get_hide_software,
     get_languages,
     get_taste_mode,
     set_hide_adult,
+    set_hide_software,
     set_languages,
     set_taste_mode,
 )
@@ -56,7 +60,7 @@ from shelflife.length import estimate as estimate_length
 from shelflife import prices as price_view
 from shelflife import store
 from shelflife.sync import enrich_one
-from shelflife.tags import is_adult_game
+from shelflife.tags import is_adult_game, is_software_game
 from shelflife.throttle import RateLimited
 from shelflife.web.lists import ListFilter, paginate, recommended, whole
 from shelflife.wishlist import order_key, rank_label
@@ -154,6 +158,7 @@ def game_of(label: str) -> str:
 
 
 templates.env.globals.update(
+    steam_configured=lambda: try_load_settings() is not None,
     RATING_OPTIONS=RATING_OPTIONS,
     STATUSES=diary.STATUSES,
     STATUS_LABELS=diary.STATUS_LABELS,
@@ -453,6 +458,8 @@ def explore(
     games = [r.game for r in scores.by_id.values() if r.game.library_entry is None]
     if get_hide_adult(session):
         games = [g for g in games if not is_adult_game(g)]
+    if get_hide_software(session):
+        games = [g for g in games if not is_software_game(g)]
     if my_languages := get_languages(session):
         games = [g for g in games if fits(g.languages, my_languages)]
     tag_index = TagIndex(g.tags for g in games)
@@ -701,6 +708,59 @@ def sync_page(request: Request, session: Session = Depends(get_session)):
     )
 
 
+def _setup_form(**extra) -> dict:
+    return {
+        "has_key": bool(os.getenv("STEAM_API_KEY", "").strip()),
+        "steam_id": os.getenv("STEAM_ID", "").strip(),
+        "country": os.getenv("STEAM_COUNTRY", "").strip(),
+        "error": None,
+        "result": None,
+    } | extra
+
+
+@app.get("/setup")
+def setup_page(request: Request):
+    """Connect ShelfLife to your Steam account: the key and SteamID that used to be typed into .env."""
+    return templates.TemplateResponse(request, "setup.html", _setup_form())
+
+
+@app.post("/setup")
+def setup_save(
+    request: Request, api_key: str = Form(""), profile: str = Form(""), country: str = Form("")
+):
+    """Check the key and the account with Steam, then save them to .env (they take effect at once).
+    Blank fields keep what is saved. Nothing is saved if Steam does not accept them."""
+
+    def fail(message: str):
+        return templates.TemplateResponse(request, "setup.html", _setup_form(error=message), status_code=400)
+
+    key = api_key.strip() or os.getenv("STEAM_API_KEY", "").strip()
+    if not key:
+        return fail("Paste your Steam Web API key (the link above makes one in a minute).")
+    typed = profile.strip() or os.getenv("STEAM_ID", "").strip()
+    parsed = parse_profile(typed) if typed else None
+    if parsed is None:
+        return fail("Paste your profile address (steamcommunity.com/id/... or /profiles/...) or your 17-digit SteamID.")
+    country = country.strip().upper()
+    if country and not re.fullmatch(r"[A-Z]{2}", country):
+        return fail("The country is two letters, like US or BR (or leave it empty).")
+    try:
+        steam_id = resolve_steam_id(key, parsed)
+        name = fetch_player_name(key, steam_id)
+    except SteamError as exc:
+        return fail(str(exc))
+    values = {"STEAM_API_KEY": key, "STEAM_ID": steam_id}
+    if country:
+        values["STEAM_COUNTRY"] = country
+    update_env(values)
+    try:
+        count = len(fetch_owned_games(key, steam_id))
+        result = {"ok": True, "name": name, "message": f"Connected as {name}: {count} games found."}
+    except SteamError as exc:  # saved all the same: the usual cause is a private profile
+        result = {"ok": False, "name": name, "message": f"Saved for {name}, but no games could be read yet. {exc}"}
+    return templates.TemplateResponse(request, "setup.html", _setup_form(result=result))
+
+
 @app.post("/sync/start")
 def sync_start(full: str = Form("")):
     """Bring your library up to date: starts the sync in the background and returns at once.
@@ -710,8 +770,8 @@ def sync_start(full: str = Form("")):
         sync_job.fail("Finding games is running. Wait for it to finish, or stop it, then sync.")
     elif settings is None:
         sync_job.fail(
-            "Sync needs STEAM_API_KEY and STEAM_ID in your .env file (see Setup in the README). "
-            "Add them and restart the app."
+            "Sync needs your Steam key and account first: open Set up Steam at /setup "
+            "(they are saved as STEAM_API_KEY and STEAM_ID in your .env file)."
         )
     else:
         sync_job.start(settings.steam_api_key, settings.steam_id, full=full == "1")
@@ -1278,6 +1338,7 @@ def taste_page(request: Request, session: Session = Depends(get_session)):
             "taste_mode": get_taste_mode(session),
             "modes": TASTE_MODE_LABELS,
             "hide_adult": get_hide_adult(session),
+            "hide_software": get_hide_software(session),
             **language_choices(session),
         },
     )
@@ -1309,6 +1370,13 @@ async def change_languages(request: Request, session: Session = Depends(get_sess
     form = await request.form()
     set_languages(session, [str(x)[:60] for x in form.getlist("lang")][:100])
     return RedirectResponse("/taste#languages", status_code=303)
+
+
+@app.post("/taste/hide-software")
+def change_hide_software(hide: str = Form("0"), session: Session = Depends(get_session)):
+    """Leave tools such as Blender out of recommendations and Explore, or show them."""
+    set_hide_software(session, hide == "1")
+    return RedirectResponse("/taste#content", status_code=303)
 
 
 @app.post("/taste/hide-adult")

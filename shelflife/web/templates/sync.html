@@ -21,7 +21,7 @@
     {% if finding %}
       <p class="warn">Finding games is running, so a sync has to wait. <a href="/explore#find">See the search</a>.</p>
     {% elif not configured %}
-      <p class="warn">Sync needs <code>STEAM_API_KEY</code> and <code>STEAM_ID</code> in your <code>.env</code> file (see Setup in the README). Add them and restart the app.</p>
+      <p class="warn">Sync needs your Steam key and account first: <a href="/setup">set them up</a> (they are saved as <code>STEAM_API_KEY</code> and <code>STEAM_ID</code> in your <code>.env</code> file).</p>
     {% else %}
       {% set again = "Re-read every game's achievements, store details, review counts and players' hours? This takes about " ~ due.full_minutes ~ " minutes. You can stop it, but the next one starts over." %}
       <div class="syncbuttons">

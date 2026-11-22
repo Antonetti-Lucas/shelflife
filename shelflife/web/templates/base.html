@@ -44,7 +44,10 @@
     </nav>
   </header>
   <main>
-    {% block content %}{% endblock %}
+    {% if not steam_configured() and request.url.path != "/setup" %}
+    <p class="setup-banner">ShelfLife is not connected to your Steam account yet. <a href="/setup">Set it up</a> (two minutes) to read your library.</p>
+  {% endif %}
+  {% block content %}{% endblock %}
   </main>
 </body>
 </html>

@@ -66,8 +66,8 @@ from shelflife.languages import fits
 from shelflife.models import Game, WishlistItem
 from shelflife.play import BACKLOG_MAX_MIN, PlayScale, PlayScore, is_played
 from shelflife.quality import quality_factor
-from shelflife.settings import get_hide_adult, get_languages, get_taste_mode
-from shelflife.tags import compute_idf, is_adult_game, tag_vector
+from shelflife.settings import get_hide_adult, get_hide_software, get_languages, get_taste_mode
+from shelflife.tags import compute_idf, is_adult_game, is_software_game, tag_vector
 
 __all__ = ["BACKLOG_MAX_MIN", "is_played"]  # also imported from here by other modules
 
@@ -170,6 +170,7 @@ class _Model:
     likeness_key: tuple | None = None  # what the games' tags and texts are (data_version's games and library parts)
     mode: str = "both"  # what teaches the taste: "both", "ratings" or "play" (settings.TASTE_MODES)
     hide_adult: bool = False  # leave games for adults out of the lists
+    hide_software: bool = False  # and tools such as Blender
     languages: tuple[str, ...] = ()  # leave out games without any of these (none: no filter)
     candidates: list[Game] = field(default_factory=list)
     played_titles: set[str] = field(default_factory=set)
@@ -407,6 +408,7 @@ def _build_model(
 
     model = _Model(
         vectors, games, session=session, likeness_key=data_version(session)[:2], mode=mode, hide_adult=get_hide_adult(session),
+        hide_software=get_hide_software(session),
         languages=tuple(get_languages(session)),
         shown_ratings=dict(taught), scale=scale,
     )
@@ -659,6 +661,7 @@ def _classify(model: _Model) -> tuple[list[Game], list[Game], list[Game]]:
         if (
             base in model.played_titles
             or (model.hide_adult and is_adult_game(cand))
+            or (model.hide_software and is_software_game(cand))
             or not fits(cand.languages, model.languages)
         ):
             continue

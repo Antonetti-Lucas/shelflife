@@ -46,26 +46,25 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-**2. Fill in `.env`.** Copy `.env.example` to `.env` (it's git-ignored; never share it):
-
-```
-STEAM_API_KEY=your_key_here
-STEAM_ID=your_64_bit_steam_id_here
-STEAM_COUNTRY=US
-```
-
-- **API key:** create one at <https://steamcommunity.com/dev/apikey> (any domain name works, e.g. `localhost`).
-- **SteamID:** your 17-digit SteamID64. If your profile address has a number after `/profiles/`, that's it; otherwise paste your profile address into <https://steamid.io>.
-- **Country** (optional): your two-letter country code, so prices come in your currency.
-- In your Steam profile's *Privacy Settings*, set **Game details** to **Public** (and the wishlist too, if you want it read).
-
-**3. Run, then press Sync**
+**2. Run it and connect your Steam account**
 
 ```bash
 python -m scripts.web
 ```
 
-Open <http://127.0.0.1:8000>, go to **Sync** and press **Sync now**. It reads everything in the background, with a progress bar and a Stop button. The first sync of a few hundred games takes a while, because it's deliberately slow to respect Steam's limits; later ones only re-read what could have changed. Then use **Find more games** on Explore to add games you don't own.
+Open <http://127.0.0.1:8000>. The first time, it shows a short setup page (every page links to it until you finish) that asks for:
+
+- **A Steam Web API key:** free, made at <https://steamcommunity.com/dev/apikey> (any domain name works, e.g. `localhost`).
+- **Your Steam profile:** paste your profile's address (`steamcommunity.com/id/yourname` or `.../profiles/7656...`) or your 17-digit SteamID.
+- **Your country** (optional): two letters, so prices come in your currency.
+
+It checks them with Steam, saves them to a `.env` file in the project folder (git-ignored; never share it) and uses them at once. In your Steam profile's *Privacy Settings*, set **Game details** to **Public** (and the wishlist too, if you want it read).
+
+Prefer to do it by hand? Copy `.env.example` to `.env`, fill in `STEAM_API_KEY`, `STEAM_ID` and optionally `STEAM_COUNTRY`, and restart.
+
+**3. Press Sync**
+
+Go to **Sync** and press **Sync now**. It reads everything in the background, with a progress bar and a Stop button. The first sync of a few hundred games takes a while, because it's deliberately slow to respect Steam's limits; later ones only re-read what could have changed. Then use **Find more games** on Explore to add games you don't own.
 
 **On Windows, as an app (optional).** To skip the command and the browser: `pip install -r requirements-app.txt`, then `python tools/make_shortcut.py` (add `--desktop` for your Desktop) makes a **ShelfLife** shortcut with its icon that opens the app in its own window; `python -m scripts.app` does the same. Only one window opens at a time, and closing it stops the app (it asks first if a Sync or search is still running). Pin the shortcut to your taskbar if you like.
 
@@ -99,7 +98,7 @@ All three are git-ignored. Delete them and nothing of yours is left.
 
 **What it sends, and to whom** (only when you run a command or press a button)
 
-- **Valve's Steam Web API** (`api.steampowered.com`): your API key and SteamID, to read your own library and achievements, and your key to look up game names. Your SteamID alone (no key) is sent to read your wishlist. Review counts, reviewers' hours, global achievement rates and tags are asked for by game id or tag alone, and a game you add from another platform by the name or link you type.
+- **Valve's Steam Web API** (`api.steampowered.com`): your API key and SteamID, to read your own library and achievements, and your key to look up game names. On the setup page, your key with the profile name or SteamID you typed, to find your SteamID and check that the key works. Your SteamID alone (no key) is sent to read your wishlist. Review counts, reviewers' hours, global achievement rates and tags are asked for by game id or tag alone, and a game you add from another platform by the name or link you type.
 - **The Steam store** (`store.steampowered.com`) and **SteamSpy** (`steamspy.com`): game ids, tag names and your `STEAM_COUNTRY` only. They never receive your key, SteamID, ratings or diary.
 - **Your browser** loads cover images and screenshots from Steam's servers when you open a page.
 - Nothing else: no outside fonts, scripts or analytics. The web app listens only on `127.0.0.1`, answers only to `127.0.0.1` and `localhost` (so another website can't reach it by pointing its own name at your computer), and has no login, so don't expose it to a network.

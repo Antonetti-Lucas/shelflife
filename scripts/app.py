@@ -95,8 +95,11 @@ def main() -> int:
 
     PROFILE.mkdir(parents=True, exist_ok=True)
     webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True  # "Steam store page ↗" opens in your browser
+    from shelflife.config import try_load_settings
+
+    start = "setup" if try_load_settings() is None else ""  # first run: open the page that connects Steam
     window = webview.create_window(
-        "ShelfLife", f"http://127.0.0.1:{port}/", width=1360, height=900, min_size=(720, 520), hidden=args.hidden
+        "ShelfLife", f"http://127.0.0.1:{port}/{start}", width=1360, height=900, min_size=(720, 520), hidden=args.hidden
     )
 
     def bring_forward() -> None:

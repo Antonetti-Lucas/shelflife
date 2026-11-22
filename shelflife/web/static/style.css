@@ -158,7 +158,7 @@ details.help li { margin: 4px 0; }
 .actions .ghost { margin-left: auto; }
 
 /* ---- controls ---- */
-button, select, input[type="search"], input[type="number"], input[type="date"], textarea {
+button, select, input[type="search"], input[type="number"], input[type="date"], input[type="text"], input[type="password"], textarea {
   font: inherit; font-size: 0.92rem; color: var(--text); background: var(--surface);
   border: 1px solid var(--line); border-radius: 9px; padding: 7px 12px;
 }
@@ -296,6 +296,10 @@ tr:target td { background: var(--accent-soft); }
 .car-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-strong); }
 .car-btn:disabled { opacity: 0.3; cursor: default; }
 .carousel.all-fit .car-btn { visibility: hidden; }
+.setup-banner { margin: 0 0 18px; padding: 10px 16px; border-radius: var(--radius); background: var(--accent-soft); border: 1px solid var(--accent); }
+.setup-form { display: grid; gap: 18px; max-width: 640px; }
+.setup-form label { display: grid; gap: 5px; }
+.setup-form input[type=password], .setup-form input[type=text] { max-width: 100%; }
 .stack { display: flex; flex-direction: column; gap: 12px; }
 .stack label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 0.86rem; }
 .stack textarea { width: 100%; resize: vertical; }

@@ -19,6 +19,8 @@ TASTE_MODE_LABELS = {
 
 # Games for adults (tags.is_adult) are left out of recommendations and Explore unless you say so.
 DEFAULT_HIDE_ADULT = True
+# Software such as Blender or Aseprite (tags.is_software_game) is left out of them too.
+DEFAULT_HIDE_SOFTWARE = True
 
 
 def _flag(session: Session, key: str, default: bool) -> bool:
@@ -52,6 +54,14 @@ def set_taste_mode(session: Session, mode: str) -> None:
     else:
         row.value = mode
     session.commit()
+
+
+def get_hide_software(session: Session) -> bool:
+    return _flag(session, "hide_software", DEFAULT_HIDE_SOFTWARE)
+
+
+def set_hide_software(session: Session, hide: bool) -> None:
+    _set_flag(session, "hide_software", hide)
 
 
 def get_hide_adult(session: Session) -> bool:

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Steam account · ShelfLife{% endblock %}
+{% block content %}
+<div class="page-head"><h2>Connect your Steam account</h2></div>
+<p class="lede">ShelfLife reads your own library, hours and wishlist from Steam, so it needs two things. They are saved in the
+  <code>.env</code> file in this folder, on your computer, and sent only to Steam.</p>
+
+{% if result %}
+<section class="panel {{ 'ok' if result.ok else '' }}">
+  <h3>{{ "Connected" if result.ok else "Saved" }}</h3>
+  <p class="{{ '' if result.ok else 'warn' }}">{{ result.message }}</p>
+  <p><a class="button" href="/sync">Go to Sync</a> <span class="meta">and press Sync now to read your library.</span></p>
+</section>
+{% endif %}
+
+{% if error %}<p class="warn" role="alert">{{ error }}</p>{% endif %}
+
+<form method="post" action="/setup" class="panel setup-form" autocomplete="off">
+  <label>
+    <strong>1. Steam Web API key</strong>
+    <span class="meta">A free key tied to your account:
+      <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener">make one here</a>
+      (any domain name works, for example <code>localhost</code>), then paste it.
+      {% if has_key %}A key is already saved: leave this empty to keep it.{% endif %}</span>
+    <input type="password" name="api_key" placeholder="{{ 'saved: paste a new one to replace it' if has_key else 'paste your key' }}" spellcheck="false">
+  </label>
+  <label>
+    <strong>2. Your Steam profile</strong>
+    <span class="meta">Open your profile on Steam and paste its address
+      (<code>steamcommunity.com/id/yourname</code> or <code>.../profiles/7656...</code>), or your 17-digit SteamID.</span>
+    <input type="text" name="profile" value="{{ steam_id }}" placeholder="https://steamcommunity.com/id/yourname" spellcheck="false">
+  </label>
+  <label>
+    <strong>3. Country</strong> <span class="meta">(optional)</span>
+    <span class="meta">Two letters, like <code>US</code> or <code>BR</code>, so prices come in your currency.</span>
+    <input type="text" name="country" value="{{ country }}" maxlength="2" placeholder="US" style="width: 5em; text-transform: uppercase">
+  </label>
+  <p><button type="submit">Check and save</button></p>
+  <details class="help">
+    <summary>Before you sync</summary>
+    <p>In your Steam profile's <em>Privacy Settings</em>, set <strong>Game details</strong> to <strong>Public</strong>
+      (and the wishlist too, if you want it read). A private profile shows no games.</p>
+    <p>The key is checked with Steam when you press the button, and nothing is saved if Steam does not accept it. It is never
+      shown on a page again and never leaves your computer except to Steam. Don't share it or commit <code>.env</code>.</p>
+  </details>
+</form>
+{% endblock %}
