@@ -1376,7 +1376,7 @@ async def change_languages(request: Request, session: Session = Depends(get_sess
 def change_hide_software(hide: str = Form("0"), session: Session = Depends(get_session)):
     """Leave tools such as Blender out of recommendations and Explore, or show them."""
     set_hide_software(session, hide == "1")
-    return RedirectResponse("/taste#content", status_code=303)
+    return RedirectResponse("/taste#tools", status_code=303)
 
 
 @app.post("/taste/hide-adult")
