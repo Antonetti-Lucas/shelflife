@@ -89,8 +89,7 @@
 </script>
 {% endif %}
 
-<div class="two">
-  <div>
+<div class="blocks">
     <section class="panel">
       <h3>Your verdict</h3>
       <div class="row-line">{{ star_rating(game, diary.rating if diary else none, "/game/" ~ game.steam_app_id, "large") }}{{ fav_heart(game, diary and diary.favorite, "/game/" ~ game.steam_app_id, "large") }}</div>
@@ -169,9 +168,7 @@
         </form>
       </details>
     </section>
-  </div>
 
-  <div>
     <section class="panel">
       <h3>How it fits your taste</h3>
       {% if match %}
@@ -257,7 +254,6 @@
       {% endif %}
     </section>
     {% endif %}
-  </div>
 </div>
 
 {% if like_tags %}

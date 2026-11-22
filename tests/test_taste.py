@@ -293,3 +293,29 @@ def test_the_game_page_says_what_this_game_teaches(client, session):
     assert "counts as a game you probably liked" in client.get("/game/2").text
     set_taste_mode(session, "ratings")
     assert "don't teach your taste" in client.get("/game/2").text
+
+
+# ---- blocks that fit: covers instead of long lists, capped with "Show all" ----
+
+
+def test_games_rated_low_and_not_interested_show_as_covers_with_the_first_twelve_open(client, session):
+    for i in range(1, 16):
+        add_game(session, i, f"Low {i}", tags={"Horror": 100}, minutes=60)
+        diary.save_rating(session, i, 1.5)
+    for i in range(20, 22):
+        add_game(session, i, f"Skip {i}", tags={"Horror": 100}, minutes=0, owned=False)
+        diary.set_not_interested(session, i, True)
+    html = client.get("/taste").text
+    assert html.count('class="poster-item"') == 17  # 15 rated low and 2 not interested
+    assert "Show all 15" in html and "Show all 2" not in html  # 2 fit in the first twelve
+    assert 'class="blocks"' in html and "<ul class=\"plain\">" not in html
+
+
+def test_the_leans_toward_list_is_capped_at_ten_with_the_rest_behind_show_all(client, session):
+    fillers(session)
+    for i, tag in enumerate("ABCDEFGHIJKL", start=1):
+        add_game(session, i, f"Loved {tag}", tags={tag: 100}, minutes=600)
+        diary.save_rating(session, i, 5.0)
+    html = client.get("/taste").text
+    shown, rest = html.split('<details class="show-all">', 1)
+    assert shown.count("<li><span>") == 10 and "Show all" in rest

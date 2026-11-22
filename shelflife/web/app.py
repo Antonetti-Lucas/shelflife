@@ -1272,6 +1272,7 @@ def taste_page(request: Request, session: Session = Depends(get_session)):
         "taste.html",
         {
             "taste": taste,
+            "poster_url": poster_url,
             "toward": toward,
             "biggest": biggest,
             "taste_mode": get_taste_mode(session),

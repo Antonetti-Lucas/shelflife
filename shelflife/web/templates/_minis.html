@@ -1,0 +1,20 @@
+{# A strip of small covers with the stars, the first MINIS_SHOWN open and the rest behind "Show all".
+   Set `minis` to a list of (game, rating or None) before including it. #}
+{% set shown = 12 %}
+{% macro mini(g, rating) %}
+<div class="poster-item">
+  <a class="poster" href="/game/{{ g.steam_app_id }}" title="{{ g.name }}">
+    <img src="{{ poster_url(g) }}" alt="{{ g.name }}"
+         onerror='this.onerror = null; this.closest(".poster").classList.add("wide"); {% if g.cover_url %}this.src = {{ g.cover_url|tojson }};{% else %}this.remove();{% endif %}'>
+    <span class="poster-name">{{ g.name }}</span>
+  </a>
+  {% if rating is not none %}<span class="poster-meta"><span class="stars-text">{{ stars(rating) }}</span></span>{% endif %}
+</div>
+{% endmacro %}
+<div class="posters small-posters">{% for g, rating in minis[:shown] %}{{ mini(g, rating) }}{% endfor %}</div>
+{% if minis|length > shown %}
+<details class="show-all">
+  <summary>Show all {{ minis|length }}</summary>
+  <div class="posters small-posters">{% for g, rating in minis[shown:] %}{{ mini(g, rating) }}{% endfor %}</div>
+</details>
+{% endif %}

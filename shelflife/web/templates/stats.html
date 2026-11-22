@@ -10,7 +10,7 @@
   <div><strong>{{ stats.rated }}</strong><span>rated<br>{% if stats.average_rating is not none %}average {{ "%.2f"|format(stats.average_rating) }}{% else %}no ratings yet{% endif %}</span></div>
 </div>
 
-<div class="two">
+<div class="blocks">
   <section class="panel">
     <h3>Your diary</h3>
     <ul class="plain">
@@ -20,7 +20,9 @@
       <li><a href="/diary">★ Favorites</a>: {{ stats.favorites }}</li>
       <li>Reviews written: {{ stats.reviews }}</li>
     </ul>
+  </section>
 
+  <section class="panel">
     <h3>Games finished per year</h3>
     {% if stats.finished_by_year %}
     <ul class="bars">

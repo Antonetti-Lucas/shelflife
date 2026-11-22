@@ -30,37 +30,44 @@
   {% endif %}
 </section>
 
-<div class="two" style="margin-top: 20px">
+<div class="blocks" style="margin-top: 20px">
   <section class="panel">
     <h3>Leans toward</h3>
     <ul class="bars good">
-      {% for tag, value in toward %}
+      {% for tag, value in toward[:10] %}
         <li><span>{{ tag }}</span><i style="width: {{ (value / biggest * 100)|round|int }}%"></i></li>
       {% else %}
         <li class="empty">Nothing yet.</li>
       {% endfor %}
     </ul>
+    {% if toward|length > 10 %}
+    <details class="show-all">
+      <summary>Show all {{ toward|length }}</summary>
+      <ul class="bars good">
+        {% for tag, value in toward[10:] %}
+          <li><span>{{ tag }}</span><i style="width: {{ (value / biggest * 100)|round|int }}%"></i></li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
   </section>
   <section class="panel">
     <h3>Games you rated low</h3>
     <p class="meta">Each pushes down only games very like it (a sequel, a near-clone), never its genre.</p>
     {% if taste.disliked %}
-    <ul class="plain">
-      {% for game, rating in taste.disliked %}
-        <li><a href="/game/{{ game.steam_app_id }}">{{ game.name }}</a> <span class="stars-text">{{ stars(rating) }}</span></li>
-      {% endfor %}
-    </ul>
+      {% set minis = taste.disliked %}{% include "_minis.html" %}
     {% else %}
       <p class="empty">None{% if taste_mode == "play" %}: ratings are ignored in play only{% endif %}.</p>
     {% endif %}
-    {% if taste.dismissed %}
+  </section>
+  {% if taste.dismissed %}
+  <section class="panel">
     <h3>Games you're not interested in</h3>
     <p class="meta">Like a low rating, a little weaker. <a href="/diary?show=not-interested">Manage them</a>.</p>
-    <ul class="plain">
-      {% for game in taste.dismissed %}<li><a href="/game/{{ game.steam_app_id }}">{{ game.name }}</a></li>{% endfor %}
-    </ul>
-    {% endif %}
+    {% set minis = [] %}{% for game in taste.dismissed %}{% set _ = minis.append((game, none)) %}{% endfor %}
+    {% include "_minis.html" %}
   </section>
+  {% endif %}
 </div>
 
 <section id="languages" class="panel" style="margin-top: 20px">

@@ -275,6 +275,14 @@ tr:target td { background: var(--accent-soft); }
 .facts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .facts span { padding: 3px 10px; border-radius: 999px; background: rgb(255 255 255 / 0.12); font-size: 0.82rem; color: rgb(255 255 255 / 0.9); }
 .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; align-items: start; }
+/* Blocks that fit: panels fill as many columns as there are room for. Long lists inside them are capped
+   ("Show all"), so a panel is never much taller than its neighbours and leaves no hole. */
+.blocks { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; align-items: start; }
+.blocks > .panel { margin: 0; min-width: 0; }
+.posters.small-posters { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 12px 10px; }
+.posters.small-posters .poster-meta { font-size: 0.7rem; }
+details.show-all { margin-top: 12px; }
+details.show-all > summary { cursor: pointer; color: var(--accent-strong); font-size: 0.86rem; margin-bottom: 12px; }
 .stack { display: flex; flex-direction: column; gap: 12px; }
 .stack label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 0.86rem; }
 .stack textarea { width: 100%; resize: vertical; }
