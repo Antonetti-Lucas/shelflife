@@ -89,7 +89,8 @@
 </script>
 {% endif %}
 
-<div class="blocks">
+<div class="two-up">
+  <div class="col">
     <section class="panel">
       <h3>Your verdict</h3>
       <div class="row-line">{{ star_rating(game, diary.rating if diary else none, "/game/" ~ game.steam_app_id, "large") }}{{ fav_heart(game, diary and diary.favorite, "/game/" ~ game.steam_app_id, "large") }}</div>
@@ -113,33 +114,15 @@
     </section>
 
     <section class="panel">
-      <h3>Where you are with it</h3>
-      <form method="post" action="/game/{{ game.steam_app_id }}/status" class="stack" data-inline>
-        <label>Status
-          <select name="status">
-            <option value="">Not tracked</option>
-            {% for s in STATUSES %}
-              <option value="{{ s }}" {{ "selected" if diary and diary.status == s }}>{{ STATUS_LABELS[s] }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <div class="dates">
-          <label>Started
-            <input type="date" name="started_on" value="{{ diary.started_on.isoformat() if diary and diary.started_on else '' }}">
-          </label>
-          <label>Finished or stopped
-            <input type="date" name="finished_on" value="{{ diary.finished_on.isoformat() if diary and diary.finished_on else '' }}">
-          </label>
-        </div>
-        <button type="submit">Save status</button>
-      </form>
-      <details class="help">
-        <summary>Statuses and dates</summary>
-        <p><strong>Played</strong> is a game you finished or played as much as you wanted (endless games fit here);
-          <strong>Dropped</strong> one you stopped before the end. Dates are optional and never filled in for you; Stats
-          counts finished games by year with them. Statuses and favorites are diary records: they don't change your
-          recommendations.</p>
-      </details>
+      <h3>How it fits your taste</h3>
+      {% if match %}
+        <div class="bigfit"><strong>{{ "%.0f"|format(match.similarity * 100) }}%</strong><span>match · quality ×{{ "%.2f"|format(match.quality) }} → score {{ "%.2f"|format(match.score) }}</span></div>
+        {% if match.because %}<p class="why">Closest games you played: {{ match.because|join(", ") }}</p>{% endif %}
+        {% if match.tags %}<p class="tags">{% for t in match.tags %}<span class="tag">{{ t }}</span>{% endfor %}</p>{% endif %}
+        {% if match.watch %}<p class="watch">Very like {{ match.watch|join(", ") }}</p>{% endif %}
+      {% else %}
+        <p class="empty">No tags for this game yet, so there is nothing to compare.</p>
+      {% endif %}
     </section>
 
     <section class="panel">
@@ -168,17 +151,37 @@
         </form>
       </details>
     </section>
+  </div>
 
+  <div class="col">
     <section class="panel">
-      <h3>How it fits your taste</h3>
-      {% if match %}
-        <div class="bigfit"><strong>{{ "%.0f"|format(match.similarity * 100) }}%</strong><span>match · quality ×{{ "%.2f"|format(match.quality) }} → score {{ "%.2f"|format(match.score) }}</span></div>
-        {% if match.because %}<p class="why">Closest games you played: {{ match.because|join(", ") }}</p>{% endif %}
-        {% if match.tags %}<p class="tags">{% for t in match.tags %}<span class="tag">{{ t }}</span>{% endfor %}</p>{% endif %}
-        {% if match.watch %}<p class="watch">Very like {{ match.watch|join(", ") }}</p>{% endif %}
-      {% else %}
-        <p class="empty">No tags for this game yet, so there is nothing to compare.</p>
-      {% endif %}
+      <h3>Where you are with it</h3>
+      <form method="post" action="/game/{{ game.steam_app_id }}/status" class="stack" data-inline>
+        <label>Status
+          <select name="status">
+            <option value="">Not tracked</option>
+            {% for s in STATUSES %}
+              <option value="{{ s }}" {{ "selected" if diary and diary.status == s }}>{{ STATUS_LABELS[s] }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="dates">
+          <label>Started
+            <input type="date" name="started_on" value="{{ diary.started_on.isoformat() if diary and diary.started_on else '' }}">
+          </label>
+          <label>Finished or stopped
+            <input type="date" name="finished_on" value="{{ diary.finished_on.isoformat() if diary and diary.finished_on else '' }}">
+          </label>
+        </div>
+        <button type="submit">Save status</button>
+      </form>
+      <details class="help">
+        <summary>Statuses and dates</summary>
+        <p><strong>Played</strong> is a game you finished or played as much as you wanted (endless games fit here);
+          <strong>Dropped</strong> one you stopped before the end. Dates are optional and never filled in for you; Stats
+          counts finished games by year with them. Statuses and favorites are diary records: they don't change your
+          recommendations.</p>
+      </details>
     </section>
 
     {% if entry %}
@@ -254,6 +257,7 @@
       {% endif %}
     </section>
     {% endif %}
+  </div>
 </div>
 
 {% if like_tags %}

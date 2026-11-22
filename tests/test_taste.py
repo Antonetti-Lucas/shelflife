@@ -295,10 +295,10 @@ def test_the_game_page_says_what_this_game_teaches(client, session):
     assert "don't teach your taste" in client.get("/game/2").text
 
 
-# ---- blocks that fit: covers instead of long lists, capped with "Show all" ----
+# ---- blocks that fit: covers in two rows paged with arrows ----
 
 
-def test_games_rated_low_and_not_interested_show_as_covers_with_the_first_twelve_open(client, session):
+def test_games_rated_low_and_not_interested_are_two_rows_of_covers_with_arrows(client, session):
     for i in range(1, 16):
         add_game(session, i, f"Low {i}", tags={"Horror": 100}, minutes=60)
         diary.save_rating(session, i, 1.5)
@@ -306,16 +306,16 @@ def test_games_rated_low_and_not_interested_show_as_covers_with_the_first_twelve
         add_game(session, i, f"Skip {i}", tags={"Horror": 100}, minutes=0, owned=False)
         diary.set_not_interested(session, i, True)
     html = client.get("/taste").text
-    assert html.count('class="poster-item"') == 17  # 15 rated low and 2 not interested
-    assert "Show all 15" in html and "Show all 2" not in html  # 2 fit in the first twelve
-    assert 'class="blocks"' in html and "<ul class=\"plain\">" not in html
+    assert html.count("data-carousel") == 2 and html.count('class="car-btn"') == 4  # an arrow each way, per row
+    assert html.count('class="poster-item"') == 17  # all of them are in the rows: 15 rated low, 2 not interested
+    assert "Show all" not in html and '<ul class="plain">' not in html
 
 
-def test_the_leans_toward_list_is_capped_at_ten_with_the_rest_behind_show_all(client, session):
+def test_the_leans_toward_list_shows_every_tag(client, session):
     fillers(session)
-    for i, tag in enumerate("ABCDEFGHIJKL", start=1):
+    names = [f"Taste {c}" for c in "ABCDEFGHIJKL"]
+    for i, tag in enumerate(names, start=1):
         add_game(session, i, f"Loved {tag}", tags={tag: 100}, minutes=600)
         diary.save_rating(session, i, 5.0)
     html = client.get("/taste").text
-    shown, rest = html.split('<details class="show-all">', 1)
-    assert shown.count("<li><span>") == 10 and "Show all" in rest
+    assert all(f"<li><span>{n}</span>" in html for n in names)

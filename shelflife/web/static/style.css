@@ -275,14 +275,27 @@ tr:target td { background: var(--accent-soft); }
 .facts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .facts span { padding: 3px 10px; border-radius: 999px; background: rgb(255 255 255 / 0.12); font-size: 0.82rem; color: rgb(255 255 255 / 0.9); }
 .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; align-items: start; }
-/* Blocks that fit: panels fill as many columns as there are room for. Long lists inside them are capped
-   ("Show all"), so a panel is never much taller than its neighbours and leaves no hole. */
+/* Blocks that fit: panels fill as many columns as there are room for. */
 .blocks { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; align-items: start; }
 .blocks > .panel { margin: 0; min-width: 0; }
-.posters.small-posters { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 12px 10px; }
-.posters.small-posters .poster-meta { font-size: 0.7rem; }
-details.show-all { margin-top: 12px; }
-details.show-all > summary { cursor: pointer; color: var(--accent-strong); font-size: 0.86rem; margin-bottom: 12px; }
+/* The game page: two columns of stacked panels, so neither leaves a hole. */
+.two-up { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+.two-up > .col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.two-up > .col > .panel { margin: 0; }
+@media (max-width: 760px) { .two-up { grid-template-columns: minmax(0, 1fr); } }
+/* Two panels side by side, the same height. */
+.bars-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: stretch; }
+.bars-two > .panel { min-width: 0; margin: 0; }
+@media (max-width: 860px) { .bars-two { grid-template-columns: minmax(0, 1fr); } }
+/* A row of covers paged with arrows. */
+.carousel { display: flex; align-items: center; gap: 8px; }
+.car-track { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; flex: 1; min-width: 0; padding: 2px 0; }
+.car-track::-webkit-scrollbar { display: none; }
+.car-track > .poster-item { flex: 0 0 104px; scroll-snap-align: start; }
+.car-btn { flex: none; width: 34px; height: 64px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); font-size: 1.6rem; line-height: 1; cursor: pointer; padding: 0; }
+.car-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-strong); }
+.car-btn:disabled { opacity: 0.3; cursor: default; }
+.carousel.all-fit .car-btn { visibility: hidden; }
 .stack { display: flex; flex-direction: column; gap: 12px; }
 .stack label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 0.86rem; }
 .stack textarea { width: 100%; resize: vertical; }
