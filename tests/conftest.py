@@ -59,6 +59,14 @@ def no_network(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_store_change_list(monkeypatch):
+    """By default Steam's store change list is empty. Tests about it fake its answers."""
+    from shelflife import sync
+
+    monkeypatch.setattr(sync, "fetch_changed_apps", lambda api_key, since, timeout=60: [])
+
+
+@pytest.fixture(autouse=True)
 def no_waiting(monkeypatch):
     """Throttles exist to be polite to real servers; tests never wait for them."""
     for throttle in (

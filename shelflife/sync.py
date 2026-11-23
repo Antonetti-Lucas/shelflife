@@ -3,6 +3,8 @@
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
+import time
+
 import requests
 from sqlalchemy import and_, func, not_, or_, select
 from sqlalchemy.orm import Session, selectinload
@@ -13,7 +15,8 @@ from shelflife.models import OFF_TOPIC, Game, LibraryEntry, PlaytimeSnapshot, Wi
 from shelflife.play import is_played
 from shelflife import reviews
 from shelflife.reviews import fetch_review_counts
-from shelflife.steam import OwnedGame, SteamError
+from shelflife.settings import get_changes_checked, set_changes_checked
+from shelflife.steam import AppChange, OwnedGame, SteamError, fetch_changed_apps
 from shelflife.throttle import RateLimited
 
 
@@ -81,6 +84,13 @@ WISHLIST_PRICE_HOURS = 20
 OTHER_PRICE_DAYS = 7
 # Tags drift as players vote. Steam gives 200 games' tags per call, so every game is read again monthly.
 TAGS_REFRESH_DAYS = 30
+# Steam's store change list: the first time, ask for a month of changes; after that for what changed
+# since the last check (with an overlap, so nothing falls between two checks). A changed game is read
+# again soon after it changes: its details (at most CHANGED_BATCH a sync, the rest next time), its
+# tags and, if you don't own it, its price.
+CHANGES_FIRST_DAYS = 30
+CHANGES_OVERLAP_HOURS = 2
+CHANGED_BATCH = 60
 STEAM_TAGS_SINCE = datetime(2026, 11, 2, 12)  # tags read before this came from SteamSpy: read once more from Steam
 
 
@@ -411,6 +421,11 @@ def prices_due(session: Session, everything: bool = False) -> list[Game]:
                 Game.price_fetched_at.is_(None),
                 and_(wished, Game.price_fetched_at < now - timedelta(hours=WISHLIST_PRICE_HOURS)),
                 and_(not_(wished), Game.price_fetched_at < now - timedelta(days=OTHER_PRICE_DAYS)),
+                # Steam's change list gave a price change number we have not read yet
+                and_(
+                    Game.price_change_seen.is_not(None),
+                    or_(Game.price_change_read.is_(None), Game.price_change_read != Game.price_change_seen),
+                ),
             )
         )
     return list(session.scalars(query))
@@ -439,11 +454,42 @@ def sync_prices(
             if price or game.price != {"free": True}:  # a game known to be free stays free
                 game.price = price
             game.price_fetched_at = now
+            game.price_change_read = game.price_change_seen
             done += 1
         session.commit()
         if on_progress:
             on_progress(min(start + len(batch), len(pending)), len(pending), batch[-1])
     return done
+
+
+def record_store_changes(session: Session, changes: list[AppChange]) -> int:
+    """Note what the change list said about the games we have: when each changed and its price change
+    number. Returns how many of our games changed since we last knew."""
+    by_id = {c.app_id: c for c in changes}
+    marked = 0
+    ids = list(by_id)
+    for start in range(0, len(ids), 500):
+        for game in session.scalars(select(Game).where(Game.steam_app_id.in_(ids[start : start + 500]))):
+            change = by_id[game.steam_app_id]
+            changed_at = datetime.fromtimestamp(change.last_modified, timezone.utc).replace(tzinfo=None)
+            if game.store_changed_at is None or changed_at > game.store_changed_at:
+                game.store_changed_at = changed_at
+                marked += 1
+            if change.price_change_number is not None:
+                game.price_change_seen = change.price_change_number
+    session.commit()
+    return marked
+
+
+def sync_store_changes(session: Session, api_key: str) -> int:
+    """Ask Steam's store change list what changed since the last time (a month back the first time),
+    note it on our games and remember when we asked. Returns how many of our games changed."""
+    asked = int(time.time())
+    last = get_changes_checked(session)
+    since = last - CHANGES_OVERLAP_HOURS * 3600 if last else asked - CHANGES_FIRST_DAYS * 86400
+    marked = record_store_changes(session, fetch_changed_apps(api_key, since))
+    set_changes_checked(session, asked)  # only after the answer was read: a failure asks again from the same point
+    return marked
 
 
 def about_due(session: Session) -> list[Game]:
@@ -513,7 +559,13 @@ def tags_due(session: Session, everything: bool = False, refresh_days: int = TAG
     query = select(Game).order_by(Game.tags_fetched_at.asc().nulls_first(), Game.steam_app_id)
     if not everything:
         cutoff = max(_now() - timedelta(days=refresh_days), STEAM_TAGS_SINCE)
-        query = query.where(or_(Game.tags_fetched_at.is_(None), Game.tags_fetched_at < cutoff))
+        query = query.where(
+            or_(
+                Game.tags_fetched_at.is_(None),
+                Game.tags_fetched_at < cutoff,
+                and_(Game.store_changed_at.is_not(None), Game.tags_fetched_at < Game.store_changed_at),
+            )
+        )
     return list(session.scalars(query))
 
 
@@ -615,8 +667,18 @@ def details_due(
         if (g.type == "unavailable" or (g.type == "game" and not g.tags)) and g.details_fetched_at < retry_cutoff
     ]
     retry_ids = {g.steam_app_id for g in retry}
-    stale = [g for g in fetched if g.details_fetched_at < refresh_cutoff and g.steam_app_id not in retry_ids]
-    return new + retry + stale[:refresh_batch]
+    # Steam's change list says these changed after we read them: most played first, a few a sync
+    changed = sorted(
+        (
+            g
+            for g in fetched
+            if g.store_changed_at is not None and g.details_fetched_at < g.store_changed_at and g.steam_app_id not in retry_ids
+        ),
+        key=lambda g: -(g.library_entry.playtime_total_min if g.library_entry else 0),
+    )[:CHANGED_BATCH]
+    taken = retry_ids | {g.steam_app_id for g in changed}
+    stale = [g for g in fetched if g.details_fetched_at < refresh_cutoff and g.steam_app_id not in taken]
+    return new + retry + changed + stale[:refresh_batch]
 
 
 def enrich_games(

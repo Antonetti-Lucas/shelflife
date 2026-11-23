@@ -56,6 +56,25 @@ def set_taste_mode(session: Session, mode: str) -> None:
     session.commit()
 
 
+# When a sync last asked Steam's store change list what changed (unix seconds), so the next one asks only
+# for what changed since. None: never asked.
+def get_changes_checked(session: Session) -> int | None:
+    row = session.get(Setting, "store_changes_checked")
+    try:
+        return int(row.value) if row is not None else None
+    except ValueError:
+        return None
+
+
+def set_changes_checked(session: Session, when: int) -> None:
+    row = session.get(Setting, "store_changes_checked")
+    if row is None:
+        session.add(Setting(key="store_changes_checked", value=str(when)))
+    else:
+        row.value = str(when)
+    session.commit()
+
+
 def get_hide_software(session: Session) -> bool:
     return _flag(session, "hide_software", DEFAULT_HIDE_SOFTWARE)
 

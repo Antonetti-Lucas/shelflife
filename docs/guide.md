@@ -29,17 +29,18 @@ A game on your Steam wishlist that you already have on another platform gets a *
 
 ## What Sync reads
 
-One button, nine steps, in the background with a progress bar and a Stop button:
+One button, ten steps, in the background with a progress bar and a Stop button:
 
 1. **Your library:** your games, hours and when you last played each. Every sync.
 2. **Your wishlist.** A wishlist Steam can't give (private, or Steam failing) is skipped and the rest carries on.
-3. **Your achievements:** games you've played since they were last read, games never read, and any not read for 30 days.
-4. **Tags**, straight from Steam, 200 games per request: new games, and every game once a month. A game Steam has no tags for gets SteamSpy's, or the ones on its store page.
-5. **Store details** for new games and wishlist games, games that came back empty a week ago, and the 30 oldest when they are over 90 days old. About 3 seconds a game, so the very first sync takes a while.
-6. **Descriptions, languages, prices and more store details**, once for games read before ShelfLife kept them.
-7. **Review counts**, for games that have none or whose counts are a month old.
-8. **How long other players play**: up to 500 reviews for games you've played (your hours are measured against them), 100 for the others (for their length). Only a few numbers per game are kept, never who wrote a review. Every six months.
-9. **Prices** of games you don't own: your wishlist's every sync, the rest every week, a hundred games per request. Set `STEAM_COUNTRY` in `.env` to get them in your currency.
+3. **Changes in the store:** Steam's own list of games whose store page or price changed since the last sync (one or two quick calls with your key; the first time it looks back a month). A changed game's details, tags and, if you don't own it, price are read again soon after, a few at a time, instead of waiting for the monthly or quarterly re-read. If Steam can't give the list, the sync says so and carries on.
+4. **Your achievements:** games you've played since they were last read, games never read, and any not read for 30 days.
+5. **Tags**, straight from Steam, 200 games per request: new games, and every game once a month. A game Steam has no tags for gets SteamSpy's, or the ones on its store page.
+6. **Store details** for new games and wishlist games, games that came back empty a week ago, games Steam says changed since they were read (the most played first, up to 60 a sync), and as a safety net the 30 oldest when they are over 90 days old. About 3 seconds a game, so the very first sync takes a while.
+7. **Descriptions, languages, prices and more store details**, once for games read before ShelfLife kept them.
+8. **Review counts**, for games that have none or whose counts are a month old.
+9. **How long other players play**: up to 500 reviews for games you've played (your hours are measured against them), 100 for the others (for their length). Only a few numbers per game are kept, never who wrote a review. Every six months.
+10. **Prices** of games you don't own: your wishlist's every sync, the rest every week, a hundred games per request. Set `STEAM_COUNTRY` in `.env` to get them in your currency.
 
 **Check everything again** ignores those limits and re-reads every game, which is slow (the page says how long). A sync saves as it goes, so the next one carries on where it stopped. It never changes your diary, never runs at the same time as a game search, and doesn't find Family Sharing games (that needs the import below).
 

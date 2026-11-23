@@ -3,17 +3,19 @@
 1. your library and playtime (one call to Steam's API);
 2. your wishlist (a game id, your rank and the date you added it; a wishlist Steam cannot
    give does not stop the rest);
-3. your achievements (official API, quick);
-4. tags from Steam for new games and every game read more than a month ago, 200 games per call
+3. which of your games changed in the store since the last sync (Steam's documented change list, one
+   or two quick calls), so a changed game's details, tags and price are read again soon after it changes;
+4. your achievements (official API, quick);
+5. tags from Steam for new games and every game read more than a month ago, 200 games per call
    (SteamSpy's or the store page's for a game Steam has none for);
-5. store details for new games and wishlist games (slow: about 3 seconds a game, so the very
+6. store details for new games and wishlist games (slow: about 3 seconds a game, so the very
    first sync takes a while), plus games that came back empty last time and a few of the oldest;
-6. the store's "About this game" text for games that have their details but not the text yet
+7. the store's "About this game" text for games that have their details but not the text yet
    (a one-time catch-up for games read before the text was kept; new games get it in step 5);
-7. review counts for every game that has none or whose counts are a month old;
-8. how long other players play each game you have played (from up to 500 of its reviews), the
+8. review counts for every game that has none or whose counts are a month old;
+9. how long other players play each game you have played (from up to 500 of its reviews), the
    yardstick your own hours are measured against; read once, then every six months;
-9. prices of games you don't own: your wishlist's every sync, the rest every week, 100 games
+10. prices of games you don't own: your wishlist's every sync, the rest every week, 100 games
    per store call.
 
 Each step re-reads only what could have changed (see the rules in shelflife/sync.py);
@@ -45,6 +47,7 @@ from shelflife.sync import (
     prices_due,
     sync_achievements,
     sync_all_reviews,
+    sync_store_changes,
     sync_player_hours,
     sync_prices,
     sync_tags,
@@ -57,6 +60,7 @@ from shelflife.wishlist import fetch_wishlist, import_wishlist
 STEPS = (
     ("library", "Reading your library"),
     ("wishlist", "Reading your wishlist"),
+    ("changes", "Asking Steam which games changed"),
     ("achievements", "Reading your achievements"),
     ("tags", "Reading tags from Steam"),
     ("details", "Fetching store details for new games"),
@@ -82,6 +86,8 @@ class SyncResult:
     wishlist: int = 0  # games on your wishlist
     wishlist_added: int = 0  # of those, how many are new since the last sync
     wishlist_note: str | None = None  # why the wishlist could not be updated (private, or Steam failed)
+    changed: int = 0  # of your games, how many Steam's store change list says changed since the last sync
+    changes_note: str | None = None  # why the change list could not be read
     achievements: int = 0  # games whose achievements were fetched
     tags: int = 0  # games whose tags were read
     details: int = 0  # games whose store details were fetched
@@ -97,7 +103,7 @@ class SyncResult:
 def run_sync(
     session: Session, api_key: str, steam_id: str, on_progress=None, should_stop=None, full: bool = False
 ) -> SyncResult:
-    """Run the nine steps. on_progress(step, text, done, total): `step` counts from 1.
+    """Run the ten steps. on_progress(step, text, done, total): `step` counts from 1.
     `full` re-reads everything (all achievements, all store details, all review counts)
     instead of only what is due.
 
@@ -135,11 +141,25 @@ def run_sync(
             result.stopped = True
             return result
 
+        report(3, "Asking Steam which games changed", 0, 1)
+        try:  # an optimisation: failing to ask must not stop the rest of the sync
+            result.changed = sync_store_changes(session, api_key)
+        except RateLimited as exc:
+            session.rollback()
+            result.changes_note = f"could not be read: {exc}"
+        except (SteamError, requests.RequestException, ValueError) as exc:
+            session.rollback()
+            result.changes_note = f"could not be read ({exc})"
+        report(3, "Changes noted", 1, 1)
+        if stop():
+            result.stopped = True
+            return result
+
         result.achievements = sync_achievements(
             session,
             api_key,
             steam_id,
-            on_progress=lambda i, n, game, stats: report(3, f"Achievements for {game.name}", i, n),
+            on_progress=lambda i, n, game, stats: report(4, f"Achievements for {game.name}", i, n),
             should_stop=stop,
             everything=full,
         )
@@ -149,7 +169,7 @@ def run_sync(
 
         result.tags = sync_tags(
             session,
-            on_progress=lambda i, n, game: report(4, "Tags", i, n),
+            on_progress=lambda i, n, game: report(5, "Tags", i, n),
             should_stop=stop,
             everything=full,
         )
@@ -159,7 +179,7 @@ def run_sync(
 
         result.details = enrich_games(
             session,
-            on_progress=lambda i, n, game: report(5, f"Store details for {game.name}", i, n),
+            on_progress=lambda i, n, game: report(6, f"Store details for {game.name}", i, n),
             should_stop=stop,
             refresh=True,
             everything=full,
@@ -170,7 +190,7 @@ def run_sync(
 
         result.about = sync_about(
             session,
-            on_progress=lambda i, n, game: report(6, f"Description of {game.name}", i, n),
+            on_progress=lambda i, n, game: report(7, f"Description of {game.name}", i, n),
             should_stop=stop,
         )
         if stop():
@@ -179,7 +199,7 @@ def run_sync(
 
         result.reviews = sync_all_reviews(
             session,
-            on_progress=lambda i, n, game: report(7, f"Review counts for {game.name}", i, n),
+            on_progress=lambda i, n, game: report(8, f"Review counts for {game.name}", i, n),
             should_stop=stop,
             everything=full,
         )
@@ -189,7 +209,7 @@ def run_sync(
 
         result.players = sync_player_hours(
             session,
-            on_progress=lambda i, n, game: report(8, f"How long players play {game.name}", i, n),
+            on_progress=lambda i, n, game: report(9, f"How long players play {game.name}", i, n),
             should_stop=stop,
             everything=full,
         )
@@ -199,7 +219,7 @@ def run_sync(
 
         result.prices = sync_prices(
             session,
-            on_progress=lambda i, n, game: report(9, "Prices", i, n),
+            on_progress=lambda i, n, game: report(10, "Prices", i, n),
             should_stop=stop,
             everything=full,
         )
@@ -222,6 +242,10 @@ def summarize_sync(result: SyncResult) -> JobSnapshot:
         parts.append(f"{result.wishlist} on your wishlist" + (f" ({result.wishlist_added} new)" if result.wishlist_added else ""))
     if result.wishlist_note:
         parts.append(f"your wishlist: {result.wishlist_note}")
+    if result.changed:
+        parts.append(f"{result.changed} of your games changed on Steam since the last sync")
+    if result.changes_note:
+        parts.append(f"Steam's list of changes {result.changes_note}")
     if result.achievements:
         parts.append(f"achievements for {result.achievements} games")
     if result.tags:

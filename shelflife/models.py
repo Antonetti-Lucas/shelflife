@@ -44,6 +44,12 @@ class Game(Base):
     # Prices change with sales, so price_fetched_at says how old it is.
     price: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     price_fetched_at: Mapped[datetime | None]
+    # Steam's store change list (steam.fetch_changed_apps): when it last said this game changed, and its
+    # price change number then and when its price was last read. A newer change than the last read, or a
+    # different price number, makes the game due for a re-read (shelflife/sync.py).
+    store_changed_at: Mapped[datetime | None]
+    price_change_seen: Mapped[int | None]
+    price_change_read: Mapped[int | None]
     # More store details, kept for later and not used yet (store.parse_info): developers, publishers,
     # Steam's categories, platforms, Metacritic, mature content flags, screenshots... None: never read.
     store_info: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)

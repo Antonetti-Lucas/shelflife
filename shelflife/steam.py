@@ -8,6 +8,7 @@ import requests
 OWNED_GAMES_URL = "https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/"
 PLAYER_URL = "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/"
 VANITY_URL = "https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/"
+CHANGED_APPS_URL = "https://api.steampowered.com/IStoreService/GetAppList/v1/"
 
 
 class SteamError(Exception):
@@ -76,6 +77,44 @@ def fetch_player_name(api_key: str, steam_id: str, timeout: float = 15) -> str:
     if not players:
         raise SteamError("Steam has no account with that SteamID.")
     return players[0].get("personaname") or steam_id
+
+
+@dataclass(frozen=True)
+class AppChange:
+    """One entry of Steam's store change list."""
+
+    app_id: int
+    last_modified: int  # unix seconds: when its store info or price last changed
+    price_change_number: int | None
+
+
+def fetch_changed_apps(api_key: str, since: int, timeout: float = 60) -> list[AppChange]:
+    """The games and software whose store info or price changed after `since` (unix seconds), from
+    Valve's documented IStoreService/GetAppList (it needs your key and takes `if_modified_since`)."""
+    out: list[AppChange] = []
+    last_appid = 0
+    for _ in range(20):  # 50,000 an answer: a month of changes is about one answer
+        answer = _get(
+            CHANGED_APPS_URL,
+            {
+                "key": api_key,
+                "if_modified_since": since,
+                "include_games": "true",
+                "include_software": "true",
+                "max_results": 50_000,
+                "last_appid": last_appid,
+            },
+            timeout,
+        )
+        out.extend(
+            AppChange(a["appid"], a.get("last_modified") or 0, a.get("price_change_number"))
+            for a in answer.get("apps") or []
+            if a.get("appid")
+        )
+        if not answer.get("have_more_results") or not answer.get("last_appid"):
+            break
+        last_appid = answer["last_appid"]
+    return out
 
 
 def fetch_owned_games(api_key: str, steam_id: str, timeout: float = 15) -> list[OwnedGame]:
