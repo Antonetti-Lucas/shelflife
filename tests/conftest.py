@@ -22,7 +22,7 @@ os.environ["SHELFLIFE_ALLOWED_HOSTS"] = "127.0.0.1,localhost,testserver"
 
 import pytest  # noqa: E402
 
-from shelflife import achievements, appnames, learned, recommend, reviews, similar, store  # noqa: E402
+from shelflife import achievements, appnames, learned, recommend, reviews, similar, store, wikidata  # noqa: E402
 from shelflife.db import Base, SessionLocal, engine, init_db  # noqa: E402
 
 if "shelflife-tests-" not in str(engine.url):  # pragma: no cover - safety net
@@ -67,6 +67,14 @@ def no_store_change_list(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_wikidata(monkeypatch):
+    """By default Wikidata knows no game. Tests about it fake its answers."""
+    from shelflife import wikidata
+
+    monkeypatch.setattr(wikidata, "fetch_games", lambda app_ids, timeout=90: {})
+
+
+@pytest.fixture(autouse=True)
 def no_waiting(monkeypatch):
     """Throttles exist to be polite to real servers; tests never wait for them."""
     for throttle in (
@@ -77,6 +85,7 @@ def no_waiting(monkeypatch):
         achievements.steam_throttle,
         store.steamspy_all_throttle,
         store.steam_api_throttle,
+        wikidata.wikidata_throttle,
     ):
         monkeypatch.setattr(throttle, "min_interval", 0)
 

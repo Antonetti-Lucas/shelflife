@@ -13,7 +13,7 @@ from shelflife import store
 from shelflife.achievements import AchievementsUnavailable, AchievementStats, fetch_achievements
 from shelflife.models import OFF_TOPIC, Game, LibraryEntry, PlaytimeSnapshot, WishlistItem
 from shelflife.play import is_played
-from shelflife import reviews
+from shelflife import reviews, wikidata
 from shelflife.reviews import fetch_review_counts
 from shelflife.settings import get_changes_checked, set_changes_checked
 from shelflife.steam import AppChange, OwnedGame, SteamError, fetch_changed_apps
@@ -91,6 +91,7 @@ TAGS_REFRESH_DAYS = 30
 CHANGES_FIRST_DAYS = 30
 CHANGES_OVERLAP_HOURS = 2
 CHANGED_BATCH = 60
+WIKIDATA_REFRESH_DAYS = 180  # a game's series and first release date hardly ever change
 STEAM_TAGS_SINCE = datetime(2026, 11, 2, 12)  # tags read before this came from SteamSpy: read once more from Steam
 
 
@@ -490,6 +491,47 @@ def sync_store_changes(session: Session, api_key: str) -> int:
     marked = record_store_changes(session, fetch_changed_apps(api_key, since))
     set_changes_checked(session, asked)  # only after the answer was read: a failure asks again from the same point
     return marked
+
+
+def wikidata_due(session: Session, everything: bool = False) -> list[Game]:
+    """The games Wikidata has not been asked about (or not for WIKIDATA_REFRESH_DAYS), library games first."""
+    query = (
+        select(Game)
+        .outerjoin(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
+        .where(Game.type == "game")
+        .order_by(LibraryEntry.steam_app_id.is_(None), Game.steam_app_id)
+    )
+    if not everything:
+        cutoff = _now() - timedelta(days=WIKIDATA_REFRESH_DAYS)
+        query = query.where(or_(Game.wikidata_fetched_at.is_(None), Game.wikidata_fetched_at < cutoff))
+    return list(session.scalars(query))
+
+
+def sync_wikidata(
+    session: Session,
+    on_progress: Callable[[int, int, Game], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+    everything: bool = False,
+) -> int:
+    """Ask Wikidata about the games `wikidata_due` lists, wikidata.BATCH to a query, saving batch by
+    batch. Returns how many games were asked about."""
+    pending = wikidata_due(session, everything=everything)
+    done = 0
+    for start in range(0, len(pending), wikidata.BATCH):
+        if should_stop is not None and should_stop():
+            break
+        batch = pending[start : start + wikidata.BATCH]
+        found = wikidata.fetch_games([g.steam_app_id for g in batch])
+        now = _now()
+        for game in batch:
+            hit = found.get(game.steam_app_id)
+            game.wikidata = hit.as_dict() if hit else {}  # {}: asked, and Wikidata has no item for it
+            game.wikidata_fetched_at = now
+        session.commit()
+        done += len(batch)
+        if on_progress:
+            on_progress(done, len(pending), batch[-1])
+    return done
 
 
 def about_due(session: Session) -> list[Game]:

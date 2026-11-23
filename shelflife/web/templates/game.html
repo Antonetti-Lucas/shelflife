@@ -22,7 +22,9 @@
       <div class="facts">
         <span>{{ source_label(game) }}</span>
         {% if info.coming_soon %}<span class="soon">Coming soon{{ " · " ~ game.release_date if game.release_date }}</span>
-        {% elif game.release_date %}<span>Released {{ game.release_date }}</span>{% endif %}
+        {% elif game.release_date %}<span>Released {{ game.release_date }}</span>
+        {% elif first_released %}<span title="Steam gives no date; from Wikidata">Released {{ first_released }}</span>{% endif %}
+        {% if first_year and store_year and first_year <= store_year - 2 %}<span title="Steam's date is for the edition it sells now; the first release is from Wikidata">First released {{ first_year }}</span>{% endif %}
         {% if game.genres %}<span>{{ game.genres|join(", ") }}</span>{% endif %}
         <span>{{ reviews_text(game) }}</span>
         {% if game.languages %}
@@ -259,6 +261,14 @@
     {% endif %}
   </div>
 </div>
+
+{% for series, items in series_blocks %}{% if items %}
+<section class="panel" style="margin-top: 20px">
+  <h3>{{ series.label }} <small>{{ series.members|length }} games here</small></h3>
+  <p class="meta">The rest of the series, in order, with your stars. From Wikidata; only games ShelfLife has stored are listed.</p>
+  {% set minis = items %}{% include "_minis.html" %}
+</section>
+{% endif %}{% endfor %}
 
 {% if like_tags %}
 <section class="panel similar">

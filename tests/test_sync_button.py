@@ -110,7 +110,7 @@ def test_a_sync_runs_all_the_steps_in_order_and_saves_everything(session, steam)
     assert (result.games, result.new_games) == (2, 2)
     assert (result.achievements, result.details, result.reviews) == (1, 2, 2)  # every game gets review counts
     assert result.aborted is None and not result.stopped
-    assert sorted(dict.fromkeys(steps)) == [1, 2, 3, 4, 5, 6, 8, 9] and steps == sorted(steps)  # never goes back; step 7 (descriptions) says nothing when none are due
+    assert sorted(dict.fromkeys(steps)) == [1, 2, 3, 4, 5, 6, 8, 9, 11] and steps == sorted(steps)  # never goes back; step 7 (descriptions) says nothing when none are due
     assert session.get(LibraryEntry, 1).playtime_total_min == 600
 
 
@@ -439,7 +439,7 @@ def test_progress_updates_the_step_and_the_text(session, steam):
     original = job._set
     job._set = lambda **kw: (seen.append(kw), original(**kw))[1]
     job.start("k", "i")
-    assert {kw["step"] for kw in seen} == {1, 2, 3, 4, 5, 6, 8, 9}
+    assert {kw["step"] for kw in seen} == {1, 2, 3, 4, 5, 6, 8, 9, 11}
     assert any("Store details for Game 1" in kw["text"] for kw in seen)
 
 
@@ -536,7 +536,7 @@ def test_while_syncing_the_page_shows_the_step_and_a_stop_button(client, configu
     assert len(client.held) == 1  # handed to the background
     html = client.get("/sync").text
     assert '<meta http-equiv="refresh"' in html and "<progress" in html
-    assert "Step 1 of 10: Reading your library" in html
+    assert "Step 1 of 11: Reading your library" in html
     assert 'action="/sync/stop"' in html and 'action="/sync/start"' not in html
     post(client, "/sync/stop")
     assert web_app.sync_job._stop.is_set()

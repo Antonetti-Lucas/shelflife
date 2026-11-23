@@ -29,7 +29,7 @@ A game on your Steam wishlist that you already have on another platform gets a *
 
 ## What Sync reads
 
-One button, ten steps, in the background with a progress bar and a Stop button:
+One button, eleven steps, in the background with a progress bar and a Stop button:
 
 1. **Your library:** your games, hours and when you last played each. Every sync.
 2. **Your wishlist.** A wishlist Steam can't give (private, or Steam failing) is skipped and the rest carries on.
@@ -41,6 +41,7 @@ One button, ten steps, in the background with a progress bar and a Stop button:
 8. **Review counts**, for games that have none or whose counts are a month old.
 9. **How long other players play**: up to 500 reviews for games you've played (your hours are measured against them), 100 for the others (for their length). Only a few numbers per game are kept, never who wrote a review. Every six months.
 10. **Prices** of games you don't own: your wishlist's every sync, the rest every week, a hundred games per request. Set `STEAM_COUNTRY` in `.env` to get them in your currency.
+11. **Series and first release dates**, from Wikidata, the public knowledge base: which series each game belongs to (its game page then lists the rest of the series, in order, with your stars) and when it was first released, which fixes games the store gives no date and ports sold years after they came out (the decade filter and release-date sorts use it). Asked once per game, then every six months, 150 games a query; only game ids are sent. If Wikidata can't be reached the sync says so and carries on.
 
 **Check everything again** ignores those limits and re-reads every game, which is slow (the page says how long). A sync saves as it goes, so the next one carries on where it stopped. It never changes your diary, never runs at the same time as a game search, and doesn't find Family Sharing games (that needs the import below).
 

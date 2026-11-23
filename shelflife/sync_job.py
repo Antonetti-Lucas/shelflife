@@ -16,7 +16,9 @@
 9. how long other players play each game you have played (from up to 500 of its reviews), the
    yardstick your own hours are measured against; read once, then every six months;
 10. prices of games you don't own: your wishlist's every sync, the rest every week, 100 games
-   per store call.
+   per store call;
+11. the series each game belongs to and its first release date, from Wikidata (public data, CC0): asked
+   once per game, then every six months, 150 games per query.
 
 Each step re-reads only what could have changed (see the rules in shelflife/sync.py);
 "check everything again" re-reads it all. Every step saves game by game, so a sync can be
@@ -48,6 +50,8 @@ from shelflife.sync import (
     sync_achievements,
     sync_all_reviews,
     sync_store_changes,
+    sync_wikidata,
+    wikidata_due,
     sync_player_hours,
     sync_prices,
     sync_tags,
@@ -68,6 +72,7 @@ STEPS = (
     ("reviews", "Counting reviews"),
     ("players", "Reading how long other players play"),
     ("prices", "Updating prices"),
+    ("series", "Looking up series and first release dates on Wikidata"),
 )
 SECONDS_PER_GAME = 3  # store details, for the time estimate
 SECONDS_PER_TAGS = 1.5 / 200  # one call for two hundred games' tags
@@ -77,6 +82,7 @@ SECONDS_PER_ABOUT = 1.6  # one store call for a game's description
 SECONDS_PER_PLAYERS = 5.5  # up to five pages of reviews
 SECONDS_PER_LENGTH = 1.2  # one page of reviews, for a game you haven't played
 SECONDS_PER_PRICE = 1.7 / 100  # one store call for a hundred games' prices
+SECONDS_PER_WIKIDATA = 9 / 150  # one query (and a pause) for a hundred and fifty games
 
 
 @dataclass
@@ -95,6 +101,8 @@ class SyncResult:
     reviews: int = 0  # backlog games whose review counts were fetched
     players: int = 0  # games whose players' hours were read
     prices: int = 0  # games whose price was refreshed
+    series: int = 0  # games Wikidata was asked about (series and first release date)
+    series_note: str | None = None  # why Wikidata could not be asked
     full: bool = False  # a "check everything again" run, not the usual sync
     stopped: bool = False  # stopped from the page
     aborted: str | None = None  # why it gave up early (rate limit, network, Steam)
@@ -103,7 +111,7 @@ class SyncResult:
 def run_sync(
     session: Session, api_key: str, steam_id: str, on_progress=None, should_stop=None, full: bool = False
 ) -> SyncResult:
-    """Run the ten steps. on_progress(step, text, done, total): `step` counts from 1.
+    """Run the eleven steps. on_progress(step, text, done, total): `step` counts from 1.
     `full` re-reads everything (all achievements, all store details, all review counts)
     instead of only what is due.
 
@@ -223,6 +231,23 @@ def run_sync(
             should_stop=stop,
             everything=full,
         )
+        if stop():
+            result.stopped = True
+            return result
+
+        try:  # extra information: Wikidata being unreachable must not make the sync look failed
+            result.series = sync_wikidata(
+                session,
+                on_progress=lambda i, n, game: report(11, "Series and first release dates", i, n),
+                should_stop=stop,
+                everything=full,
+            )
+        except RateLimited as exc:
+            session.rollback()
+            result.series_note = f"could not be asked: {exc}"
+        except (requests.RequestException, ValueError) as exc:
+            session.rollback()
+            result.series_note = f"could not be asked ({exc})"
         result.stopped = stop()
     except RateLimited as exc:
         result.aborted = str(exc)
@@ -260,6 +285,10 @@ def summarize_sync(result: SyncResult) -> JobSnapshot:
         parts.append(f"how long players play {result.players} games")
     if result.prices:
         parts.append(f"prices for {result.prices} games")
+    if result.series:
+        parts.append(f"series and first release dates for {result.series} games")
+    if result.series_note:
+        parts.append(f"Wikidata {result.series_note}")
     base = ("Checked everything again: " if result.full else "Synced: ") + "; ".join(parts) + "."
     if result.aborted:
         return JobSnapshot(
@@ -295,7 +324,7 @@ def what_is_due(session: Session, with_due: bool = True) -> dict[str, int | obje
         .join(Game, Game.steam_app_id == LibraryEntry.steam_app_id)
         .where(LibraryEntry.platform.is_not(None), Game.family_shared.is_not(True))
     ) or 0
-    counts = {"achievements": None, "tags": None, "details": None, "about": None, "reviews": None, "players": None, "length": None, "prices": None}
+    counts = {"achievements": None, "tags": None, "details": None, "about": None, "reviews": None, "players": None, "length": None, "prices": None, "series": None}
     minutes = full_minutes = None
     if with_due:
         counts = {
@@ -307,6 +336,7 @@ def what_is_due(session: Session, with_due: bool = True) -> dict[str, int | obje
             "players": len(player_hours_due(session)),
             "length": len(length_due(session)),
             "prices": len(prices_due(session)),
+            "series": len(wikidata_due(session)),
         }
         full = {
             "achievements": len(achievements_due(session, everything=True)),
@@ -317,6 +347,7 @@ def what_is_due(session: Session, with_due: bool = True) -> dict[str, int | obje
             "players": len(player_hours_due(session, everything=True)),
             "length": len(length_due(session, everything=True)),
             "prices": len(prices_due(session, everything=True)),
+            "series": len(wikidata_due(session, everything=True)),
         }
         estimate = lambda c: _minutes(  # noqa: E731
             c["achievements"] * SECONDS_PER_ACHIEVEMENT
@@ -327,6 +358,7 @@ def what_is_due(session: Session, with_due: bool = True) -> dict[str, int | obje
             + c["players"] * SECONDS_PER_PLAYERS
             + c["length"] * SECONDS_PER_LENGTH
             + c["prices"] * SECONDS_PER_PRICE
+            + c["series"] * SECONDS_PER_WIKIDATA
         )
         minutes, full_minutes = estimate(counts), estimate(full)
     return {

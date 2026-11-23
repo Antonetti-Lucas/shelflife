@@ -1,17 +1,17 @@
 {# A row of small covers with the stars (if any), paged with arrows left and right (carousel.js).
    Set `minis` to a list of (game, rating or None) before including it. #}
-{% macro mini(g, rating) %}
+{% macro mini(g, rating, note=none) %}
 <div class="poster-item">
   <a class="poster" href="/game/{{ g.steam_app_id }}" title="{{ g.name }}">
     <img src="{{ poster_url(g) }}" loading="lazy" alt="{{ g.name }}"
          onerror='this.onerror = null; this.closest(".poster").classList.add("wide"); {% if g.cover_url %}this.src = {{ g.cover_url|tojson }};{% else %}this.remove();{% endif %}'>
     <span class="poster-name">{{ g.name }}</span>
   </a>
-  <span class="poster-meta">{% if rating is not none %}<span class="stars-text">{{ stars(rating) }}</span>{% endif %}</span>
+  <span class="poster-meta">{% if rating is not none %}<span class="stars-text">{{ stars(rating) }}</span>{% elif note %}<span class="meta">{{ note }}</span>{% endif %}</span>
 </div>
 {% endmacro %}
 <div class="carousel" data-carousel>
   <button type="button" class="car-btn" data-dir="-1" aria-label="Show earlier games">&#8249;</button>
-  <div class="car-track">{% for g, rating in minis %}{{ mini(g, rating) }}{% endfor %}</div>
+  <div class="car-track">{% for item in minis %}{{ mini(item[0], item[1], item[2] if item|length > 2 else none) }}{% endfor %}</div>
   <button type="button" class="car-btn" data-dir="1" aria-label="Show more games">&#8250;</button>
 </div>

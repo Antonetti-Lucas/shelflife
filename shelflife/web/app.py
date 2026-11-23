@@ -48,6 +48,7 @@ from shelflife.settings import (
     set_taste_mode,
 )
 from shelflife.learned import text_index
+from shelflife.series import first_year, series_of
 from shelflife.similar import GAMES_VERSION, search_tags, similar_to, tag_idf
 from shelflife.stats import compute_stats
 from shelflife.sync_job import STEPS as SYNC_STEPS
@@ -868,6 +869,14 @@ def game_page(request: Request, app_id: int, session: Session = Depends(get_sess
             "all_lists": gamelists.all_lists(session),
             "platforms": otherplatforms.PLATFORMS,
             "in_lists": gamelists.lists_with(session, app_id),
+            "first_year": first_year(game),
+            "first_released": (game.wikidata or {}).get("released"),
+            "store_year": (lambda f: int(f.group(1)) if f else None)(YEAR.search(game.release_date or "")),
+            "series_blocks": [
+                (s, [(m.game, ratings.get(m.game.steam_app_id), str(m.year) if m.year else None) for m in s.members if m.game.steam_app_id != app_id])
+                for s in series_of(session, game)
+            ],
+            "poster_url": poster_url,
         },
     )
 
@@ -879,9 +888,12 @@ YEAR = re.compile(r"\b(19[5-9]\d|20\d\d)\b")
 
 
 def release_year(game: Game) -> int | None:
-    """The year in Steam's release date text ("17 Sep, 2020", "Nov 16, 2009", "Q1 2027"...)."""
+    """The year a game came out: the year in Steam's release date text ("17 Sep, 2020", "Nov 16, 2009",
+    "Q1 2027"...) or, when Wikidata knows an earlier first release (a port or remaster sold on Steam
+    years later), that one. A game the store gives no date for gets Wikidata's."""
     found = YEAR.search(game.release_date or "")
-    return int(found.group(1)) if found else None
+    years = [y for y in (int(found.group(1)) if found else None, first_year(game)) if y]
+    return min(years) if years else None
 
 
 def poster_url(game: Game) -> str:

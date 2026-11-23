@@ -50,6 +50,10 @@ class Game(Base):
     store_changed_at: Mapped[datetime | None]
     price_change_seen: Mapped[int | None]
     price_change_read: Mapped[int | None]
+    # What Wikidata knows (shelflife/wikidata.py): {"item": "Q74539", "series": [{"id", "label", "ordinal"}],
+    # "released": "2012-11-20"}; {} when it has no item for the game, None when never asked.
+    wikidata: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+    wikidata_fetched_at: Mapped[datetime | None]
     # More store details, kept for later and not used yet (store.parse_info): developers, publishers,
     # Steam's categories, platforms, Metacritic, mature content flags, screenshots... None: never read.
     store_info: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
