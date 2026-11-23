@@ -25,6 +25,10 @@
     <option value="">Any length</option>
     {% for key, (label, low, high) in length_bands.items() %}<option value="{{ key }}" {{ "selected" if length == key }}>{{ label }}</option>{% endfor %}
   </select>
+  <select name="sale" aria-label="Price" title="Uses the last price read for each game (the cards refresh theirs when you open the page)">
+    <option value="">Any price</option>
+    <option value="1" {{ "selected" if sale }}>On sale now</option>
+  </select>
   <select name="rec" aria-label="Recommended">
     {% for value, label in [("all", "All games"), ("50", "Best fit: top 50%"), ("25", "Best fit: top 25%"), ("10", "Best fit: top 10%")] %}
       <option value="{{ value }}" {{ "selected" if rec == value }}>{{ label }}</option>
@@ -54,7 +58,7 @@
   <p class="empty">No games match. Try a different search or filter.</p>
 {% endif %}
 
-{% set base = "/wishlist?q=" ~ (q|urlencode) ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&length=" ~ length ~ "&rec=" ~ rec ~ "&sort=" ~ sort ~ "&page=" %}
+{% set base = "/wishlist?q=" ~ (q|urlencode) ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&length=" ~ length ~ "&sale=" ~ sale ~ "&rec=" ~ rec ~ "&sort=" ~ sort ~ "&page=" %}
 {{ link_pager(page, pages, base) }}
 {% endif %}
 {% endblock %}

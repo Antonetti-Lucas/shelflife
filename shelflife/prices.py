@@ -56,6 +56,34 @@ def shown(price: dict | None) -> Shown | None:
     return Shown(money(final, currency), was, discount)
 
 
+def final_cents(price: dict | None) -> int | None:
+    """What a game costs now, in cents (0 when free), or None when no price is known: for sorting."""
+    if not price:
+        return None
+    if price.get("free"):
+        return 0
+    return price.get("final") if price.get("currency") and price.get("final") is not None else None
+
+
+def discount_percent(price: dict | None) -> int:
+    """Percent off right now (0 when not on sale or no price is known)."""
+    if not price or price.get("free"):
+        return 0
+    return int(price.get("discount") or 0)
+
+
+def price_key(price: dict | None, name: str) -> tuple:
+    """Cheapest first, free games first of all, games with no known price last."""
+    cents = final_cents(price)
+    return (cents is None, cents or 0, name.lower())
+
+
+def discount_key(price: dict | None, name: str) -> tuple:
+    """Biggest discount first, then the cheaper one; games not on sale last."""
+    cents = final_cents(price)
+    return (-discount_percent(price), cents is None, cents or 0, name.lower())
+
+
 def owned(game) -> bool:
     """A game you own needs no price (one you play through Family Sharing still has one)."""
     return game.library_entry is not None and not game.family_shared

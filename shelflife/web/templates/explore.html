@@ -82,13 +82,17 @@
     <option value="only" {{ "selected" if wishlist == "only" }}>Only my wishlist</option>
     <option value="not" {{ "selected" if wishlist == "not" }}>Not on my wishlist</option>
   </select>
+  <select name="sale" aria-label="Price" title="Uses the last price read for each game (the cards refresh theirs when you open the page)">
+    <option value="">Any price</option>
+    <option value="1" {{ "selected" if sale }}>On sale now</option>
+  </select>
   <select name="rec" aria-label="Recommended">
     {% for value, label in [("all", "All games"), ("50", "Recommended: top 50%"), ("25", "Recommended: top 25%"), ("10", "Recommended: top 10%")] %}
       <option value="{{ value }}" {{ "selected" if rec == value }}>{{ label }}</option>
     {% endfor %}
   </select>
   <select name="sort" aria-label="Sort by">
-    {% for value, label in [("similar", "Most similar"), ("fit", "Best fit (match and reviews)"), ("match", "Highest match"), ("reviews", "Most reviews"), ("name", "Name")] if value in sorts %}
+    {% for value, label in [("similar", "Most similar"), ("fit", "Best fit (match and reviews)"), ("match", "Highest match"), ("reviews", "Most reviews"), ("price", "Lowest price"), ("discount", "Biggest discount"), ("name", "Name")] if value in sorts %}
       <option value="{{ value }}" {{ "selected" if sort == value }}>{{ label }}</option>
     {% endfor %}
   </select>
@@ -104,6 +108,6 @@
   <p class="empty">No games match. Try a different search or filter.</p>
 {% endif %}
 
-{% set base = "/explore?q=" ~ (q|urlencode) ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&length=" ~ length ~ "&wishlist=" ~ wishlist ~ "&rec=" ~ rec ~ "&sort=" ~ sort ~ ("&like=" ~ ref.steam_app_id if ref else "") ~ "&page=" %}
+{% set base = "/explore?q=" ~ (q|urlencode) ~ "&tag=" ~ (tag|urlencode) ~ "&match=" ~ match ~ "&length=" ~ length ~ "&wishlist=" ~ wishlist ~ "&sale=" ~ sale ~ "&rec=" ~ rec ~ "&sort=" ~ sort ~ ("&like=" ~ ref.steam_app_id if ref else "") ~ "&page=" %}
 {{ link_pager(page, pages, base) }}
 {% endblock %}

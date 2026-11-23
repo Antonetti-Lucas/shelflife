@@ -440,6 +440,7 @@ def explore(
     length: str = "",
     like: str = "",
     wishlist: str = "all",
+    sale: str = "",
     page: str = "1",
     session: Session = Depends(get_session),
 ):
@@ -447,6 +448,7 @@ def explore(
     how like one game (`like`) they are."""
     filters = ListFilter.read(q, tag, match, length)
     wishlist = wishlist if wishlist in EXPLORE_WISHLIST else "all"
+    sale = "1" if sale == "1" else ""  # only games with a discount right now
     wished = wishlist_by_id(session)
     ratings = diary.load_ratings(session)
     not_interested = diary.load_not_interested(session)
@@ -473,6 +475,7 @@ def explore(
             or (keep is not None and game.steam_app_id not in keep)
             or (wishlist == "only" and not on_wishlist)
             or (wishlist == "not" and on_wishlist)
+            or (sale and not price_view.discount_percent(game.price))
             or not filters.keeps(game)
         ):
             continue
@@ -493,9 +496,11 @@ def explore(
         "match": lambda r: -r.similarity,
         "similar": lambda r: -r.score,
         "reviews": lambda r: -((r.game.reviews_positive or 0) + (r.game.reviews_negative or 0)),
+        "price": lambda r: price_view.price_key(r.game.price, r.game.name),
+        "discount": lambda r: price_view.discount_key(r.game.price, r.game.name),
         "name": lambda r: r.game.name.lower(),
     }
-    sorts = ("similar", "reviews", "name") if ref is not None else ("fit", "match", "reviews", "name")
+    sorts = ("similar", "reviews", "price", "discount", "name") if ref is not None else ("fit", "match", "reviews", "price", "discount", "name")
     sort = sort if sort in sorts else sorts[0]
     recs.sort(key=keys[sort])
 
@@ -512,6 +517,7 @@ def explore(
             "like_tags": like_tags,
             "rec": rec,
             "wishlist": wishlist,
+            "sale": sale,
             "notes": {r.game.steam_app_id: wishlist_note(wished[r.game.steam_app_id], r.game) for r in part.shown if r.game.steam_app_id in wished},
             **filters.context(tag_index),
             "page": part.page,
@@ -614,6 +620,8 @@ WISHLIST_SORTS = {
     "priority": "Your order",
     "added": "Newest added",
     "reviews": "Most reviews",
+    "price": "Lowest price",
+    "discount": "Biggest discount",
     "name": "Name",
 }
 
@@ -627,12 +635,14 @@ def wishlist_page(
     tag: str = "",
     match: str = "all",
     length: str = "",
+    sale: str = "",
     page: str = "1",
     session: Session = Depends(get_session),
 ):
     """Your Steam wishlist, ranked by how well each game fits your taste."""
     filters = ListFilter.read(q, tag, match, length)
     sort = sort if sort in WISHLIST_SORTS else "fit"
+    sale = "1" if sale == "1" else ""  # only games with a discount right now
     items = wishlist_by_id(session)
     games = {
         g.steam_app_id: g
@@ -655,13 +665,21 @@ def wishlist_page(
 
     rec, keep = recommended(rec, {r.game.steam_app_id: r.score for r in ranked})
     tag_index = TagIndex(r.game.tags for r in ranked)
-    recs = [r for r in ranked if (keep is None or r.game.steam_app_id in keep) and filters.keeps(r.game)]
+    recs = [
+        r
+        for r in ranked
+        if (keep is None or r.game.steam_app_id in keep)
+        and filters.keeps(r.game)
+        and (not sale or price_view.discount_percent(r.game.price))
+    ]
     keys = {
         "fit": lambda r: -r.score,
         "match": lambda r: -r.similarity,
         "priority": lambda r: order_key(items[r.game.steam_app_id]),
         "added": lambda r: -(items[r.game.steam_app_id].added_at.timestamp() if items[r.game.steam_app_id].added_at else 0),
         "reviews": lambda r: -((r.game.reviews_positive or 0) + (r.game.reviews_negative or 0)),
+        "price": lambda r: price_view.price_key(r.game.price, r.game.name),
+        "discount": lambda r: price_view.discount_key(r.game.price, r.game.name),
         "name": lambda r: r.game.name.lower(),
     }
     recs.sort(key=keys[sort])
@@ -682,6 +700,7 @@ def wishlist_page(
             "dismissed": dismissed,
             "sort": sort,
             "sorts": WISHLIST_SORTS,
+            "sale": sale,
             "rec": rec,
             **filters.context(tag_index),
             "page": part.page,
