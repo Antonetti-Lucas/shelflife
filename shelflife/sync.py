@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from shelflife import store
 from shelflife.achievements import AchievementsUnavailable, AchievementStats, fetch_achievements
-from shelflife.models import OFF_TOPIC, Game, LibraryEntry, PlaytimeSnapshot, WishlistItem
+from shelflife.models import OFF_TOPIC, ON_STEAM, Game, LibraryEntry, PlaytimeSnapshot, WishlistItem
 from shelflife.play import is_played
 from shelflife import reviews, wikidata
 from shelflife.reviews import fetch_review_counts
@@ -291,6 +291,7 @@ def sync_backlog_reviews(
             select(Game)
             .join(LibraryEntry)
             .where(
+                ON_STEAM,
                 Game.type == "game",
                 Game.reviews_fetched_at.is_(None),
                 LibraryEntry.playtime_total_min < max_playtime_min,
@@ -334,7 +335,7 @@ def player_hours_due(session: Session, everything: bool = False) -> list[Game]:
     query = (
         select(Game)
         .join(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
-        .where(Game.type == "game", played)
+        .where(ON_STEAM, Game.type == "game", played)
         .order_by(LibraryEntry.playtime_total_min.desc())
     )
     if not everything:
@@ -356,7 +357,7 @@ def length_due(session: Session, everything: bool = False) -> list[Game]:
         select(Game)
         .outerjoin(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
         .outerjoin(WishlistItem, WishlistItem.steam_app_id == Game.steam_app_id)
-        .where(Game.type == "game", or_(LibraryEntry.steam_app_id.is_(None), not_(played)))
+        .where(ON_STEAM, Game.type == "game", or_(LibraryEntry.steam_app_id.is_(None), not_(played)))
         .order_by(
             WishlistItem.steam_app_id.is_(None),
             LibraryEntry.steam_app_id.is_(None),
@@ -413,7 +414,7 @@ def prices_due(session: Session, everything: bool = False) -> list[Game]:
         select(Game)
         .outerjoin(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
         .outerjoin(WishlistItem, WishlistItem.steam_app_id == Game.steam_app_id)
-        .where(Game.type == "game", or_(LibraryEntry.steam_app_id.is_(None), Game.family_shared.is_(True)))
+        .where(ON_STEAM, Game.type == "game", or_(LibraryEntry.steam_app_id.is_(None), Game.family_shared.is_(True)))
         .order_by(WishlistItem.steam_app_id.is_(None), Game.steam_app_id)
     )
     if not everything:
@@ -498,7 +499,7 @@ def wikidata_due(session: Session, everything: bool = False) -> list[Game]:
     query = (
         select(Game)
         .outerjoin(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
-        .where(Game.type == "game")
+        .where(ON_STEAM, Game.type == "game")
         .order_by(LibraryEntry.steam_app_id.is_(None), Game.steam_app_id)
     )
     if not everything:
@@ -546,6 +547,7 @@ def about_due(session: Session) -> list[Game]:
         .outerjoin(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
         .outerjoin(WishlistItem, WishlistItem.steam_app_id == Game.steam_app_id)
         .where(
+            ON_STEAM,
             Game.type == "game",
             Game.details_fetched_at.is_not(None),
             or_(missing, Game.languages.is_(None)),
@@ -598,7 +600,7 @@ def tags_due(session: Session, everything: bool = False, refresh_days: int = TAG
     ShelfLife switched to Steam's (STEAM_TAGS_SINCE), or read more than `refresh_days` ago.
     `everything` lists them all. Games set aside by a search count too: their tags decide whether
     a later search keeps them."""
-    query = select(Game).order_by(Game.tags_fetched_at.asc().nulls_first(), Game.steam_app_id)
+    query = select(Game).where(ON_STEAM).order_by(Game.tags_fetched_at.asc().nulls_first(), Game.steam_app_id)
     if not everything:
         cutoff = max(_now() - timedelta(days=refresh_days), STEAM_TAGS_SINCE)
         query = query.where(
@@ -651,7 +653,7 @@ def backfill_empty_tags(
 
     Uses only the store page, since SteamSpy already came up empty for these.
     """
-    empty = [g for g in session.scalars(select(Game)) if not g.tags and g.type != "unavailable"]
+    empty = [g for g in session.scalars(select(Game).where(ON_STEAM)) if not g.tags and g.type != "unavailable"]
     filled = 0
     for i, game in enumerate(empty, start=1):
         try:
@@ -675,7 +677,7 @@ def _wanted_games():
         select(Game)
         .outerjoin(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
         .outerjoin(WishlistItem, WishlistItem.steam_app_id == Game.steam_app_id)
-        .where(or_(LibraryEntry.steam_app_id.is_not(None), WishlistItem.steam_app_id.is_not(None)))
+        .where(ON_STEAM, or_(LibraryEntry.steam_app_id.is_not(None), WishlistItem.steam_app_id.is_not(None)))
     )
 
 

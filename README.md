@@ -13,7 +13,7 @@ It runs entirely on your own computer: nothing is hosted, and your diary never l
 
 ## How it works
 
-1. **Sync** reads your Steam library, hours, achievements and wishlist, then each game's public store data (tags, reviews, price, languages) and, from Wikidata, its series and first release date. Later syncs ask Steam which games changed and re-read those first. Family Sharing games and games from other platforms can be added too.
+1. **Sync** reads your Steam library, hours, achievements and wishlist, then each game's public store data (tags, reviews, price, languages) and, from Wikidata, its series and first release date. Later syncs ask Steam which games changed and re-read those first. Family Sharing games and games from other platforms can be added too, including games that aren't on Steam at all (from IGDB).
 2. **You log and rate** in the diary: half stars, reviews, statuses with dates, favorites. Your star ratings are what teach the taste, and so, if you choose, is how you played (your hours against your other games and against the game's own players, achievements, and when you played).
 3. **It learns your taste** from those games. A high rating pulls up games with similar tags; a low one pushes down only close look-alikes (a sequel, a near-clone), never a whole genre. Favorites, statuses and lists never teach it; your wishlist and "not interested" count only weakly.
 4. **It scores everything you could play next** by how well its tags match your taste, adjusted for how well the game is reviewed, and shows the picks in four lists (backlog, Steam Family, wishlist, new games), each with the games and tags behind it.
@@ -23,7 +23,7 @@ All of it runs on your computer, and the details are in [How recommendations wor
 
 ## Features
 
-- **Steam import:** your library, playtime, achievements and wishlist, plus Family Sharing games if you want them, and games you played on consoles or other stores, added by hand.
+- **Steam import:** your library, playtime, achievements and wishlist, plus Family Sharing games if you want them, and games you played on consoles or other stores, added by hand. Games that were never on Steam (an Atari, PlayStation or Wii game) come from IGDB, with tags made from its genres and themes that you can change, and teach your taste like any game.
 - **A diary:** half-star ratings, reviews, statuses with dates (playing, played, dropped) listed by month like Letterboxd's, favorites and "not interested", with a poster wall of everything you rated and a page of your reviews.
 - **Lists you make and name:** ranked or not, with your stars under each game or not, in the order you drag them into, and kept in folders.
 - **Series:** a game's page lists the rest of its series in order, with your stars, and the decade filter counts a port or remaster from its first release.
@@ -92,8 +92,8 @@ ShelfLife has no server, no account, no analytics and no tracking.
 
 **What it stores, and where**
 
-- `.env`: your Steam API key and SteamID.
-- `shelflife.db`: your library (games, hours, when you last played, achievement counts and when you unlocked them), your wishlist (game ids, your own rank and the date you added each), the hours you type in for family games, which games are shared with you through Family Sharing, the games you added from other platforms (which platform, and the hours you type), your diary (ratings, reviews, statuses and dates, favorites, "not interested"), your lists, your settings, and public store data for each game (names, descriptions, tags, review counts, cover addresses, five numbers summarising how long its reviewers have played it, its languages, store details and its price when last read; never who wrote a review or what it says).
+- `.env`: your Steam API key and SteamID, and your IGDB (Twitch) client id and secret if you set them.
+- `shelflife.db`: your library (games, hours, when you last played, achievement counts and when you unlocked them), your wishlist (game ids, your own rank and the date you added each), the hours you type in for family games, which games are shared with you through Family Sharing, the games you added from other platforms (which platform, and the hours you type; for a game that isn't on Steam, what IGDB says about it: name, cover address, summary and storyline, genres, themes, keywords, platforms, rating, and the tags you give it), your diary (ratings, reviews, statuses and dates, favorites, "not interested"), your lists, your settings, and public store data for each game (names, descriptions, tags, review counts, cover addresses, five numbers summarising how long its reviewers have played it, its languages, store details and its price when last read; never who wrote a review or what it says).
 - `data/`: files you create or import, such as the Family Sharing export (it lists which games your family members own, so keep it private), and `data/window/`, where the app window keeps its own browser storage (just your light or dark choice).
 
 All three are git-ignored. Delete them and nothing of yours is left.
@@ -103,7 +103,8 @@ All three are git-ignored. Delete them and nothing of yours is left.
 - **Valve's Steam Web API** (`api.steampowered.com`): your API key and SteamID, to read your own library and achievements, and your key to look up game names. On the setup page, your key with the profile name or SteamID you typed, to find your SteamID and check that the key works. On each sync, your key to ask Steam's store change list (`IStoreService/GetAppList`, documented by Valve) which games changed since the last sync; it sends only a time, and receives game ids. Your SteamID alone (no key) is sent to read your wishlist. Review counts, reviewers' hours, global achievement rates and tags are asked for by game id or tag alone, and a game you add from another platform by the name or link you type.
 - **The Steam store** (`store.steampowered.com`) and **SteamSpy** (`steamspy.com`): game ids, tag names and your `STEAM_COUNTRY` only. They never receive your key, SteamID, ratings or diary.
 - **Wikidata** (`query.wikidata.org`): Steam game ids only, to learn which series a game belongs to and when it was first released. Its data is public (CC0). The request names ShelfLife and its public repository in its User-Agent, as Wikidata asks, and nothing about you.
-- **Your browser** loads cover images and screenshots from Steam's servers when you open a page.
+- **IGDB** (`api.igdb.com`, with a token from `id.twitch.tv`): only if you set `IGDB_CLIENT_ID` and `IGDB_CLIENT_SECRET`, and only when you search for a game that isn't on Steam: the name you type, and the IGDB id of the game you add. Twitch receives your client id and secret to issue the token, which is kept in memory only.
+- **Your browser** loads cover images and screenshots from Steam's servers when you open a page, and the covers of games that aren't on Steam from IGDB's (`images.igdb.com`).
 - Nothing else: no outside fonts, scripts or analytics. The web app listens only on `127.0.0.1`, answers only to `127.0.0.1` and `localhost` (so another website can't reach it by pointing its own name at your computer), and has no login, so don't expose it to a network.
 
 **Steam's terms**
@@ -113,6 +114,10 @@ ShelfLife is a personal tool. Each person uses their own API key (it is personal
 Most of what ShelfLife reads comes from Valve's documented Web API. A few things come from endpoints Valve doesn't document: the store's `appdetails` endpoint, the reviews (counts and reviewers' hours), the store's tag and search services (`IStoreBrowseService` for games' tags, `IStoreQueryService` for the games under a tag, for the popular games and for finding a game by name), the tag votes on a game's store page when neither Steam nor SteamSpy has any, your wishlist (`IWishlistService`), and the Family Sharing export. They are read-only lookups, throttled and run only when you ask (the family export reads only your own account). Because they are undocumented they may change or stop working, and the [Steam Subscriber Agreement](https://store.steampowered.com/subscriber_agreement/) has a general rule about bots and scripts on Steam, whose examples are about cheating and account abuse. Using them is your choice; only the Family Sharing import is optional.
 
 Game names, store data and cover art belong to Valve and the game publishers.
+
+**IGDB's terms**
+
+IGDB is free for non-commercial use under the [Twitch Developer Services Agreement](https://www.twitch.tv/p/legal/developer-agreement/); you need your own Twitch developer app (a client id and secret, put in `.env`). IGDB's own documentation says storing its data locally is allowed. ShelfLife keeps it only in your own database, credits IGDB on the pages that show it, and the repository contains none of it. It is not affiliated with or endorsed by IGDB or Twitch.
 
 ## Development
 

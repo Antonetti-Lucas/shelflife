@@ -5,17 +5,22 @@
 <div class="page-head">
   <h2>Add a game from another platform</h2>
 </div>
-<p class="lede">For games you played on a console, another PC store or anywhere else, including family games you played somewhere other than Steam. The game has to be on Steam too, so its details, tags and reviews come from there. You type its hours, as for family games. Haven't played it yet? Leave the hours empty and it goes on your backlog, recommended like an owned game you haven't started; played it but don't know the hours? Rate it or give it a status, and it stays off the recommendations.</p>
+<p class="lede">For games you played on a console, another PC store or anywhere else, including family games you played somewhere other than Steam. You type its hours, as for family games. Haven't played it yet? Leave the hours empty and it goes on your backlog, recommended like an owned game you haven't started; played it but don't know the hours? Rate it or give it a status, and it stays off the recommendations.</p>
+<p class="lede">A game on Steam too gets its details, tags and reviews from Steam. A game that isn't on Steam (an Atari, PlayStation or Wii game, say) comes from IGDB: its cover, description and tags made from IGDB's genres and themes, which you can change on its page. It teaches your taste like any game; ShelfLife never suggests games that aren't on Steam.</p>
 
 <form class="bar list-search" method="get" action="/library/add">
   <input type="search" name="q" value="{{ q }}" placeholder="Game name, or its Steam store link" aria-label="Game name or Steam store link" autofocus>
-  <button type="submit" class="ghost small">Search Steam</button>
+  <button type="submit" name="where" value="steam" class="{{ 'small' if where == 'steam' else 'ghost small' }}">Search Steam</button>
+  <button type="submit" name="where" value="igdb" class="{{ 'small' if where == 'igdb' else 'ghost small' }}"
+          title="{{ 'Games that are not on Steam, from IGDB' if igdb_ready else 'Needs IGDB_CLIENT_ID and IGDB_CLIENT_SECRET in .env (a free Twitch developer app)' }}">Search IGDB (not on Steam)</button>
 </form>
 
 {% if error %}
   <p class="empty">{{ error }}</p>
+{% elif q and not found and where == "igdb" %}
+  <p class="empty">IGDB has no game called “{{ q }}”. Try a shorter name.</p>
 {% elif q and not found %}
-  <p class="empty">Steam has no game called “{{ q }}”. Try a shorter name, or paste the game's Steam store link.</p>
+  <p class="empty">Steam has no game called “{{ q }}”. Try a shorter name, paste the game's Steam store link, or search IGDB if it isn't on Steam.</p>
 {% endif %}
 
 {% if found %}
@@ -23,13 +28,24 @@
   {% for f in found %}
   {% set mine = known.get(f.app_id) %}
   <div class="found-game">
-    <img src="{{ f.cover_url }}" loading="lazy" alt="">
+    {% if f.cover_url %}<img src="{{ f.cover_url }}" loading="lazy" alt=""{% if f.from_igdb %} class="portrait"{% endif %}>{% else %}<span class="nocover">{{ f.name[:1] }}</span>{% endif %}
     <div class="found-body">
       <h3>{{ f.name }}{% if f.year %} <small>{{ f.year }}</small>{% endif %}</h3>
+      {% if f.from_igdb %}<p class="meta">{% if f.igdb_id %}Not on Steam · {{ f.platforms[:-1]|join(", ") or "platforms unknown" }}{% else %}On Steam too: added as the Steam game{% endif %}</p>{% endif %}
       {% if mine %}
         <p class="meta">Already in your library ({{ mine }}). <a href="/game/{{ f.app_id }}">Open it</a></p>
       {% else %}
       {% if f.app_id in family %}<p class="meta">In your family library. Played it somewhere else? Say where:</p>{% endif %}
+      {% if f.igdb_id %}
+      <form method="post" action="/library/add-igdb" class="row-line" data-inline="done"
+            data-done="Added to your library." data-done-link="/game/{{ f.app_id }}">
+        <input type="hidden" name="next" value="{{ here }}">
+        <input type="hidden" name="igdb_id" value="{{ f.igdb_id }}">
+        <select name="platform" aria-label="Where you played {{ f.name }}" required>
+          <option value="">Played on…</option>
+          {% for p in f.platforms %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+        </select>
+      {% else %}
       <form method="post" action="/library/add" class="row-line" data-inline="done"
             data-done="{{ 'Marked as played there.' if f.app_id in family else 'Added to your library.' }}" data-done-link="/game/{{ f.app_id }}">
         <input type="hidden" name="next" value="{{ here }}">
@@ -39,6 +55,7 @@
           <option value="">Played on…</option>
           {% for p in platforms %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
         </select>
+      {% endif %}
         <input type="number" name="hours" min="0" max="100000" step="0.1" placeholder="Hours" title="Hours played (optional)" aria-label="Hours played in {{ f.name }} (optional)">
         <button type="submit" class="small">{{ "Mark as played there" if f.app_id in family else "Add to library" }}</button>
       </form>
@@ -47,5 +64,6 @@
   </div>
   {% endfor %}
 </div>
+{% if where == "igdb" %}<p class="meta">Game data from <a href="https://www.igdb.com" target="_blank" rel="noopener">IGDB ↗</a>.</p>{% endif %}
 {% endif %}
 {% endblock %}

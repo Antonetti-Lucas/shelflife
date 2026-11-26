@@ -10,6 +10,11 @@ from shelflife.db import Base
 OFF_TOPIC = "off-topic"  # Game.type of a game a search set aside as not really about its tag
 
 
+def on_steam(app_id: int) -> bool:
+    """Steam app ids are positive; a game that is not on Steam has minus its IGDB id (shelflife/igdb.py)."""
+    return app_id > 0
+
+
 class Setting(Base):
     """A choice you made in the app, kept between runs (see shelflife/settings.py)."""
 
@@ -57,6 +62,13 @@ class Game(Base):
     # More store details, kept for later and not used yet (store.parse_info): developers, publishers,
     # Steam's categories, platforms, Metacritic, mature content flags, screenshots... None: never read.
     store_info: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+    # A game that is not on Steam (shelflife/igdb.py) has a negative id, minus its IGDB id, and what
+    # IGDB knows about it here: {"id", "url", "platforms", "genres", "themes", "perspectives", "modes",
+    # "keywords", "rating", "rating_count"}. Steam never reads such a game. None for Steam games.
+    igdb: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+    igdb_fetched_at: Mapped[datetime | None]
+    # True once you changed a game's tags by hand: nothing fetched replaces them after that.
+    tags_edited: Mapped[bool | None]
     cover_url: Mapped[str | None]
     details_fetched_at: Mapped[datetime | None]
     tags_fetched_at: Mapped[datetime | None]
@@ -76,10 +88,17 @@ class Game(Base):
     # Their library entry has no playtime (the Web API can't see it).
     family_shared: Mapped[bool | None]
 
+    @property
+    def on_steam(self) -> bool:
+        return on_steam(self.steam_app_id)
+
     # None for games you don't own (the discovery pool).
     library_entry: Mapped["LibraryEntry | None"] = relationship(
         back_populates="game", uselist=False
     )
+
+
+ON_STEAM = Game.steam_app_id > 0  # the query form of Game.on_steam: Sync's lists read only these
 
 
 class WishlistItem(Base):

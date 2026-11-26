@@ -422,7 +422,9 @@ def _build_model(
         if app_id in wanted and rating is None and not played and app_id not in not_interested and vectors[app_id]:
             model.wanted.add(app_id)
         if rating is None and not played and app_id not in in_diary:
-            if vectors[app_id]:
+            # A game that is not on Steam is only logged, never found for you: one you took out of
+            # your library is not a pick to buy.
+            if vectors[app_id] and (entry is not None or g.on_steam):
                 model.candidates.append(g)
             continue
         model.played_titles.add(_base_name(g.name))

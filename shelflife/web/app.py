@@ -8,6 +8,7 @@ addressed to this computer's own names, and refuses form posts from other sites.
 import os
 import re
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
@@ -21,7 +22,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, contains_eager, selectinload
 
-from shelflife import diary, gamelists, otherplatforms
+from shelflife import diary, gamelists, igdb, otherplatforms
 from shelflife.diary import favorite_ids
 from shelflife.config import try_load_settings
 from shelflife.envfile import update_env
@@ -114,6 +115,10 @@ async def block_cross_site_posts(request: Request, call_next):
 
 
 def reviews_text(game: Game) -> str:
+    if not game.on_steam:  # IGDB's rating, its users' and critics' together, out of 100
+        info = game.igdb or {}
+        rating, count = info.get("rating"), info.get("rating_count")
+        return f"IGDB rating {rating:.0f}/100 · {count:,} ratings" if rating is not None and count else "no IGDB rating"
     pos, neg = game.reviews_positive, game.reviews_negative
     if pos is None or neg is None or pos + neg == 0:
         return "no review data"
@@ -458,7 +463,7 @@ def explore(
 
     # The games you don't own, from the scores (they hold every game with tags, already loaded;
     # one without tags can't be ranked, so Explore never showed it).
-    games = [r.game for r in scores.by_id.values() if r.game.library_entry is None]
+    games = [r.game for r in scores.by_id.values() if r.game.library_entry is None and r.game.on_steam]
     if get_hide_adult(session):
         games = [g for g in games if not is_adult_game(g)]
     if get_hide_software(session):
@@ -867,8 +872,11 @@ def game_page(request: Request, app_id: int, session: Session = Depends(get_sess
             "taste_mode": get_taste_mode(session),
             "my_languages": get_languages(session),
             "all_lists": gamelists.all_lists(session),
-            "platforms": otherplatforms.PLATFORMS,
+            "platforms": otherplatforms.platforms_for(game),
             "in_lists": gamelists.lists_with(session, app_id),
+            "tag_order": igdb.ordered_tags(game.tags) if not game.on_steam else [],
+            "tag_names": sorted(igdb.known_tag_names(session), key=str.lower) if not game.on_steam else [],
+            "max_tags": igdb.MAX_TAGS,
             "first_year": first_year(game),
             "first_released": (game.wikidata or {}).get("released"),
             "store_year": (lambda f: int(f.group(1)) if f else None)(YEAR.search(game.release_date or "")),
@@ -898,7 +906,10 @@ def release_year(game: Game) -> int | None:
 
 def poster_url(game: Game) -> str:
     """Steam's portrait library art (600x900), from the same store CDN as the covers. Some games
-    have none; the page then falls back to the wide cover."""
+    have none; the page then falls back to the wide cover. A game that is not on Steam has IGDB's
+    box cover, portrait already."""
+    if not game.on_steam:
+        return game.cover_url or ""
     return f"https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{game.steam_app_id}/library_600x900.jpg"
 
 
@@ -1456,18 +1467,46 @@ async def rate(
 # ---- games from other platforms ---------------------------------------------
 
 
+@dataclass
+class FoundGame:
+    """A search answer on the add page: a Steam game, or an IGDB game that is not on Steam."""
+    app_id: int  # a Steam id, or minus the IGDB id
+    name: str
+    year: int | None
+    cover_url: str | None
+    platforms: tuple[str, ...] = ()
+    igdb_id: int | None = None  # set for a game that is not on Steam
+    from_igdb: bool = False  # found through IGDB (an IGDB answer that is on Steam too has a Steam app_id)
+
+
 @app.get("/library/add")
-def add_game_page(request: Request, q: str = "", session: Session = Depends(get_session)):
-    """Find a Steam game you played elsewhere, by name or store link, to add to your library."""
+def add_game_page(request: Request, q: str = "", where: str = "steam", session: Session = Depends(get_session)):
+    """Find a game you played elsewhere, to add to your library: on Steam by name or store link,
+    or on IGDB (`where=igdb`) for a game that is not on Steam."""
     q = q.strip()
-    found, error = [], None
-    if q:
+    where = "igdb" if where == "igdb" else "steam"
+    found: list[FoundGame] = []
+    error = None
+    if q and where == "steam":
         try:
-            found = store.find_games(q)
+            found = [FoundGame(f.app_id, f.name, f.year, f.cover_url) for f in store.find_games(q)]
         except RateLimited:
             error = "Steam is rate limiting searches right now; try again in a few minutes."
         except (requests.RequestException, ValueError):
             error = "Couldn't reach Steam to search. Check your connection and try again."
+    elif q:
+        try:
+            found = [
+                FoundGame(g.steam_id, g.name, g.year, g.cover_url, from_igdb=True) if g.steam_id
+                else FoundGame(igdb.game_id(g.id), g.name, g.year, g.cover_url, tuple(g.platforms) + ("Other",), g.id, True)
+                for g in igdb.search(q)
+            ]
+        except igdb.NotConfigured as exc:
+            error = str(exc)
+        except RateLimited as exc:
+            error = str(exc)
+        except (igdb.IgdbError, requests.RequestException, ValueError):
+            error = "Couldn't reach IGDB to search. Check your connection and try again."
     known, family = {}, set()
     for f in found:
         game = session.get(Game, f.app_id)
@@ -1479,10 +1518,36 @@ def add_game_page(request: Request, q: str = "", session: Session = Depends(get_
         request,
         "add_game.html",
         {
-            "q": q, "found": found, "known": known, "family": family, "error": error,
-            "platforms": otherplatforms.PLATFORMS, "here": current_url(request),
+            "q": q, "where": where, "found": found, "known": known, "family": family, "error": error,
+            "platforms": otherplatforms.PLATFORMS, "here": current_url(request), "igdb_ready": igdb.configured(),
         },
     )
+
+
+@app.post("/library/add-igdb")
+def add_igdb_game(
+    igdb_id: int = Form(...),
+    platform: str = Form(""),
+    hours: str = Form(""),
+    next: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    """Put a game that is not on Steam in your library. Its details are read from IGDB again here,
+    by its id, so nothing the form says about it is taken on trust."""
+    try:
+        found = igdb.fetch(igdb_id)
+    except igdb.NotConfigured as exc:
+        raise HTTPException(400, str(exc))
+    except (RateLimited, igdb.IgdbError, requests.RequestException) as exc:
+        raise HTTPException(503, f"Couldn't read the game from IGDB: {exc}")
+    if found is None:
+        raise HTTPException(404, "IGDB has no game with that id.")
+    try:
+        raw = hours.strip().replace(",", ".")
+        otherplatforms.add_igdb_game(session, found, platform, float(raw) if raw else None)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return RedirectResponse(safe_next(next, "/library/add?where=igdb"), status_code=303)
 
 
 def fetch_new_game(app_id: int) -> None:
@@ -1535,6 +1600,21 @@ def change_platform(
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return RedirectResponse(f"/game/{app_id}", status_code=303)
+
+
+@app.post("/game/{app_id}/tags")
+def save_tags(
+    app_id: int, tag: list[str] = Form([]), reset: str = Form(""), session: Session = Depends(get_session)
+):
+    """Your own tags for a game that is not on Steam, most important first, or IGDB's back."""
+    try:
+        if reset:
+            igdb.reset_tags(session, app_id)
+        else:
+            igdb.set_tags(session, app_id, [t[:60] for t in tag])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return RedirectResponse(f"/game/{app_id}#tags", status_code=303)
 
 
 @app.post("/game/{app_id}/hours")

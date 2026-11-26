@@ -9,7 +9,7 @@
   {% if info.background %}<div class="backdrop store-bg" style="background-image: url('{{ info.background }}')"></div>
   {% elif game.cover_url %}<div class="backdrop" style="background-image: url('{{ game.cover_url }}')"></div>{% endif %}
   <div class="hero-inner">
-    {% if game.cover_url %}<img class="hero" src="{{ game.cover_url }}" alt="">{% endif %}
+    {% if game.cover_url %}<img class="hero{{ ' portrait' if not game.on_steam }}" src="{{ game.cover_url }}" alt="">{% endif %}
     <div>
       <div class="title-row"><h2>{{ game.name }}</h2>{{ price_tag(game) }}</div>
       {% if info.developers or info.publishers %}
@@ -47,11 +47,15 @@
         <a href="https://store.steampowered.com/app/{{ game.steam_app_id }}/" target="_blank" rel="noopener">Steam store page ↗</a>;
         your next sync takes it off here too.</p>
       {% elif wish_note %}<p class="meta">★ {{ wish_note }}</p>{% endif %}
+      {% if game.on_steam %}
       <p class="meta"><a href="https://store.steampowered.com/app/{{ game.steam_app_id }}/">Steam store page ↗</a>
         {% if not entry and not wish_note %}
         <a class="button small wish-on-steam" href="https://store.steampowered.com/app/{{ game.steam_app_id }}/" target="_blank" rel="noopener"
            title="Opens the game's Steam store page: click “Add to your wishlist” there, and your next sync brings it in">Wishlist it on Steam ↗</a>
         {% endif %}</p>
+      {% else %}
+      <p class="meta">Not on Steam.{% if (game.igdb or {}).url %} Details and cover from <a href="{{ game.igdb.url }}" target="_blank" rel="noopener">IGDB ↗</a>{% endif %}</p>
+      {% endif %}
     </div>
   </div>
 </div>
@@ -286,7 +290,71 @@
 </section>
 {% endif %}
 
-{% if tags %}
+{% if not game.on_steam %}
+<section class="panel similar" id="tags">
+  <h3>Tags <small>{{ "yours" if game.tags_edited else "from IGDB" }}</small></h3>
+  <p class="meta">They teach your taste as a Steam game's community tags do. The higher a tag, the more it counts, like a tag more players voted for on Steam.
+    {% if not game.tags_edited %}Made from IGDB's genres, themes, perspective, modes and keywords: change them as you like.{% endif %} At most {{ max_tags }}.</p>
+  <form method="post" action="/game/{{ game.steam_app_id }}/tags" class="tag-editor">
+    <ol class="tag-order">
+      {% for name in tag_order %}
+      <li><input type="hidden" name="tag" value="{{ name }}"><span>{{ name }}</span>
+        <button type="button" class="ghost small" data-move="-1" aria-label="Move {{ name }} up">↑</button>
+        <button type="button" class="ghost small" data-move="1" aria-label="Move {{ name }} down">↓</button>
+        <button type="button" class="ghost small danger" data-remove aria-label="Remove {{ name }}">×</button></li>
+      {% endfor %}
+    </ol>
+    <div class="row-line">
+      <input type="text" list="steam-tags" class="new-tag" placeholder="Add a tag" aria-label="Add a tag" maxlength="60">
+      <button type="button" class="ghost small" data-add>Add</button>
+      <button type="submit" class="small">Save tags</button>
+    </div>
+    <datalist id="steam-tags">{% for t in tag_names %}<option value="{{ t }}">{% endfor %}</datalist>
+  </form>
+  {% if game.tags_edited and game.igdb %}
+  <form method="post" action="/game/{{ game.steam_app_id }}/tags" class="inline" style="margin-top: 8px">
+    <input type="hidden" name="reset" value="1">
+    <button type="submit" class="ghost small">Back to IGDB's tags</button>
+  </form>
+  {% endif %}
+</section>
+<script>
+  // Reorder, remove and add tags in the list; Save sends them in this order.
+  (function () {
+    var form = document.querySelector(".tag-editor"), list = form.querySelector(".tag-order");
+    var input = form.querySelector(".new-tag"), most = {{ max_tags }};
+    function item(name) {
+      var li = document.createElement("li"), hidden = document.createElement("input"), label = document.createElement("span");
+      hidden.type = "hidden"; hidden.name = "tag"; hidden.value = name; label.textContent = name;
+      li.append(hidden, label, " ");
+      [["-1", "↑", "up"], ["1", "↓", "down"], [null, "×", "remove"]].forEach(function (b) {
+        var btn = document.createElement("button");
+        btn.type = "button"; btn.className = "ghost small" + (b[0] ? "" : " danger"); btn.textContent = b[1];
+        if (b[0]) btn.dataset.move = b[0]; else btn.dataset.remove = "";
+        btn.setAttribute("aria-label", (b[0] ? "Move " + name + " " + b[2] : "Remove " + name));
+        li.append(btn, " ");
+      });
+      return li;
+    }
+    function add() {
+      var name = input.value.trim().replace(/\s+/g, " ");
+      if (!name) return;
+      var have = Array.prototype.map.call(list.querySelectorAll("input[name=tag]"), function (i) { return i.value.toLowerCase(); });
+      if (have.indexOf(name.toLowerCase()) < 0 && have.length < most) list.append(item(name));
+      input.value = ""; input.focus();
+    }
+    form.addEventListener("click", function (e) {
+      var btn = e.target.closest("button"); if (!btn) return;
+      var li = btn.closest("li");
+      if (btn.hasAttribute("data-add")) add();
+      else if (btn.hasAttribute("data-remove")) li.remove();
+      else if (btn.dataset.move === "-1" && li.previousElementSibling) li.parentNode.insertBefore(li, li.previousElementSibling);
+      else if (btn.dataset.move === "1" && li.nextElementSibling) li.parentNode.insertBefore(li.nextElementSibling, li);
+    });
+    input.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); add(); } });
+  })();
+</script>
+{% elif tags %}
 <section class="panel similar">
   <h3>Community tags</h3>
   <ul class="bars cols">

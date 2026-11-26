@@ -14,13 +14,17 @@ family game, and the platform says where you really played it (your hours are fo
 Its Steam achievements are no longer read or counted, since they'd show your Steam play (often
 none), not your play there. If the family stops sharing it, it stays in your library as a game
 from that platform.
+
+A game that is not on Steam at all comes from IGDB (shelflife/igdb.py) and is logged the same way:
+its platform is any IGDB lists for it (Atari 2600, PlayStation, Wii...), your hours decide
+played or backlog, and Steam never reads it.
 """
 
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from shelflife.models import OFF_TOPIC, Game, LibraryEntry
+from shelflife.models import OFF_TOPIC, Game, LibraryEntry, on_steam
 
 PLATFORMS = ("PlayStation", "Xbox", "Nintendo Switch", "Another PC store", "Mobile", "Other")
 MAX_HOURS = 100_000
@@ -30,9 +34,16 @@ def _now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def _check(platform: str, hours: float | None) -> None:
-    if platform not in PLATFORMS:
-        raise ValueError(f"Pick a platform: {', '.join(PLATFORMS)}.")
+def platforms_for(game: Game | None) -> tuple[str, ...]:
+    """The platforms you can say you have this game on: IGDB's for a game that is not on Steam."""
+    if game is not None and not game.on_steam:
+        return tuple((game.igdb or {}).get("platforms") or ()) + ("Other",)
+    return PLATFORMS
+
+
+def _check(platform: str, hours: float | None, allowed: tuple[str, ...] = PLATFORMS) -> None:
+    if platform not in allowed:
+        raise ValueError(f"Pick a platform: {', '.join(allowed)}.")
     if hours is not None and not 0 <= hours <= MAX_HOURS:
         raise ValueError(f"Hours must be between 0 and {MAX_HOURS}, got {hours:g}.")
 
@@ -63,6 +74,8 @@ def can_mark(game: Game | None) -> bool:
 def add_game(session: Session, app_id: int, name: str, platform: str, hours: float | None = None) -> Game:
     """Put a Steam game you played elsewhere into your library. `name` is used if ShelfLife
     doesn't know the game yet; its store details come with the next fetch."""
+    if not on_steam(app_id):
+        raise ValueError("That is not a Steam game: add it from IGDB.")
     _check(platform, hours)
     game = session.get(Game, app_id)
     if can_mark(game):  # in your family library, but you played it elsewhere
@@ -91,6 +104,32 @@ def add_game(session: Session, app_id: int, name: str, platform: str, hours: flo
     return game
 
 
+def add_igdb_game(session: Session, found, platform: str, hours: float | None = None) -> Game:
+    """Put a game that is not on Steam into your library, from what IGDB says about it
+    (`found`: an igdb.IgdbGame). A game IGDB links to Steam is added as that Steam game."""
+    from shelflife import igdb
+
+    if found.steam_id:
+        return add_game(session, found.steam_id, found.name, platform if platform in PLATFORMS else "Other", hours)
+    _check(platform, hours, tuple(found.platforms) + ("Other",))
+    game = session.get(Game, igdb.game_id(found.id))
+    if game is not None and game.library_entry is not None:
+        raise ValueError(f"{game.name} is already in your library ({where_you_have_it(game)}).")
+    game = igdb.upsert(session, found)
+    session.flush()
+    session.add(
+        LibraryEntry(
+            steam_app_id=game.steam_app_id,
+            playtime_total_min=round((hours or 0) * 60),
+            playtime_recent_min=0,
+            last_synced=_now(),
+            platform=platform,
+        )
+    )
+    session.commit()
+    return game
+
+
 def _entry(session: Session, app_id: int) -> LibraryEntry:
     entry = session.get(LibraryEntry, app_id)
     game = session.get(Game, app_id)
@@ -106,7 +145,7 @@ def set_platform(session: Session, app_id: int, platform: str) -> None:
     if not platform and session.get(Game, app_id).family_shared:
         entry.platform = None
     else:
-        _check(platform, None)
+        _check(platform, None, platforms_for(session.get(Game, app_id)))
         entry.platform = platform
     session.commit()
 
