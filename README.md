@@ -13,7 +13,7 @@ It runs entirely on your own computer: nothing is hosted, and your diary never l
 
 ## How it works
 
-1. **Sync** reads your Steam library, hours, achievements and wishlist, then each game's public store data (tags, reviews, price, languages). Family Sharing games and games from other platforms can be added too.
+1. **Sync** reads your Steam library, hours, achievements and wishlist, then each game's public store data (tags, reviews, price, languages) and, from Wikidata, its series and first release date. Later syncs ask Steam which games changed and re-read those first. Family Sharing games and games from other platforms can be added too.
 2. **You log and rate** in the diary: half stars, reviews, statuses with dates, favorites. Your star ratings are what teach the taste, and so, if you choose, is how you played (your hours against your other games and against the game's own players, achievements, and when you played).
 3. **It learns your taste** from those games. A high rating pulls up games with similar tags; a low one pushes down only close look-alikes (a sequel, a near-clone), never a whole genre. Favorites, statuses and lists never teach it; your wishlist and "not interested" count only weakly.
 4. **It scores everything you could play next** by how well its tags match your taste, adjusted for how well the game is reviewed, and shows the picks in four lists (backlog, Steam Family, wishlist, new games), each with the games and tags behind it.
@@ -26,10 +26,11 @@ All of it runs on your computer, and the details are in [How recommendations wor
 - **Steam import:** your library, playtime, achievements and wishlist, plus Family Sharing games if you want them, and games you played on consoles or other stores, added by hand.
 - **A diary:** half-star ratings, reviews, statuses with dates (playing, played, dropped) listed by month like Letterboxd's, favorites and "not interested", with a poster wall of everything you rated and a page of your reviews.
 - **Lists you make and name:** ranked or not, with your stars under each game or not, in the order you drag them into, and kept in folders.
+- **Series:** a game's page lists the rest of its series in order, with your stars, and the decade filter counts a port or remaster from its first release.
 - **Recommendations** in four lists (backlog, family, wishlist, games to discover), each pick showing the games and tags behind it. Learn from ratings and play, ratings only, or play only.
-- **Explore and find new games** by Steam tags, the best-reviewed popular games with no tag, or "games like this one", ranked by how well they fit you.
+- **Explore and find new games** by Steam tags, the best-reviewed popular games with no tag, or "games like this one", ranked by how well they fit you. Explore and your wishlist can also be sorted by lowest price or biggest discount, or narrowed to games on sale.
 - **Store info where you need it:** prices in your currency (kept fresh on screen), estimated length, languages, developer, release date and screenshots.
-- **Stats and a taste profile**, a language filter, a switch to hide games for adults, light or dark, and on Windows an app window with its own icon instead of a browser tab.
+- **Stats and a taste profile**, a language filter, switches to hide games for adults and tools that aren't games (Blender, Aseprite), light or dark, a setup page for your Steam key, and on Windows an app window with its own icon instead of a browser tab.
 
 ## Quick start
 
@@ -74,10 +75,11 @@ Taken on demo data: popular Steam games with made-up playtime, ratings and diary
 
 | | |
 |---|---|
-| ![Library](docs/screenshots/library.jpg) **Library:** rate, set a status and sort in place | ![Explore](docs/screenshots/explore.jpg) **Explore:** games you don't own, ranked by fit, with prices and length |
-| ![Game page](docs/screenshots/game-page.jpg) **Game page:** why it fits you, how you played it, store details and screenshots | ![My ratings](docs/screenshots/my-ratings.jpg) **My ratings:** a poster wall you can rate on |
-| ![Wishlist](docs/screenshots/wishlist.jpg) **Wishlist:** ranked by how well each game fits you | ![Diary](docs/screenshots/diary.jpg) **Diary:** playing, played, dropped, favorites |
-| ![My taste](docs/screenshots/taste.jpg) **My taste:** what your taste learns from, and what it leans toward | ![Stats](docs/screenshots/stats.jpg) **Stats:** your library and diary in numbers |
+| ![Library](docs/screenshots/library.jpg) **Library:** rate, set a status and sort in place | ![Explore](docs/screenshots/explore.jpg) **Explore:** games you don't own, ranked by fit, with prices, length and sales |
+| ![Game page](docs/screenshots/game-page.jpg) **Game page:** why it fits you, how you played it, and the rest of its series | ![My taste](docs/screenshots/taste.jpg) **My taste:** what your taste learns from, leans toward and steers away from |
+| ![Wishlist](docs/screenshots/wishlist.jpg) **Wishlist:** ranked by how well each game fits you | ![Diary](docs/screenshots/diary.jpg) **Diary:** what you played, month by month |
+| ![My ratings](docs/screenshots/my-ratings.jpg) **My ratings:** a poster wall you can rate on | ![A ranked list](docs/screenshots/lists.jpg) **Lists:** your own, ranked or not |
+| ![Stats](docs/screenshots/stats.jpg) **Stats:** your library and diary in numbers | |
 
 ## Learn more
 
@@ -121,7 +123,7 @@ python -m pytest
 
 The tests use a temporary database and folder (never your own data) and can't reach the network: any call that gets past the fakes fails the test. Stack: Python, FastAPI with Jinja templates, SQLite through SQLAlchemy, pytest, GitHub Actions. The data model is in `shelflife/models.py`; after changing it, add a migration with `python -m alembic revision --autogenerate -m "what changed"` (read the file it writes), and a test checks that the migrations and the models agree. `requirements.lock` and `requirements-dev.lock` pin exact versions (regenerate with pip-tools' `pip-compile`); CI tests the newest allowed versions on Python 3.11–3.15 and the locked ones on 3.15. `python tools/evaluate.py` measures how well the taste predicts your own ratings, so a change to the scoring can be judged by numbers.
 
-To regenerate the screenshots, `STEAM_COUNTRY=US python tools/make_demo_db.py demo.db` builds the demo database (real games, prices and reviews fetched from Steam; made-up play history, ratings, diary and wishlist), and `DATABASE_URL=sqlite:///demo.db python -m scripts.web --port 8001` runs the app on it. For the Sync page to show its buttons, also set any placeholder `STEAM_API_KEY` and `STEAM_ID` for that run; nothing is sent unless you press a button.
+To regenerate the screenshots, `STEAM_COUNTRY=US python tools/make_demo_db.py demo.db` builds the demo database (real games, prices and reviews fetched from Steam, series from Wikidata; made-up play history, ratings, diary, lists and wishlist), and `DATABASE_URL=sqlite:///demo.db python -m scripts.web --port 8001` runs the app on it. For the Sync page to show its buttons, also set any placeholder `STEAM_API_KEY` and `STEAM_ID` for that run; nothing is sent unless you press a button. The pictures are taken in the dark theme, 1440 pixels wide.
 
 ## License
 

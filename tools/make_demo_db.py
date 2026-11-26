@@ -24,10 +24,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import requests  # noqa: E402
 
-from shelflife import diary, reviews  # noqa: E402
+from shelflife import diary, gamelists, reviews  # noqa: E402
 from shelflife.db import SessionLocal, init_db  # noqa: E402
 from shelflife.models import Game, LibraryEntry, WishlistItem  # noqa: E402
-from shelflife.sync import LENGTH_PAGES, enrich_one  # noqa: E402
+from shelflife.sync import LENGTH_PAGES, enrich_one, sync_wikidata  # noqa: E402
 
 NOW = datetime.now(timezone.utc).replace(tzinfo=None)
 RNG = random.Random(7)
@@ -67,10 +67,10 @@ RATINGS = {  # app id: (rating, review)
     292030: (5.0, "Best story I've played in years."), 1145360: (5.0, "Perfect run after run."),
     1245620: (4.5, ""), 413150: (4.5, "My comfort game."), 620: (5.0, ""), 367520: (4.5, ""),
     504230: (4.0, ""), 268910: (3.5, "Gorgeous, but too hard for me."), 489830: (4.0, ""),
-    105600: (3.5, ""), 550: (3.0, ""), 1091500: (4.0, "Great after the patches."),
+    105600: (3.5, ""), 550: (2.0, ""), 632360: (1.5, "Not my thing."), 548430: (2.5, ""), 1091500: (4.0, "Great after the patches."),
     646570: (4.5, "Perfect deckbuilder."), 374320: (4.5, ""),
 }
-NOT_INTERESTED = [570]  # Dota 2
+NOT_INTERESTED = [570, 730, 381210, 238960]  # Dota 2, Counter-Strike 2, Dead by Daylight, Path of Exile
 # Where the imaginary player is with a game: app id -> (status, started, finished); dates are made up
 STATUSES = {
     1245620: ("playing", date(2026, 9, 2), None),  # Elden Ring
@@ -93,6 +93,31 @@ WISHLIST = {
     1868140: (1, 400), 1229490: (2, 90), 1604030: (0, 30), 1817070: (3, 700), 1593500: (0, 15),
     1888930: (0, 200), 1196590: (4, 55), 1151640: (0, 8), 1172620: (0, 300),
 }
+
+
+# The imaginary player's own lists: (name, description, ranked, folder, games in order)
+LISTS = [
+    ("Best I played in 2025", "Ranked by how much I loved them.", True, "By year", [1091500, 646570, 1145360, 504230]),
+    ("Played in 2024", "", True, "By year", [632470, 367520, 504230]),
+    ("Comfort games", "For slow evenings.", False, None, [413150, 105600, 427520, 548430]),
+]
+
+
+def add_lists_and_series(s):
+    """The demo player's lists, and which series each game belongs to (Wikidata, public data)."""
+    folders = {}
+    for name, description, ranked, folder, ids in LISTS:
+        if folder and folder not in folders:
+            folders[folder] = gamelists.create_folder(s, folder).id
+        made = gamelists.create_list(s, name, description, ranked=ranked, folder_id=folders.get(folder))
+        for app_id in ids:
+            if s.get(Game, app_id):
+                gamelists.add_game(s, made.id, app_id)
+    try:  # the pages do without series when Wikidata can't be reached
+        print(f"Wikidata asked about {sync_wikidata(s)} games", flush=True)
+    except Exception as exc:
+        s.rollback()
+        print(f"Wikidata FAILED: {exc}", flush=True)
 
 
 def global_achievements(app_id):
@@ -207,6 +232,8 @@ def main():
             if s.get(Game, app_id):
                 s.add(WishlistItem(steam_app_id=app_id, priority=rank, added_at=NOW - timedelta(days=days_ago), seen_at=NOW))
         s.commit()
+
+        add_lists_and_series(s)
 
         print(f"\nDemo database ready: {DEMO_PATH}")
         print(f"games: {s.query(Game).count()} | library entries: {s.query(LibraryEntry).count()} | ratings: {len(diary.load_ratings(s))}")
