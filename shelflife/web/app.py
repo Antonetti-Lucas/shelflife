@@ -180,6 +180,7 @@ templates.env.globals.update(
     price_of=lambda game: price_view.shown(game.price),
     low_of=price_view.low_of,
     itad_on=itad.configured,
+    sale_filters=price_view.SALE_FILTERS,
     owned=price_view.owned,
     elsewhere=otherplatforms.elsewhere,
 )
@@ -456,7 +457,7 @@ def explore(
     how like one game (`like`) they are."""
     filters = ListFilter.read(q, tag, match, length)
     wishlist = wishlist if wishlist in EXPLORE_WISHLIST else "all"
-    sale = "1" if sale == "1" else ""  # only games with a discount right now
+    sale = sale if sale in price_view.SALE_FILTERS else ""  # on sale now, or at a low (prices.keeps_sale)
     wished = wishlist_by_id(session)
     ratings = diary.load_ratings(session)
     not_interested = diary.load_not_interested(session)
@@ -483,7 +484,7 @@ def explore(
             or (keep is not None and game.steam_app_id not in keep)
             or (wishlist == "only" and not on_wishlist)
             or (wishlist == "not" and on_wishlist)
-            or (sale and not price_view.discount_percent(game.price))
+            or not price_view.keeps_sale(game, sale)
             or not filters.keeps(game)
         ):
             continue
@@ -506,9 +507,10 @@ def explore(
         "reviews": lambda r: -((r.game.reviews_positive or 0) + (r.game.reviews_negative or 0)),
         "price": lambda r: price_view.price_key(r.game.price, r.game.name),
         "discount": lambda r: price_view.discount_key(r.game.price, r.game.name),
+        "low": lambda r: price_view.low_key(r.game),
         "name": lambda r: r.game.name.lower(),
     }
-    sorts = ("similar", "reviews", "price", "discount", "name") if ref is not None else ("fit", "match", "reviews", "price", "discount", "name")
+    sorts = ("similar", "reviews", "price", "discount", "low", "name") if ref is not None else ("fit", "match", "reviews", "price", "discount", "low", "name")
     sort = sort if sort in sorts else sorts[0]
     recs.sort(key=keys[sort])
 
@@ -630,6 +632,7 @@ WISHLIST_SORTS = {
     "reviews": "Most reviews",
     "price": "Lowest price",
     "discount": "Biggest discount",
+    "low": "Closest to its lowest ever",
     "name": "Name",
 }
 
@@ -650,7 +653,7 @@ def wishlist_page(
     """Your Steam wishlist, ranked by how well each game fits your taste."""
     filters = ListFilter.read(q, tag, match, length)
     sort = sort if sort in WISHLIST_SORTS else "fit"
-    sale = "1" if sale == "1" else ""  # only games with a discount right now
+    sale = sale if sale in price_view.SALE_FILTERS else ""  # on sale now, or at a low (prices.keeps_sale)
     items = wishlist_by_id(session)
     games = {
         g.steam_app_id: g
@@ -678,7 +681,7 @@ def wishlist_page(
         for r in ranked
         if (keep is None or r.game.steam_app_id in keep)
         and filters.keeps(r.game)
-        and (not sale or price_view.discount_percent(r.game.price))
+        and price_view.keeps_sale(r.game, sale)
     ]
     keys = {
         "fit": lambda r: -r.score,
@@ -688,6 +691,7 @@ def wishlist_page(
         "reviews": lambda r: -((r.game.reviews_positive or 0) + (r.game.reviews_negative or 0)),
         "price": lambda r: price_view.price_key(r.game.price, r.game.name),
         "discount": lambda r: price_view.discount_key(r.game.price, r.game.name),
+        "low": lambda r: price_view.low_key(r.game),
         "name": lambda r: r.game.name.lower(),
     }
     recs.sort(key=keys[sort])

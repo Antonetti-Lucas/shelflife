@@ -256,3 +256,39 @@ def test_a_new_sale_price_asks_for_the_two_year_low_again(session, api, monkeypa
     session.commit()
     sync_lows(session, everything=True)
     assert asked == ["g1", "g1"]
+
+
+# ---- sorting and filtering by the low ----
+
+
+def priced(session, app_id, final, discount, low_cents, wish=False, **low):
+    game = pool_game(session, app_id, price={"currency": "BRL", "initial": 5999, "final": final, "discount": discount})
+    game.name = f"Game {app_id}"
+    game.price_low = {"cents": low_cents, "regular": 5999, "currency": "BRL", "cut": 50, "date": "2025-03-14", **low} if low_cents else None
+    if wish:
+        session.add(WishlistItem(steam_app_id=app_id, priority=0, added_at=datetime(2026, 1, 1), seen_at=datetime(2026, 1, 1)))
+    session.commit()
+    return game
+
+
+def test_the_price_filter_keeps_games_at_a_low(session):
+    at_ever = priced(session, 1, 1499, 75, 1499)
+    at_two_years = priced(session, 2, 2349, 61, 1499, y2=2349)
+    on_sale = priced(session, 3, 2999, 50, 1499, y2=1999)
+    full = priced(session, 4, 5999, 0, 1499)
+    kept = lambda sale: [g.steam_app_id for g in (at_ever, at_two_years, on_sale, full) if prices.keeps_sale(g, sale)]  # noqa: E731
+    assert kept("") == [1, 2, 3, 4] and kept("1") == [1, 2, 3] and kept("low") == [1, 2] and kept("ever") == [1]
+
+
+def test_closest_to_its_lowest_ever_comes_first(session):
+    games = [priced(session, 1, 2999, 50, 1499), priced(session, 2, 1499, 75, 1499), priced(session, 3, 5999, 0, None), priced(session, 4, 1999, 67, 1499)]
+    assert [g.steam_app_id for g in sorted(games, key=prices.low_key)] == [2, 4, 1, 3]
+
+
+def test_wishlist_and_explore_sort_and_filter_by_the_low(client, session):
+    priced(session, 1, 2999, 50, 1499, wish=True)
+    priced(session, 2, 1499, 75, 1499, wish=True)
+    page = client.get("/wishlist?sort=low&sale=ever").text
+    assert "Game 2" in page and "Game 1" not in page and "Closest to its lowest ever" in page
+    page = client.get("/explore?sort=low").text
+    assert page.index("Game 2") < page.index("Game 1")

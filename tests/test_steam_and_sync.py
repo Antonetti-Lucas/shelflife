@@ -301,3 +301,21 @@ def test_app_name_paging_stops_once_past_the_largest_id_needed(monkeypatch):
 def test_nothing_is_requested_when_no_names_are_needed(monkeypatch):
     fake_requests(monkeypatch, appnames, lambda url, kw: pytest.fail("no request expected"))
     assert appnames.fetch_app_names("key", set()) == {}
+
+
+def test_reading_the_library_tries_once_more_after_a_timeout(monkeypatch):
+    import requests as rq
+
+    from shelflife import steam
+    from tests.conftest import FakeResponse
+
+    timeouts = []
+
+    def get(url, params=None, timeout=None):
+        timeouts.append(timeout)
+        if len(timeouts) == 1:
+            raise rq.ReadTimeout("Read timed out")
+        return FakeResponse(200, {"response": {"games": [{"appid": 10, "name": "A", "playtime_forever": 5}]}})
+
+    monkeypatch.setattr(steam.requests, "get", get)
+    assert [g.app_id for g in steam.fetch_owned_games("k", "1")] == [10] and timeouts == [15, 30]

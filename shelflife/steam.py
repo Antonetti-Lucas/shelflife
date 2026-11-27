@@ -118,21 +118,25 @@ def fetch_changed_apps(api_key: str, since: int, timeout: float = 60) -> list[Ap
 
 
 def fetch_owned_games(api_key: str, steam_id: str, timeout: float = 15) -> list[OwnedGame]:
-    """Return every game on the account, including free-to-play ones."""
+    """Return every game on the account, including free-to-play ones.
+
+    A big library can take Steam a while to answer, and its API sometimes stalls for a moment
+    (a sync stopped on "Read timed out", 2026-11-26), so a timeout or dropped connection is
+    tried once more, with twice the time, before the sync gives up."""
+    params = {
+        "key": api_key,
+        "steamid": steam_id,
+        "include_appinfo": 1,
+        "include_played_free_games": 1,
+        # Steam hides "unvetted" apps (new or niche games) unless asked.
+        "skip_unvetted_apps": "false",
+        "format": "json",
+    }
     try:
-        resp = requests.get(
-            OWNED_GAMES_URL,
-            params={
-                "key": api_key,
-                "steamid": steam_id,
-                "include_appinfo": 1,
-                "include_played_free_games": 1,
-                # Steam hides "unvetted" apps (new or niche games) unless asked.
-                "skip_unvetted_apps": "false",
-                "format": "json",
-            },
-            timeout=timeout,
-        )
+        try:
+            resp = requests.get(OWNED_GAMES_URL, params=params, timeout=timeout)
+        except (requests.Timeout, requests.ConnectionError):
+            resp = requests.get(OWNED_GAMES_URL, params=params, timeout=timeout * 2)
     except requests.RequestException as exc:
         raise SteamError(f"Could not reach Steam: {exc}") from exc
 

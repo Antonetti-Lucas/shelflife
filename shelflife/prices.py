@@ -153,3 +153,34 @@ def low_of(game, today=None) -> Low | None:
         and low.get("y2") is not None and final <= low["y2"]
     )
     return Low(money(low["cents"], low["currency"]), int(low.get("cut") or 0), _month(low.get("date")), now, record, before, two_years)
+
+
+SALE_FILTERS = {
+    "": "Any price",
+    "1": "On sale now",
+    "low": "At a low (2 years or ever)",
+    "ever": "At its lowest ever",
+}
+
+
+def keeps_sale(game, sale: str) -> bool:
+    """The price filter on Explore and Wishlist: any price, on sale now, on sale at its lowest in two
+    years or ever (the amber, green and blue flags), or at its lowest ever (green and blue)."""
+    if not sale:
+        return True
+    if sale == "1":
+        return bool(discount_percent(game.price))
+    low = low_of(game)
+    if low is None:
+        return False
+    return low.now or (sale == "low" and low.two_years)
+
+
+def low_key(game) -> tuple:
+    """Closest to its lowest price ever on Steam first: today's price over that low (at or under 1 is
+    as cheap as it has ever been), then the bigger discount; games with no low known last."""
+    low, price = game.price_low or {}, game.price or {}
+    final, cents = price.get("final"), low.get("cents")
+    if price.get("free") or final is None or not cents or price.get("currency") != low.get("currency"):
+        return (True, 0.0, 0, game.name.lower())
+    return (False, final / cents, -discount_percent(price), game.name.lower())
