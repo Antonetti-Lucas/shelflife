@@ -107,12 +107,11 @@ class Low:
     when: str | None  # "Mar 2025"
     now: bool  # on sale today at that low (or lower)
     record: bool = False  # ...and it was never this cheap before this sale
-    before: str | None = None  # the low it beat, "R$ 19,99, Nov 2024", when record
+    before: str | None = None  # the low it beat, "R$ 19,99, Nov 2024", when record and known
     two_years: bool = False  # on sale at its lowest in two years, though not its lowest ever
 
 
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-RECORD_DAYS = 14  # Steam sales last up to two weeks: a record seen longer ago belongs to an older sale
 
 
 def _month(date: str | None) -> str | None:
@@ -127,8 +126,11 @@ def low_of(game, today=None) -> Low | None:
     change: the two can't be compared until the next sync reads it again).
 
     A sale is a record (never this cheap before) when it is below the stored low (a sync has not
-    read the new record yet), or at a low that replaced an older one (itad.keep_before) during
-    the last RECORD_DAYS. Otherwise a sale at the low only matches it."""
+    read the new record yet), or when its low was first reached on or after the day this sale
+    began: IsThereAnyDeal dates a low by when it was first reached, and gives each sale's start
+    (itad.steam_sales). FF7 Remake Intergrade's -82% low dates from 2026-11-18, the day its sale
+    began, so it is new (SteamDB said "new historical low"); Zuma Deluxe's from 2024, so its sale
+    only matches it. The sale must be the one on now: same price, not ended."""
     low, price = game.price_low, game.price
     if not low or low.get("cents") is None or not price or price.get("free"):
         return None
@@ -139,13 +141,14 @@ def low_of(game, today=None) -> Low | None:
     record, before = False, None
     if now:
         today = today or datetime.now(timezone.utc).date()
-        seen = low.get("seen")
-        fresh = bool(seen) and (today - datetime.fromisoformat(seen).date()).days <= RECORD_DAYS
+        since, until = str(low.get("sale_since") or "")[:10], str(low.get("sale_until") or "")[:10]
+        current = bool(since) and low.get("sale_for") == final and (not until or until >= today.isoformat())
+        beaten = None
         if final < low["cents"]:
             record, beaten = True, {"cents": low["cents"], "date": low.get("date")}
-        elif fresh and low.get("before"):
-            record, beaten = True, low["before"]
-        if record:
+        elif current and (low.get("date") or "") >= since:
+            record, beaten = True, low.get("before")  # the low it beat, when a sync saw it
+        if beaten:
             when = _month(beaten.get("date"))
             before = money(beaten["cents"], low["currency"]) + (f", {when}" if when else "")
     two_years = (
@@ -160,7 +163,7 @@ SALE_FILTERS = {
     "1": "On sale now",
     "low": "At a low (2 years or ever)",
     "ever": "At its lowest ever",
-    "new": "Cheaper than ever (new lowest)",
+    "new": "Cheaper than ever",
 }
 
 

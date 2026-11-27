@@ -593,6 +593,12 @@ def sync_lows(
         for game in batch:
             game.price_low = itad.keep_before(game.price_low, (lows.get(game.itad_id) or {}) if game.itad_id else {}, now)
             game.price_low_fetched_at = now
+        # When each sale began, to tell a sale that set a new low from one matching an older low.
+        on_sale = [g for g in known if g.price_low and (g.price or {}).get("discount")]
+        sales = itad.steam_sales([g.itad_id for g in on_sale]) if on_sale else {}
+        for game in on_sale:
+            if sale := sales.get(game.itad_id):
+                game.price_low = {**game.price_low, "sale_since": sale["since"], "sale_until": sale["until"], "sale_for": sale["cents"]}
         session.commit()
         histories = _two_year_lows(session, batch, histories)
         done += len(batch)

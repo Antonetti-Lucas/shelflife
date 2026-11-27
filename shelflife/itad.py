@@ -104,8 +104,8 @@ def parse_low(item: dict) -> dict | None:
 def keep_before(old: dict | None, new: dict, now) -> dict:
     """The new low, remembering the one it replaced. IsThereAnyDeal only knows the lowest price
     ever, so once a sale sets a new record the old low is gone; kept as "before" ({"cents",
-    "date"}) with "seen" (the day ShelfLife first saw the new record), it tells a sale that is
-    cheaper than ever (prices.low_of) from one that only matches an old low."""
+    "date"}), it says on the game page what the new record beat. Whether a sale is a new lowest
+    comes from when the sale began (steam_sales, prices.low_of)."""
     if not new:
         return {}
     new = dict(new)
@@ -121,6 +121,28 @@ def keep_before(old: dict | None, new: dict, now) -> dict:
 
 
 TWO_YEARS = timedelta(days=730)
+
+
+def steam_sales(game_ids: list[str]) -> dict[str, dict]:
+    """IsThereAnyDeal game id -> the sale it is in on Steam now: {"since", "until", "cents"} (when that
+    price began and ends, ISO dates with time, and the sale price), for games on sale only. A low
+    first reached on or after "since" was set by this very sale: a new lowest, as SteamDB says.
+    (POST /games/prices/v3, Steam only, 200 games a call; checked live 2026-11-26.)"""
+    if len(game_ids) > BATCH:
+        raise ValueError(f"Ask for at most {BATCH} games at a time")
+    if not game_ids:
+        return {}
+    answer = _post("/games/prices/v3", list(game_ids), {"country": country(), "shops": STEAM_SHOP})
+    sales: dict[str, dict] = {}
+    for item in answer or []:
+        for deal in (item.get("deals") or []) if isinstance(item, dict) else []:
+            if (deal.get("shop") or {}).get("id") != STEAM_SHOP or not deal.get("cut") or not deal.get("timestamp"):
+                continue
+            sales[item["id"]] = {
+                "since": deal["timestamp"], "until": deal.get("expiry"),
+                "cents": (deal.get("price") or {}).get("amountInt"),
+            }
+    return sales
 
 
 def steam_low_since(game_id: str, since: datetime) -> tuple[int, str] | None:

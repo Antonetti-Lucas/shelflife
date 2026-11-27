@@ -33,6 +33,8 @@ def api(monkeypatch):
         assert headers["ITAD-API-Key"] == "k"
         if "/lookup/id/shop/61/v1" in url:
             return FakeResponse(200, {key: {"app/1": "g1", "app/2": "g2"}.get(key) for key in json})
+        if url.endswith("/games/prices/v3"):  # when each sale began: none known here
+            return FakeResponse(200, [])
         assert url.endswith("/games/storelow/v2") and params == {"country": "BR", "shops": 61}
         lows = {"g1": [{"shop": {"id": 35, "name": "GOG"}, "price": {"amountInt": 100, "currency": "BRL"}, "cut": 98, "timestamp": "2024-01-01"},
                        steam_low(1499, 75)],
@@ -181,11 +183,13 @@ def test_a_sale_under_the_low_is_a_record_until_sync_catches_up():
     assert low.record and low.before == "R$ 14,99, Mar 2025"
 
 
-def test_a_sale_at_a_fresh_record_is_blue_and_an_old_one_green():
+def test_a_record_names_the_low_it_beat_when_a_sync_saw_it():
     game = low_game(final=1499, discount=75)
-    game.price_low |= {"before": {"cents": 1999, "date": "2024-11-20"}, "seen": "2026-11-20"}
+    game.price_low |= {"date": "2026-11-20", "before": {"cents": 1999, "date": "2024-11-20"},
+                       "sale_since": "2026-11-20T19:00:00+01:00", "sale_until": "2026-12-04T19:00:00+01:00", "sale_for": 1499}
     fresh = prices.low_of(game, today=datetime(2026, 11, 26).date())
     assert fresh.record and fresh.before == "R$ 19,99, Nov 2024"
+    game.price_low |= {"sale_since": "2027-02-25T19:00:00+01:00", "sale_until": "2027-03-04T19:00:00+01:00"}
     later = prices.low_of(game, today=datetime(2027, 3, 1).date())  # a later sale only matches it
     assert later.now and not later.record
 
@@ -300,3 +304,43 @@ def test_on_a_card_the_low_flag_sits_on_the_cover(client, session):
     priced(session, 2, 1499, 75, 1499, wish=True)
     page = client.get("/wishlist").text
     assert 'class="low-tag  flag bottom"' in page or 'low-tag flag bottom' in " ".join(page.split())
+
+
+def test_a_sale_at_a_low_first_reached_this_sale_is_a_new_lowest():
+    # Live, 2026-11-26: FF7 Remake Intergrade's -82% low was first reached 2026-11-18, the day its sale began
+    game = low_game(cents=3148, final=3148, discount=82)
+    game.price_low |= {"date": "2026-11-18", "sale_since": "2026-11-18T19:17:43+01:00", "sale_until": "2026-12-02T19:00:00+01:00", "sale_for": 3148}
+    today = datetime(2026, 11, 26).date()
+    low = prices.low_of(game, today=today)
+    assert low.record and low.before is None
+    game.price_low["date"] = "2024-03-14"  # Zuma Deluxe: a low from an older sale, only matched
+    assert not prices.low_of(game, today=today).record
+    game.price_low["date"] = "2026-11-18"
+    assert not prices.low_of(game, today=datetime(2026, 12, 5).date()).record  # that sale is over: can't tell
+    game.price_low["sale_for"] = 2999
+    assert not prices.low_of(game, today=today).record  # the sale read was at another price
+
+
+def test_a_sale_longer_than_two_weeks_still_counts():
+    game = low_game(cents=3148, final=3148, discount=82)
+    game.price_low |= {"date": "2026-10-01", "sale_since": "2026-10-01T19:00:00+01:00", "sale_until": None, "sale_for": 3148}
+    assert prices.low_of(game, today=datetime(2026, 11, 26).date()).record
+
+
+def test_sync_reads_when_each_sale_began(session, api, monkeypatch):
+    monkeypatch.setattr(itad, "steam_sales", lambda ids: {"g1": {"since": "2026-11-18T19:17:43+01:00", "until": "2026-12-02T19:00:00+01:00", "cents": 1499}})
+    pool_game(session, 1, price={"currency": "BRL", "initial": 5999, "final": 1499, "discount": 75})
+    sync_lows(session)
+    assert session.get(Game, 1).price_low["sale_since"].startswith("2026-11-18")
+
+
+def test_sale_starts_are_steams_only(monkeypatch):
+    monkeypatch.setenv("ITAD_API_KEY", "k")
+    answer = [
+        {"id": "g1", "deals": [{"shop": {"id": 35}, "cut": 90, "timestamp": "2026-01-01", "price": {"amountInt": 1}},
+                               {"shop": {"id": 61}, "cut": 82, "timestamp": "2026-11-18T19:17:43+01:00", "expiry": "2026-12-02T19:00:00+01:00", "price": {"amountInt": 3148}}]},
+        {"id": "g2", "deals": [{"shop": {"id": 61}, "cut": 0, "timestamp": "2026-07-09", "price": {"amountInt": 4699}}]},
+    ]
+    monkeypatch.setattr(itad.requests, "post", lambda url, json=None, params=None, headers=None, timeout=None: FakeResponse(200, answer))
+    assert itad.steam_sales(["g1", "g2"]) == {"g1": {"since": "2026-11-18T19:17:43+01:00", "until": "2026-12-02T19:00:00+01:00", "cents": 3148}}
+

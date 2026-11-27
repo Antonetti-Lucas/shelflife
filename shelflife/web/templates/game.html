@@ -13,7 +13,7 @@
     <div>
       <div class="title-row"><h2>{{ game.name }}</h2>{{ price_tag(game) }}</div>
       {% set low = low_of(game) if not owned(game) else none %}
-      {% if low %}<p class="meta low-line">{% if low.record %}<strong>Never this cheap on Steam before</strong> (the lowest was {{ low.before }}).{% elif low.now %}Its lowest price ever on Steam.{% elif low.two_years %}Its lowest price on Steam in two years; the lowest ever was {{ low.text }} (-{{ low.cut }}%){% if low.when %}, {{ low.when }}{% endif %}.{% elif low.cut %}Lowest on Steam: <strong>{{ low.text }}</strong> (-{{ low.cut }}%){% if low.when %}, {{ low.when }}{% endif %}.{% else %}Never on sale on Steam.{% endif %}
+      {% if low %}<p class="meta low-line">{% if low.record %}<strong>Never this cheap on Steam before</strong>{% if low.before %} (the lowest was {{ low.before }}){% endif %}.{% elif low.now %}Its lowest price ever on Steam.{% elif low.two_years %}Its lowest price on Steam in two years; the lowest ever was {{ low.text }} (-{{ low.cut }}%){% if low.when %}, {{ low.when }}{% endif %}.{% elif low.cut %}Lowest on Steam: <strong>{{ low.text }}</strong> (-{{ low.cut }}%){% if low.when %}, {{ low.when }}{% endif %}.{% else %}Never on sale on Steam.{% endif %}
         Price history from the <a href="https://isthereanydeal.com" target="_blank" rel="noopener">IsThereAnyDeal API ↗</a></p>{% endif %}
       {% if info.developers or info.publishers %}
       <p class="byline">
