@@ -105,22 +105,51 @@ class Low:
     text: str  # "R$ 12,49"
     cut: int  # percent off then; 0: never on sale on Steam
     when: str | None  # "Mar 2025"
-    now: bool  # today's price is that low (or lower) and on sale
+    now: bool  # on sale today at that low (or lower)
+    record: bool = False  # ...and it was never this cheap before this sale
+    before: str | None = None  # the low it beat, "R$ 19,99, Nov 2024", when record
+    two_years: bool = False  # on sale at its lowest in two years, though not its lowest ever
 
 
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+RECORD_DAYS = 14  # Steam sales last up to two weeks: a record seen longer ago belongs to an older sale
 
 
-def low_of(game) -> Low | None:
+def _month(date: str | None) -> str | None:
+    date = date or ""
+    if len(date) >= 7 and date[5:7].isdigit() and 1 <= int(date[5:7]) <= 12:
+        return f"{_MONTHS[int(date[5:7]) - 1]} {date[:4]}"
+    return None
+
+
+def low_of(game, today=None) -> Low | None:
     """None when no low is known or it is in another currency than the store price (a STEAM_COUNTRY
-    change: the two can't be compared until the next sync reads it again)."""
+    change: the two can't be compared until the next sync reads it again).
+
+    A sale is a record (never this cheap before) when it is below the stored low (a sync has not
+    read the new record yet), or at a low that replaced an older one (itad.keep_before) during
+    the last RECORD_DAYS. Otherwise a sale at the low only matches it."""
     low, price = game.price_low, game.price
     if not low or low.get("cents") is None or not price or price.get("free"):
         return None
     if price.get("currency") and price["currency"] != low.get("currency"):
         return None
-    date = low.get("date") or ""
-    when = f"{_MONTHS[int(date[5:7]) - 1]} {date[:4]}" if len(date) >= 7 and date[5:7].isdigit() and 1 <= int(date[5:7]) <= 12 else None
     final = price.get("final")
     now = bool(price.get("discount")) and final is not None and final <= low["cents"]
-    return Low(money(low["cents"], low["currency"]), int(low.get("cut") or 0), when, now)
+    record, before = False, None
+    if now:
+        today = today or datetime.now(timezone.utc).date()
+        seen = low.get("seen")
+        fresh = bool(seen) and (today - datetime.fromisoformat(seen).date()).days <= RECORD_DAYS
+        if final < low["cents"]:
+            record, beaten = True, {"cents": low["cents"], "date": low.get("date")}
+        elif fresh and low.get("before"):
+            record, beaten = True, low["before"]
+        if record:
+            when = _month(beaten.get("date"))
+            before = money(beaten["cents"], low["currency"]) + (f", {when}" if when else "")
+    two_years = (
+        not now and bool(price.get("discount")) and final is not None
+        and low.get("y2") is not None and final <= low["y2"]
+    )
+    return Low(money(low["cents"], low["currency"]), int(low.get("cut") or 0), _month(low.get("date")), now, record, before, two_years)

@@ -22,7 +22,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, contains_eager, selectinload
 
-from shelflife import diary, gamelists, igdb, otherplatforms
+from shelflife import diary, gamelists, igdb, itad, otherplatforms
 from shelflife.diary import favorite_ids
 from shelflife.config import try_load_settings
 from shelflife.envfile import update_env
@@ -179,6 +179,7 @@ templates.env.globals.update(
     length_of=estimate_length,
     price_of=lambda game: price_view.shown(game.price),
     low_of=price_view.low_of,
+    itad_on=itad.configured,
     owned=price_view.owned,
     elsewhere=otherplatforms.elsewhere,
 )

@@ -14,12 +14,13 @@ Terms (read 2026-11-26, from github.com/IsThereAnyDeal/API: docs/docs.yaml and
 TERMS_OF_SERVICE.md): use is allowed for an app "available to public" (ShelfLife is public and
 open source, and each user brings their own key); credit IsThereAnyDeal (the pages link it); the
 data must not be changed (shown as given, only formatted); no app that competes with
-IsThereAnyDeal (this shows Steam's own low, nothing about other stores); 1000 requests per 5
-minutes. Needs ITAD_API_KEY in .env (register an app at isthereanydeal.com/apps/my/).
+IsThereAnyDeal (this shows Steam's own low, nothing about other stores); 100 requests per 5
+minutes for a new key. Needs ITAD_API_KEY in .env (register an app at isthereanydeal.com/apps/my/).
 What is sent: Steam app ids, IsThereAnyDeal game ids and your STEAM_COUNTRY.
 """
 
 import os
+from datetime import datetime, timedelta
 
 import requests
 
@@ -29,7 +30,9 @@ from shelflife.throttle import RateLimited, Throttle
 API_URL = "https://api.isthereanydeal.com"
 STEAM_SHOP = 61
 BATCH = 200  # the most game ids one call takes
-itad_throttle = Throttle(0.5)  # well under 1000 requests per 5 minutes
+# A new key allows 100 requests per 5 minutes (the owner's, 2026-11-26; the docs say 1000 for verified
+# accounts): one every 3.1 seconds stays under it. A first read of 3,400 games is about 34 requests.
+itad_throttle = Throttle(3.1)
 
 
 class ItadError(Exception):
@@ -96,6 +99,54 @@ def parse_low(item: dict) -> dict | None:
             "date": str(low.get("timestamp") or "")[:10] or None,  # "2022-12-21"
         }
     return None
+
+
+def keep_before(old: dict | None, new: dict, now) -> dict:
+    """The new low, remembering the one it replaced. IsThereAnyDeal only knows the lowest price
+    ever, so once a sale sets a new record the old low is gone; kept as "before" ({"cents",
+    "date"}) with "seen" (the day ShelfLife first saw the new record), it tells a sale that is
+    cheaper than ever (prices.low_of) from one that only matches an old low."""
+    if not new:
+        return {}
+    new = dict(new)
+    if old and old.get("currency") == new.get("currency") and old.get("cents") is not None:
+        if new["cents"] < old["cents"]:
+            new["before"] = {"cents": old["cents"], "date": old.get("date")}
+            new["seen"] = now.date().isoformat()
+        elif new["cents"] == old["cents"]:  # the same low: keep what was remembered about it
+            for key in ("before", "seen", "y2", "y2_for", "y2_read"):
+                if key in old:
+                    new[key] = old[key]
+    return new
+
+
+TWO_YEARS = timedelta(days=730)
+
+
+def steam_low_since(game_id: str, since: datetime) -> tuple[int, str] | None:
+    """Steam's lowest price for one game since `since` (cents, currency), from its price history
+    (GET /games/history/v2, Steam only); None when no price changed in that time. One request per
+    game, so Sync asks only for games on sale that are not at their lowest ever."""
+    key = api_key()
+    if not key:
+        raise ItadError("IsThereAnyDeal isn't set up: add ITAD_API_KEY to .env.")
+    itad_throttle.wait()
+    resp = requests.get(
+        f"{API_URL}/games/history/v2", timeout=30, headers={"ITAD-API-Key": key, "Accept": "application/json"},
+        params={"id": game_id, "country": country(), "shops": STEAM_SHOP, "since": since.strftime("%Y-%m-%dT%H:%M:%SZ")},
+    )
+    if resp.status_code == 429:
+        raise RateLimited("IsThereAnyDeal asks us to slow down; the next sync carries on.")
+    if resp.status_code in (401, 403):
+        raise ItadError("IsThereAnyDeal did not accept the ITAD_API_KEY in .env.")
+    resp.raise_for_status()
+    seen = [
+        (e["deal"]["price"]["amountInt"], e["deal"]["price"]["currency"])
+        for e in resp.json() or []
+        if isinstance(e, dict) and (e.get("shop") or {}).get("id") == STEAM_SHOP
+        and ((e.get("deal") or {}).get("price") or {}).get("amountInt") is not None
+    ]
+    return min(seen) if seen else None
 
 
 def steam_lows(game_ids: list[str]) -> dict[str, dict | None]:

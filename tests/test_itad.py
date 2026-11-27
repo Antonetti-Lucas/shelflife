@@ -162,3 +162,97 @@ def test_a_game_you_own_shows_no_low(client, session):
     game.price, game.price_low = BRL, {"cents": 1499, "regular": 5999, "currency": "BRL", "cut": 75, "date": "2025-03-14"}
     session.commit()
     assert "Lowest on Steam" not in client.get("/game/1").text
+
+
+# ---- a new record, and the low it beat ----
+
+
+def test_a_lower_low_remembers_the_one_it_replaced():
+    old = {"cents": 1999, "currency": "BRL", "cut": 67, "date": "2024-11-20"}
+    new = {"cents": 1499, "currency": "BRL", "cut": 75, "date": "2026-11-25"}
+    kept = itad.keep_before(old, new, datetime(2026, 11, 26))
+    assert kept["before"] == {"cents": 1999, "date": "2024-11-20"} and kept["seen"] == "2026-11-26"
+    assert itad.keep_before(kept, dict(new), datetime(2026, 12, 3))["seen"] == "2026-11-26"  # same low: kept as it was
+    assert "before" not in itad.keep_before(None, new, datetime(2026, 11, 26))  # the first read: nothing to compare
+
+
+def test_a_sale_under_the_low_is_a_record_until_sync_catches_up():
+    low = prices.low_of(low_game(final=999, discount=83))
+    assert low.record and low.before == "R$ 14,99, Mar 2025"
+
+
+def test_a_sale_at_a_fresh_record_is_blue_and_an_old_one_green():
+    game = low_game(final=1499, discount=75)
+    game.price_low |= {"before": {"cents": 1999, "date": "2024-11-20"}, "seen": "2026-11-20"}
+    fresh = prices.low_of(game, today=datetime(2026, 11, 26).date())
+    assert fresh.record and fresh.before == "R$ 19,99, Nov 2024"
+    later = prices.low_of(game, today=datetime(2027, 3, 1).date())  # a later sale only matches it
+    assert later.now and not later.record
+
+
+def test_flags_and_credit_on_the_pages(client, session, monkeypatch):
+    game = pool_game(session, 1)
+    game.price = {"currency": "BRL", "initial": 5999, "final": 999, "discount": 83}
+    game.price_low = {"cents": 1499, "regular": 5999, "currency": "BRL", "cut": 75, "date": "2025-03-14"}
+    session.commit()
+    page = client.get("/game/1").text
+    assert "Never this cheap on Steam before" in page and "New lowest</span>" in page
+    assert "IsThereAnyDeal API" in page and "Not affiliated" not in page  # the footer needs a key
+    monkeypatch.setenv("ITAD_API_KEY", "k")
+    assert "Lowest prices from the" in client.get("/game/1").text
+
+
+# ---- the lowest in two years ----
+
+
+def test_a_sale_at_its_two_year_low_is_amber():
+    game = low_game(final=2349, discount=50)
+    game.price_low |= {"y2": 2349}
+    low = prices.low_of(game)
+    assert low.two_years and not low.now
+    game.price_low["y2"] = 1999
+    assert not prices.low_of(game).two_years
+
+
+def test_sync_reads_the_two_year_low_only_for_sales_above_the_low(session, api, monkeypatch):
+    asked = []
+    monkeypatch.setattr(itad, "steam_low_since", lambda gid, since: asked.append(gid) or (2349, "BRL"))
+    pool_game(session, 1, price={"currency": "BRL", "initial": 5999, "final": 2349, "discount": 61})  # on sale above its low
+    pool_game(session, 2, price={"currency": "BRL", "initial": 5999, "final": 2999, "discount": 50})  # low is 5999: at/below it
+    pool_game(session, 4)  # not on sale
+    sync_lows(session)
+    assert asked == ["g1"] and session.get(Game, 1).price_low["y2"] == 2349
+    sync_lows(session, everything=True)
+    assert asked == ["g1"]  # once per sale, not every sync
+
+
+def test_the_two_year_low_survives_the_next_read_of_the_same_low():
+    old = {"cents": 1499, "currency": "BRL", "cut": 75, "date": "2025-03-14", "y2": 2349, "y2_read": "2026-11-26"}
+    assert itad.keep_before(old, {"cents": 1499, "currency": "BRL", "cut": 75, "date": "2025-03-14"}, datetime(2026, 11, 27))["y2"] == 2349
+
+
+def test_the_history_is_steams_only(monkeypatch):
+    monkeypatch.setenv("ITAD_API_KEY", "k")
+    seen = {}
+
+    def get(url, params=None, headers=None, timeout=None):
+        seen.update(params)
+        return FakeResponse(200, [
+            {"timestamp": "2026-06-25", "shop": {"id": 61}, "deal": {"price": {"amountInt": 2349, "currency": "BRL"}}},
+            {"timestamp": "2026-03-26", "shop": {"id": 61}, "deal": {"price": {"amountInt": 4699, "currency": "BRL"}}},
+        ])
+
+    monkeypatch.setattr(itad.requests, "get", get)
+    assert itad.steam_low_since("g1", datetime(2024, 11, 26)) == (2349, "BRL")
+    assert seen["shops"] == 61 and seen["since"] == "2024-11-26T00:00:00Z"
+
+
+def test_a_new_sale_price_asks_for_the_two_year_low_again(session, api, monkeypatch):
+    asked = []
+    monkeypatch.setattr(itad, "steam_low_since", lambda gid, since: asked.append(gid) or (2349, "BRL"))
+    game = pool_game(session, 1, price={"currency": "BRL", "initial": 5999, "final": 2349, "discount": 61})
+    sync_lows(session)
+    game.price = {"currency": "BRL", "initial": 5999, "final": 1999, "discount": 67}
+    session.commit()
+    sync_lows(session, everything=True)
+    assert asked == ["g1", "g1"]

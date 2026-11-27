@@ -89,7 +89,7 @@ SECONDS_PER_PLAYERS = 5.5  # up to five pages of reviews
 SECONDS_PER_LENGTH = 1.2  # one page of reviews, for a game you haven't played
 SECONDS_PER_PRICE = 1.7 / 100  # one store call for a hundred games' prices
 SECONDS_PER_WIKIDATA = 9 / 150  # one query (and a pause) for a hundred and fifty games
-SECONDS_PER_LOW = 3 / 200  # two calls for two hundred games
+SECONDS_PER_LOW = 6.2 / 200  # two calls (3.1 seconds apart) for two hundred games
 
 
 @dataclass

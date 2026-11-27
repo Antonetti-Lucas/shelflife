@@ -93,6 +93,7 @@ CHANGES_OVERLAP_HOURS = 2
 CHANGED_BATCH = 60
 WISHLIST_LOW_HOURS = 20  # a wishlist game's lowest price: read with its price, every sync
 OTHER_LOW_DAYS = 7  # the rest of the games you don't own: every week
+HISTORY_PER_SYNC = 60  # games on sale whose two-year low is read (one request each, 3 s apart): about 3 minutes
 WIKIDATA_REFRESH_DAYS = 180  # a game's series and first release date hardly ever change
 STEAM_TAGS_SINCE = datetime(2026, 11, 2, 12)  # tags read before this came from SteamSpy: read once more from Steam
 
@@ -576,7 +577,7 @@ def sync_lows(
     if not itad.configured():
         return 0
     pending = lows_due(session, everything=everything)
-    done = 0
+    done, histories = 0, HISTORY_PER_SYNC
     for start in range(0, len(pending), itad.BATCH):
         if should_stop is not None and should_stop():
             break
@@ -590,13 +591,44 @@ def sync_lows(
         lows = itad.steam_lows([g.itad_id for g in known])
         now = _now()
         for game in batch:
-            game.price_low = (lows.get(game.itad_id) or {}) if game.itad_id else {}
+            game.price_low = itad.keep_before(game.price_low, (lows.get(game.itad_id) or {}) if game.itad_id else {}, now)
             game.price_low_fetched_at = now
         session.commit()
+        histories = _two_year_lows(session, batch, histories)
         done += len(batch)
         if on_progress:
             on_progress(done, len(pending), batch[-1])
     return done
+
+
+def _on_sale_above_low(game: Game) -> bool:
+    price, low = game.price or {}, game.price_low or {}
+    return (
+        bool(price.get("discount")) and price.get("final") is not None and low.get("cents") is not None
+        and price.get("currency") == low.get("currency") and price["final"] > low["cents"]
+    )
+
+
+def _two_year_lows(session: Session, batch: list[Game], left: int) -> int:
+    """For games on sale that are not at their lowest ever, Steam's lowest price in the last two
+    years (itad.steam_low_since), at most `left` of them. Returns how many may still be asked.
+    Saved with the sale price it was read for ("y2_for"): a sale's price holds while it runs, so each
+    sale costs one request, and only a new price asks again."""
+    today = _now().date()
+    for game in batch:
+        if left <= 0:
+            break
+        low = game.price_low or {}
+        if not game.itad_id or not _on_sale_above_low(game) or low.get("y2_for") == game.price["final"]:
+            continue
+        found = itad.steam_low_since(game.itad_id, _now() - itad.TWO_YEARS)
+        game.price_low = {
+            **low, "y2": found[0] if found and found[1] == low.get("currency") else None,
+            "y2_for": game.price["final"], "y2_read": today.isoformat(),
+        }
+        session.commit()
+        left -= 1
+    return left
 
 
 def about_due(session: Session) -> list[Game]:
