@@ -129,7 +129,7 @@ def test_search_gets_a_token_once_then_asks_igdb(monkeypatch):
     first = igdb.search('Crash "Warped"')
     igdb.search("Hollow")
     assert [c[0] for c in calls].count(igdb.TOKEN_URL) == 1  # the token is kept in memory
-    assert b'search "Crash  Warped "' in calls[1][1] and b"game_type = (0,4,8,9,10,11)" in calls[1][1]
+    assert b'search "Crash  Warped "' in calls[1][1] and b"game_type = (0,3,4,8,9,10,11)" in calls[1][1]
     assert [g.name for g in first] == ["Hollow Knight", "Crash Bandicoot: Warped"]  # by how many rated it
     igdb._token.clear()
 

@@ -42,9 +42,10 @@ SEARCH_LIMIT = 12
 SEARCH_POOL = 50  # IGDB's own search order puts ports and fan games first, so ask for more and re-rank
 igdb_throttle = Throttle(0.3)  # IGDB allows 4 requests a second
 
-# IGDB's game types worth logging: a main game, a remake, remaster, port, expanded or standalone
-# game. Left out: DLC, expansions, bundles, mods, episodes, seasons, updates, packs, forks.
-GAME_TYPES = frozenset({0, 4, 8, 9, 10, 11})
+# IGDB's game types worth logging: a main game, a bundle (compilations people play as one game:
+# Super Mario 3D All-Stars, the owner asked 2026-11-27), a remake, remaster, port, expanded or
+# standalone game. Left out: DLC, expansions, mods, episodes, seasons, updates, packs, forks.
+GAME_TYPES = frozenset({0, 3, 4, 8, 9, 10, 11})
 
 FIELDS = (
     "name,game_type,first_release_date,url,summary,storyline,total_rating,total_rating_count,"
