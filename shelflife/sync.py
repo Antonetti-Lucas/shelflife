@@ -541,7 +541,11 @@ def sync_wikidata(
 def lows_due(session: Session, everything: bool = False) -> list[Game]:
     """Games you don't own whose lowest price on Steam (IsThereAnyDeal) is due: those with a price
     to compare, your wishlist's after WISHLIST_LOW_HOURS, the others' after OTHER_LOW_DAYS. Free
-    games, games with no price and games IsThereAnyDeal has no id for are left out. Wishlist first."""
+    games, games with no price and games IsThereAnyDeal has no id for are left out. Wishlist first.
+
+    A game on sale at its low whose sale start is not known for today's price is due at once
+    (sale_start_unknown): without it the page can't tell a new lowest from an old one. Lows read
+    before sale starts were kept (2026-11-27) showed every new lowest as green until then."""
     now = _now()
     wished = WishlistItem.steam_app_id.is_not(None)
     query = (
@@ -554,15 +558,35 @@ def lows_due(session: Session, everything: bool = False) -> list[Game]:
         )
         .order_by(WishlistItem.steam_app_id.is_(None), Game.steam_app_id)
     )
-    if not everything:
-        query = query.where(
-            or_(
-                Game.price_low_fetched_at.is_(None),
-                and_(wished, Game.price_low_fetched_at < now - timedelta(hours=WISHLIST_LOW_HOURS)),
-                and_(not_(wished), Game.price_low_fetched_at < now - timedelta(days=OTHER_LOW_DAYS)),
+    games = [g for g in session.scalars(query) if g.price and not g.price.get("free")]
+    if everything:
+        return games
+    timed = set(
+        session.scalars(
+            select(Game.steam_app_id)
+            .outerjoin(WishlistItem, WishlistItem.steam_app_id == Game.steam_app_id)
+            .where(
+                or_(
+                    Game.price_low_fetched_at.is_(None),
+                    and_(wished, Game.price_low_fetched_at < now - timedelta(hours=WISHLIST_LOW_HOURS)),
+                    and_(not_(wished), Game.price_low_fetched_at < now - timedelta(days=OTHER_LOW_DAYS)),
+                )
             )
         )
-    return [g for g in session.scalars(query) if g.price and not g.price.get("free")]
+    )
+    return [g for g in games if g.steam_app_id in timed or sale_start_unknown(g)]
+
+
+def sale_start_unknown(game: Game) -> bool:
+    """On sale at exactly its lowest price ever (under it is a new lowest anyway), with no sale start
+    read for today's price."""
+    price, low = game.price or {}, game.price_low or {}
+    final = price.get("final")
+    return (
+        bool(price.get("discount")) and final is not None and low.get("cents") is not None
+        and price.get("currency") == low.get("currency") and final == low["cents"]
+        and low.get("sale_for") != final
+    )
 
 
 def sync_lows(
@@ -596,9 +620,9 @@ def sync_lows(
         # When each sale began, to tell a sale that set a new low from one matching an older low.
         on_sale = [g for g in known if g.price_low and (g.price or {}).get("discount")]
         sales = itad.steam_sales([g.itad_id for g in on_sale]) if on_sale else {}
-        for game in on_sale:
-            if sale := sales.get(game.itad_id):
-                game.price_low = {**game.price_low, "sale_since": sale["since"], "sale_until": sale["until"], "sale_for": sale["cents"]}
+        for game in on_sale:  # asked once per sale price: "sale_for" is the store price it was asked for
+            sale = sales.get(game.itad_id) or {}  # none: IsThereAnyDeal shows no Steam sale (can't tell new from old)
+            game.price_low = {**game.price_low, "sale_since": sale.get("since"), "sale_until": sale.get("until"), "sale_for": game.price["final"]}
         session.commit()
         histories = _two_year_lows(session, batch, histories)
         done += len(batch)

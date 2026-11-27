@@ -344,3 +344,14 @@ def test_sale_starts_are_steams_only(monkeypatch):
     monkeypatch.setattr(itad.requests, "post", lambda url, json=None, params=None, headers=None, timeout=None: FakeResponse(200, answer))
     assert itad.steam_sales(["g1", "g2"]) == {"g1": {"since": "2026-11-18T19:17:43+01:00", "until": "2026-12-02T19:00:00+01:00", "cents": 3148}}
 
+
+
+def test_a_game_at_its_low_with_no_sale_start_is_due_at_once(session, api):
+    pool_game(session, 1, price={"currency": "BRL", "initial": 5999, "final": 1499, "discount": 75})
+    pool_game(session, 2, price={"currency": "BRL", "initial": 5999, "final": 2999, "discount": 50})
+    sync_lows(session)
+    assert lows_due(session) == []  # each sale asked about once, even when no sale start was found
+    for game in (session.get(Game, 1), session.get(Game, 2)):  # lows read before sale starts were kept
+        game.price_low = {k: v for k, v in game.price_low.items() if not k.startswith("sale_")}
+    session.commit()
+    assert [g.steam_app_id for g in lows_due(session)] == [1]  # at its low: due again; 2 is under it, new anyway
