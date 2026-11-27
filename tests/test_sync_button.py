@@ -536,7 +536,7 @@ def test_while_syncing_the_page_shows_the_step_and_a_stop_button(client, configu
     assert len(client.held) == 1  # handed to the background
     html = client.get("/sync").text
     assert '<meta http-equiv="refresh"' in html and "<progress" in html
-    assert "Step 1 of 11: Reading your library" in html
+    assert "Step 1 of 12: Reading your library" in html
     assert 'action="/sync/stop"' in html and 'action="/sync/start"' not in html
     post(client, "/sync/stop")
     assert web_app.sync_job._stop.is_set()

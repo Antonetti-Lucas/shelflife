@@ -178,6 +178,7 @@ templates.env.globals.update(
     fits_languages=fits,
     length_of=estimate_length,
     price_of=lambda game: price_view.shown(game.price),
+    low_of=price_view.low_of,
     owned=price_view.owned,
     elsewhere=otherplatforms.elsewhere,
 )

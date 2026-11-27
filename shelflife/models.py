@@ -49,6 +49,12 @@ class Game(Base):
     # Prices change with sales, so price_fetched_at says how old it is.
     price: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     price_fetched_at: Mapped[datetime | None]
+    # The lowest price the game ever had on Steam in your country, from IsThereAnyDeal (shelflife/itad.py):
+    # {"cents", "regular", "currency", "cut", "date"}; {} when it knows none, None when never asked.
+    # itad_id: the game's id there ("" when it has none for this app), asked once.
+    itad_id: Mapped[str | None]
+    price_low: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+    price_low_fetched_at: Mapped[datetime | None]
     # Steam's store change list (steam.fetch_changed_apps): when it last said this game changed, and its
     # price change number then and when its price was last read. A newer change than the last read, or a
     # different price number, makes the game due for a re-read (shelflife/sync.py).

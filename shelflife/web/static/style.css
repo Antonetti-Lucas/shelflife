@@ -510,6 +510,8 @@ dialog.lightbox .lb-close { right: -8px; top: -52px; font-size: 2rem; }
 .price s { color: var(--muted); font-size: 0.92em; }
 .price .disc { background: #3d7a1f; color: #e8ffd9; font-weight: 700; padding: 1px 6px; border-radius: 5px; }
 .hero-inner .price { font-size: 1rem; margin-top: 8px; }
+.low-tag { margin-left: 6px; padding: 1px 6px; border-radius: 5px; font-size: 0.72rem; font-weight: 700; background: #a0361f; color: #fff1e8; white-space: nowrap; }
+.low-line { margin: 4px 0 0; }
 .hero-inner .price b { color: #fff; }
 .hero-inner .price s { color: rgb(255 255 255 / 0.6); }
 

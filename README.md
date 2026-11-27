@@ -29,7 +29,7 @@ All of it runs on your computer, and the details are in [How recommendations wor
 - **Series:** a game's page lists the rest of its series in order, with your stars, and the decade filter counts a port or remaster from its first release.
 - **Recommendations** in four lists (backlog, family, wishlist, games to discover), each pick showing the games and tags behind it. Learn from ratings and play, ratings only, or play only.
 - **Explore and find new games** by Steam tags, the best-reviewed popular games with no tag, or "games like this one", ranked by how well they fit you. Explore and your wishlist can also be sorted by lowest price or biggest discount, or narrowed to games on sale.
-- **Store info where you need it:** prices in your currency (kept fresh on screen), estimated length, languages, developer, release date and screenshots.
+- **Store info where you need it:** prices in your currency (kept fresh on screen), each game's lowest price ever on Steam with a "Lowest ever" flag when a sale matches it (from IsThereAnyDeal, with your own free key), estimated length, languages, developer, release date and screenshots.
 - **Stats and a taste profile**, a language filter, switches to hide games for adults and tools that aren't games (Blender, Aseprite), light or dark, a setup page for your Steam key, and on Windows an app window with its own icon instead of a browser tab.
 
 ## Quick start
@@ -92,8 +92,8 @@ ShelfLife has no server, no account, no analytics and no tracking.
 
 **What it stores, and where**
 
-- `.env`: your Steam API key and SteamID, and your IGDB (Twitch) client id and secret if you set them.
-- `shelflife.db`: your library (games, hours, when you last played, achievement counts and when you unlocked them), your wishlist (game ids, your own rank and the date you added each), the hours you type in for family games, which games are shared with you through Family Sharing, the games you added from other platforms (which platform, and the hours you type; for a game that isn't on Steam, what IGDB says about it: name, cover address, summary and storyline, genres, themes, keywords, platforms, rating, and the tags you give it), your diary (ratings, reviews, statuses and dates, favorites, "not interested"), your lists, your settings, and public store data for each game (names, descriptions, tags, review counts, cover addresses, five numbers summarising how long its reviewers have played it, its languages, store details and its price when last read; never who wrote a review or what it says).
+- `.env`: your Steam API key and SteamID, and your IGDB (Twitch) client id and secret and IsThereAnyDeal key if you set them.
+- `shelflife.db`: your library (games, hours, when you last played, achievement counts and when you unlocked them), your wishlist (game ids, your own rank and the date you added each), the hours you type in for family games, which games are shared with you through Family Sharing, the games you added from other platforms (which platform, and the hours you type; for a game that isn't on Steam, what IGDB says about it: name, cover address, summary and storyline, genres, themes, keywords, platforms, rating, and the tags you give it), your diary (ratings, reviews, statuses and dates, favorites, "not interested"), your lists, your settings, and public store data for each game (names, descriptions, tags, review counts, cover addresses, five numbers summarising how long its reviewers have played it, its languages, store details and its price when last read, and, with an IsThereAnyDeal key, its lowest price ever on Steam and its IsThereAnyDeal id; never who wrote a review or what it says).
 - `data/`: files you create or import, such as the Family Sharing export (it lists which games your family members own, so keep it private), and `data/window/`, where the app window keeps its own browser storage (just your light or dark choice).
 
 All three are git-ignored. Delete them and nothing of yours is left.
@@ -104,6 +104,7 @@ All three are git-ignored. Delete them and nothing of yours is left.
 - **The Steam store** (`store.steampowered.com`) and **SteamSpy** (`steamspy.com`): game ids, tag names and your `STEAM_COUNTRY` only. They never receive your key, SteamID, ratings or diary.
 - **Wikidata** (`query.wikidata.org`): Steam game ids only, to learn which series a game belongs to and when it was first released. Its data is public (CC0). The request names ShelfLife and its public repository in its User-Agent, as Wikidata asks, and nothing about you.
 - **IGDB** (`api.igdb.com`, with a token from `id.twitch.tv`): only if you set `IGDB_CLIENT_ID` and `IGDB_CLIENT_SECRET`, and only when you search for a game that isn't on Steam: the name you type, and the IGDB id of the game you add. Twitch receives your client id and secret to issue the token, which is kept in memory only.
+- **IsThereAnyDeal** (`api.isthereanydeal.com`): only if you set `ITAD_API_KEY`, on each sync: your key, Steam game ids of games you don't own, their IsThereAnyDeal ids and your `STEAM_COUNTRY`, to read each game's lowest price ever on Steam.
 - **Your browser** loads cover images and screenshots from Steam's servers when you open a page, and the covers of games that aren't on Steam from IGDB's (`images.igdb.com`).
 - Nothing else: no outside fonts, scripts or analytics. The web app listens only on `127.0.0.1`, answers only to `127.0.0.1` and `localhost` (so another website can't reach it by pointing its own name at your computer), and has no login, so don't expose it to a network.
 
@@ -118,6 +119,10 @@ Game names, store data and cover art belong to Valve and the game publishers.
 **IGDB's terms**
 
 IGDB is free for non-commercial use under the [Twitch Developer Services Agreement](https://www.twitch.tv/p/legal/developer-agreement/); you need your own Twitch developer app (a client id and secret, put in `.env`). IGDB's own documentation says storing its data locally is allowed. ShelfLife keeps it only in your own database, credits IGDB on the pages that show it, and the repository contains none of it. It is not affiliated with or endorsed by IGDB or Twitch.
+
+**IsThereAnyDeal's terms**
+
+The [IsThereAnyDeal API terms](https://github.com/IsThereAnyDeal/API/blob/master/TERMS_OF_SERVICE.md) allow apps that are available to the public, ask for credit (the pages showing its data link to it), and forbid changing its data or competing with IsThereAnyDeal; ShelfLife shows only Steam's own lowest price, as given. Each person uses their own key (register an app at [isthereanydeal.com/apps/my](https://isthereanydeal.com/apps/my/)). It is not affiliated with or endorsed by IsThereAnyDeal.
 
 ## Development
 

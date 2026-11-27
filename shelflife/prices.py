@@ -97,3 +97,30 @@ def stale(game, now: datetime | None = None) -> bool:
     if fetched.tzinfo is not None:
         fetched = fetched.astimezone(timezone.utc).replace(tzinfo=None)
     return now - fetched > timedelta(hours=SCREEN_PRICE_HOURS)
+
+
+@dataclass(frozen=True)
+class Low:
+    """A game's lowest price ever on Steam (Game.price_low, from IsThereAnyDeal), as it reads."""
+    text: str  # "R$ 12,49"
+    cut: int  # percent off then; 0: never on sale on Steam
+    when: str | None  # "Mar 2025"
+    now: bool  # today's price is that low (or lower) and on sale
+
+
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def low_of(game) -> Low | None:
+    """None when no low is known or it is in another currency than the store price (a STEAM_COUNTRY
+    change: the two can't be compared until the next sync reads it again)."""
+    low, price = game.price_low, game.price
+    if not low or low.get("cents") is None or not price or price.get("free"):
+        return None
+    if price.get("currency") and price["currency"] != low.get("currency"):
+        return None
+    date = low.get("date") or ""
+    when = f"{_MONTHS[int(date[5:7]) - 1]} {date[:4]}" if len(date) >= 7 and date[5:7].isdigit() and 1 <= int(date[5:7]) <= 12 else None
+    final = price.get("final")
+    now = bool(price.get("discount")) and final is not None and final <= low["cents"]
+    return Low(money(low["cents"], low["currency"]), int(low.get("cut") or 0), when, now)

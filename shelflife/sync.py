@@ -13,7 +13,7 @@ from shelflife import store
 from shelflife.achievements import AchievementsUnavailable, AchievementStats, fetch_achievements
 from shelflife.models import OFF_TOPIC, ON_STEAM, Game, LibraryEntry, PlaytimeSnapshot, WishlistItem
 from shelflife.play import is_played
-from shelflife import reviews, wikidata
+from shelflife import itad, reviews, wikidata
 from shelflife.reviews import fetch_review_counts
 from shelflife.settings import get_changes_checked, set_changes_checked
 from shelflife.steam import AppChange, OwnedGame, SteamError, fetch_changed_apps
@@ -91,6 +91,8 @@ TAGS_REFRESH_DAYS = 30
 CHANGES_FIRST_DAYS = 30
 CHANGES_OVERLAP_HOURS = 2
 CHANGED_BATCH = 60
+WISHLIST_LOW_HOURS = 20  # a wishlist game's lowest price: read with its price, every sync
+OTHER_LOW_DAYS = 7  # the rest of the games you don't own: every week
 WIKIDATA_REFRESH_DAYS = 180  # a game's series and first release date hardly ever change
 STEAM_TAGS_SINCE = datetime(2026, 11, 2, 12)  # tags read before this came from SteamSpy: read once more from Steam
 
@@ -528,6 +530,68 @@ def sync_wikidata(
             hit = found.get(game.steam_app_id)
             game.wikidata = hit.as_dict() if hit else {}  # {}: asked, and Wikidata has no item for it
             game.wikidata_fetched_at = now
+        session.commit()
+        done += len(batch)
+        if on_progress:
+            on_progress(done, len(pending), batch[-1])
+    return done
+
+
+def lows_due(session: Session, everything: bool = False) -> list[Game]:
+    """Games you don't own whose lowest price on Steam (IsThereAnyDeal) is due: those with a price
+    to compare, your wishlist's after WISHLIST_LOW_HOURS, the others' after OTHER_LOW_DAYS. Free
+    games, games with no price and games IsThereAnyDeal has no id for are left out. Wishlist first."""
+    now = _now()
+    wished = WishlistItem.steam_app_id.is_not(None)
+    query = (
+        select(Game)
+        .outerjoin(LibraryEntry, LibraryEntry.steam_app_id == Game.steam_app_id)
+        .outerjoin(WishlistItem, WishlistItem.steam_app_id == Game.steam_app_id)
+        .where(
+            ON_STEAM, Game.type == "game", Game.itad_id.is_distinct_from(""),
+            or_(LibraryEntry.steam_app_id.is_(None), Game.family_shared.is_(True)),
+        )
+        .order_by(WishlistItem.steam_app_id.is_(None), Game.steam_app_id)
+    )
+    if not everything:
+        query = query.where(
+            or_(
+                Game.price_low_fetched_at.is_(None),
+                and_(wished, Game.price_low_fetched_at < now - timedelta(hours=WISHLIST_LOW_HOURS)),
+                and_(not_(wished), Game.price_low_fetched_at < now - timedelta(days=OTHER_LOW_DAYS)),
+            )
+        )
+    return [g for g in session.scalars(query) if g.price and not g.price.get("free")]
+
+
+def sync_lows(
+    session: Session,
+    on_progress: Callable[[int, int, Game], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+    everything: bool = False,
+) -> int:
+    """Read the lowest Steam price of the games `lows_due` lists from IsThereAnyDeal, itad.BATCH at
+    a time (first their ids there, once per game), saving batch by batch. Returns how many games
+    were asked about; 0 without an ITAD_API_KEY."""
+    if not itad.configured():
+        return 0
+    pending = lows_due(session, everything=everything)
+    done = 0
+    for start in range(0, len(pending), itad.BATCH):
+        if should_stop is not None and should_stop():
+            break
+        batch = pending[start : start + itad.BATCH]
+        unknown = [g for g in batch if g.itad_id is None]
+        if unknown:
+            ids = itad.lookup([g.steam_app_id for g in unknown])
+            for game in unknown:
+                game.itad_id = ids.get(game.steam_app_id) or ""  # "": it has none, never asked again
+        known = [g for g in batch if g.itad_id]
+        lows = itad.steam_lows([g.itad_id for g in known])
+        now = _now()
+        for game in batch:
+            game.price_low = (lows.get(game.itad_id) or {}) if game.itad_id else {}
+            game.price_low_fetched_at = now
         session.commit()
         done += len(batch)
         if on_progress:

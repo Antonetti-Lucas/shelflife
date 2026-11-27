@@ -19,12 +19,13 @@ os.environ["STEAM_API_KEY"] = ""
 os.environ["STEAM_ID"] = ""
 os.environ["IGDB_CLIENT_ID"] = ""
 os.environ["IGDB_CLIENT_SECRET"] = ""
+os.environ["ITAD_API_KEY"] = ""
 # The test client calls the app "testserver"; the real app answers only to 127.0.0.1 and localhost.
 os.environ["SHELFLIFE_ALLOWED_HOSTS"] = "127.0.0.1,localhost,testserver"
 
 import pytest  # noqa: E402
 
-from shelflife import achievements, appnames, igdb, learned, recommend, reviews, similar, store, wikidata  # noqa: E402
+from shelflife import achievements, appnames, igdb, itad, learned, recommend, reviews, similar, store, wikidata  # noqa: E402
 from shelflife.db import Base, SessionLocal, engine, init_db  # noqa: E402
 
 if "shelflife-tests-" not in str(engine.url):  # pragma: no cover - safety net
@@ -89,6 +90,7 @@ def no_waiting(monkeypatch):
         store.steam_api_throttle,
         wikidata.wikidata_throttle,
         igdb.igdb_throttle,
+        itad.itad_throttle,
     ):
         monkeypatch.setattr(throttle, "min_interval", 0)
 

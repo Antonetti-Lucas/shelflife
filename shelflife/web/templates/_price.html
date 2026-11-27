@@ -6,5 +6,6 @@
 <span class="price" data-price-id="{{ g.steam_app_id }}">
   {%- if p %}{% if p.discount %}<span class="disc">-{{ p.discount }}%</span>{% endif %}{% if p.was %}<s>{{ p.was }}</s>{% endif %}<b>{{ p.text }}</b>{% endif -%}
 </span>
+{%- set low = low_of(g) %}{% if low and low.now %}<span class="low-tag" title="Its lowest price ever on Steam, by IsThereAnyDeal">Lowest ever</span>{% endif %}
 {% endif %}
 {% endmacro %}

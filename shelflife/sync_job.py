@@ -18,7 +18,9 @@
 10. prices of games you don't own: your wishlist's every sync, the rest every week, 100 games
    per store call;
 11. the series each game belongs to and its first release date, from Wikidata (public data, CC0): asked
-   once per game, then every six months, 150 games per query.
+   once per game, then every six months, 150 games per query;
+12. the lowest price each game you don't own ever had on Steam, from IsThereAnyDeal, only with an
+   ITAD_API_KEY: your wishlist's every sync, the rest every week, 200 games per request.
 
 Each step re-reads only what could have changed (see the rules in shelflife/sync.py);
 "check everything again" re-reads it all. Every step saves game by game, so a sync can be
@@ -32,6 +34,7 @@ import requests
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from shelflife import itad
 from shelflife.db import SessionLocal
 from shelflife.jobs import BackgroundJob, JobSnapshot
 from shelflife.models import Game, LibraryEntry, WishlistItem
@@ -50,6 +53,8 @@ from shelflife.sync import (
     sync_achievements,
     sync_all_reviews,
     sync_store_changes,
+    lows_due,
+    sync_lows,
     sync_wikidata,
     wikidata_due,
     sync_player_hours,
@@ -73,6 +78,7 @@ STEPS = (
     ("players", "Reading how long other players play"),
     ("prices", "Updating prices"),
     ("series", "Looking up series and first release dates on Wikidata"),
+    ("lows", "Reading lowest prices from IsThereAnyDeal"),
 )
 SECONDS_PER_GAME = 3  # store details, for the time estimate
 SECONDS_PER_TAGS = 1.5 / 200  # one call for two hundred games' tags
@@ -83,6 +89,7 @@ SECONDS_PER_PLAYERS = 5.5  # up to five pages of reviews
 SECONDS_PER_LENGTH = 1.2  # one page of reviews, for a game you haven't played
 SECONDS_PER_PRICE = 1.7 / 100  # one store call for a hundred games' prices
 SECONDS_PER_WIKIDATA = 9 / 150  # one query (and a pause) for a hundred and fifty games
+SECONDS_PER_LOW = 3 / 200  # two calls for two hundred games
 
 
 @dataclass
@@ -103,6 +110,8 @@ class SyncResult:
     prices: int = 0  # games whose price was refreshed
     series: int = 0  # games Wikidata was asked about (series and first release date)
     series_note: str | None = None  # why Wikidata could not be asked
+    lows: int = 0  # games whose lowest Steam price IsThereAnyDeal was asked for
+    lows_note: str | None = None  # why IsThereAnyDeal could not be asked
     full: bool = False  # a "check everything again" run, not the usual sync
     stopped: bool = False  # stopped from the page
     aborted: str | None = None  # why it gave up early (rate limit, network, Steam)
@@ -248,6 +257,23 @@ def run_sync(
         except (requests.RequestException, ValueError) as exc:
             session.rollback()
             result.series_note = f"could not be asked ({exc})"
+        if stop():
+            result.stopped = True
+            return result
+
+        try:  # extra information too: IsThereAnyDeal being unreachable must not make the sync look failed
+            result.lows = sync_lows(
+                session,
+                on_progress=lambda i, n, game: report(12, "Lowest prices", i, n),
+                should_stop=stop,
+                everything=full,
+            )
+        except RateLimited as exc:
+            session.rollback()
+            result.lows_note = f"could not be asked: {exc}"
+        except (itad.ItadError, requests.RequestException, ValueError) as exc:
+            session.rollback()
+            result.lows_note = f"could not be asked ({exc})"
         result.stopped = stop()
     except RateLimited as exc:
         result.aborted = str(exc)
@@ -289,6 +315,10 @@ def summarize_sync(result: SyncResult) -> JobSnapshot:
         parts.append(f"series and first release dates for {result.series} games")
     if result.series_note:
         parts.append(f"Wikidata {result.series_note}")
+    if result.lows:
+        parts.append(f"lowest prices for {result.lows} games")
+    if result.lows_note:
+        parts.append(f"IsThereAnyDeal {result.lows_note}")
     base = ("Checked everything again: " if result.full else "Synced: ") + "; ".join(parts) + "."
     if result.aborted:
         return JobSnapshot(
@@ -324,7 +354,7 @@ def what_is_due(session: Session, with_due: bool = True) -> dict[str, int | obje
         .join(Game, Game.steam_app_id == LibraryEntry.steam_app_id)
         .where(LibraryEntry.platform.is_not(None), Game.family_shared.is_not(True))
     ) or 0
-    counts = {"achievements": None, "tags": None, "details": None, "about": None, "reviews": None, "players": None, "length": None, "prices": None, "series": None}
+    counts = {"achievements": None, "tags": None, "details": None, "about": None, "reviews": None, "players": None, "length": None, "prices": None, "series": None, "lows": None}
     minutes = full_minutes = None
     if with_due:
         counts = {
@@ -337,6 +367,7 @@ def what_is_due(session: Session, with_due: bool = True) -> dict[str, int | obje
             "length": len(length_due(session)),
             "prices": len(prices_due(session)),
             "series": len(wikidata_due(session)),
+            "lows": len(lows_due(session)) if itad.configured() else 0,
         }
         full = {
             "achievements": len(achievements_due(session, everything=True)),
@@ -348,6 +379,7 @@ def what_is_due(session: Session, with_due: bool = True) -> dict[str, int | obje
             "length": len(length_due(session, everything=True)),
             "prices": len(prices_due(session, everything=True)),
             "series": len(wikidata_due(session, everything=True)),
+            "lows": len(lows_due(session, everything=True)) if itad.configured() else 0,
         }
         estimate = lambda c: _minutes(  # noqa: E731
             c["achievements"] * SECONDS_PER_ACHIEVEMENT
@@ -359,6 +391,7 @@ def what_is_due(session: Session, with_due: bool = True) -> dict[str, int | obje
             + c["length"] * SECONDS_PER_LENGTH
             + c["prices"] * SECONDS_PER_PRICE
             + c["series"] * SECONDS_PER_WIKIDATA
+            + c["lows"] * SECONDS_PER_LOW
         )
         minutes, full_minutes = estimate(counts), estimate(full)
     return {
