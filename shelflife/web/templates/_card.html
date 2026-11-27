@@ -1,7 +1,7 @@
 {# One recommendation. `next_url` is where to return after rating or dismissing;
    `rating` is your current rating of the game, if any. #}
 {% from "_stars.html" import star_rating %}
-{% from "_price.html" import price_tag %}
+{% from "_price.html" import price_tag, low_tag %}
 {% macro rating_select(g, next_url, rating) %}{{ star_rating(g, rating, next_url) }}{% endmacro %}
 
 {% macro card(r, next_url, rating=none, similar_to=none, note=none) %}
@@ -14,9 +14,10 @@
     {% if have %}<span class="flag warn" title="On your Steam wishlist, but you already have it on {{ have }}">⚠ Have it on {{ have }}</span>
     {% elif (g.store_info or {}).coming_soon %}<span class="flag soon">Coming soon</span>
     {% elif note %}<span class="flag">★ Wishlist</span>{% endif %}
+    {{ low_tag(g, "flag bottom") }}
   </a>
   <div class="card-body">
-    <div class="title-row"><h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a></h3>{{ price_tag(g) }}</div>
+    <div class="title-row"><h3><a href="/game/{{ g.steam_app_id }}">{{ g.name }}</a></h3>{{ price_tag(g, false) }}</div>
     {% set length = length_of(g) %}
     <p class="meta">{{ short_reviews(g) }}{% if length %} · <span title="{{ length.text }} (from how long its reviewers played)">{{ length.short_text }}{{ " played" if length.endless }}</span>{% endif %}</p>
     {% if have %}<p class="warn-line">⚠ On your Steam wishlist, but you already have it on {{ have }}.</p>

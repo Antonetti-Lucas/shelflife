@@ -1,11 +1,17 @@
 {# A game's price, for a game you don't own: "R$ 18,74" with "-75%" and the full price when on
    sale, "Free", or nothing yet. static/prices.js refreshes it in place (the data-price-id). #}
-{% macro price_tag(g) %}
+{% macro price_tag(g, with_low=true) %}
 {% if not owned(g) and g.on_steam %}
 {% set p = price_of(g) %}
 <span class="price" data-price-id="{{ g.steam_app_id }}">
   {%- if p %}{% if p.discount %}<span class="disc">-{{ p.discount }}%</span>{% endif %}{% if p.was %}<s>{{ p.was }}</s>{% endif %}<b>{{ p.text }}</b>{% endif -%}
 </span>
-{%- set low = low_of(g) %}{% if low and low.record %}<span class="low-tag record" title="Never this cheap on Steam before (the lowest was {{ low.before }}). Price history from the IsThereAnyDeal API">New lowest</span>{% elif low and low.now %}<span class="low-tag" title="Its lowest price ever on Steam. Price history from the IsThereAnyDeal API">Lowest ever</span>{% elif low and low.two_years %}<span class="low-tag two-years" title="Its lowest price on Steam in two years (the lowest ever was {{ low.text }}{{ ', ' ~ low.when if low.when }}). Price history from the IsThereAnyDeal API">Lowest in 2 years</span>{% endif %}
+{%- if with_low %}{{ low_tag(g) }}{% endif %}
 {% endif %}
+{% endmacro %}
+
+{# The lowest-price flag alone: beside the price on the game page, on the cover on a card (`extra`
+   adds classes, e.g. "flag bottom"). #}
+{% macro low_tag(g, extra="") %}
+{%- if not owned(g) and g.on_steam %}{% set low = low_of(g) %}{% if low and low.record %}<span class="low-tag record {{ extra }}" title="Never this cheap on Steam before (the lowest was {{ low.before }}). Price history from the IsThereAnyDeal API">New lowest</span>{% elif low and low.now %}<span class="low-tag {{ extra }}" title="Its lowest price ever on Steam. Price history from the IsThereAnyDeal API">Lowest ever</span>{% elif low and low.two_years %}<span class="low-tag two-years {{ extra }}" title="Its lowest price on Steam in two years (the lowest ever was {{ low.text }}{{ ', ' ~ low.when if low.when }}). Price history from the IsThereAnyDeal API">Lowest in 2 years</span>{% endif %}{% endif -%}
 {% endmacro %}

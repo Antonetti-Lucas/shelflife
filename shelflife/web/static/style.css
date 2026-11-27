@@ -513,6 +513,8 @@ dialog.lightbox .lb-close { right: -8px; top: -52px; font-size: 2rem; }
 /* Price flags: green matches the lowest price ever on Steam, blue beats it, amber is the lowest in two years */
 .low-tag { margin-left: 6px; padding: 1px 6px; border-radius: 5px; font-size: 0.72rem; font-weight: 700; background: #3f7d1c; color: #effde4; white-space: nowrap; }
 .low-tag.record { background: #1f5fae; color: #eaf3ff; }
+/* on a card the flag sits on the cover, bottom right, across from the match badge */
+.flag.bottom { top: auto; bottom: 10px; margin: 0; padding: 2px 8px; font-size: 0.75rem; }
 .low-tag.two-years { background: #9a6410; color: #fff6e6; }  /* amber, not SteamDB's purple: the owner's choice */
 .credits { max-width: 1200px; margin: 30px auto 20px; padding: 0 24px; color: var(--muted); font-size: 0.8rem; }
 .low-line { margin: 4px 0 0; }

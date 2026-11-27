@@ -278,6 +278,8 @@ def test_the_price_filter_keeps_games_at_a_low(session):
     full = priced(session, 4, 5999, 0, 1499)
     kept = lambda sale: [g.steam_app_id for g in (at_ever, at_two_years, on_sale, full) if prices.keeps_sale(g, sale)]  # noqa: E731
     assert kept("") == [1, 2, 3, 4] and kept("1") == [1, 2, 3] and kept("low") == [1, 2] and kept("ever") == [1]
+    record = priced(session, 5, 999, 83, 1499)
+    assert prices.keeps_sale(record, "new") and not prices.keeps_sale(at_ever, "new")
 
 
 def test_closest_to_its_lowest_ever_comes_first(session):
@@ -292,3 +294,9 @@ def test_wishlist_and_explore_sort_and_filter_by_the_low(client, session):
     assert "Game 2" in page and "Game 1" not in page and "Closest to its lowest ever" in page
     page = client.get("/explore?sort=low").text
     assert page.index("Game 2") < page.index("Game 1")
+
+
+def test_on_a_card_the_low_flag_sits_on_the_cover(client, session):
+    priced(session, 2, 1499, 75, 1499, wish=True)
+    page = client.get("/wishlist").text
+    assert 'class="low-tag  flag bottom"' in page or 'low-tag flag bottom' in " ".join(page.split())

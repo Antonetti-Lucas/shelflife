@@ -160,12 +160,14 @@ SALE_FILTERS = {
     "1": "On sale now",
     "low": "At a low (2 years or ever)",
     "ever": "At its lowest ever",
+    "new": "Cheaper than ever (new lowest)",
 }
 
 
 def keeps_sale(game, sale: str) -> bool:
     """The price filter on Explore and Wishlist: any price, on sale now, on sale at its lowest in two
-    years or ever (the amber, green and blue flags), or at its lowest ever (green and blue)."""
+    years or ever (the amber, green and blue flags), at its lowest ever (green and blue), or cheaper than
+    ever before (blue)."""
     if not sale:
         return True
     if sale == "1":
@@ -173,6 +175,8 @@ def keeps_sale(game, sale: str) -> bool:
     low = low_of(game)
     if low is None:
         return False
+    if sale == "new":
+        return low.record
     return low.now or (sale == "low" and low.two_years)
 
 
